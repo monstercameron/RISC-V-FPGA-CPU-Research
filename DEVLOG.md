@@ -168,6 +168,9 @@ Times are US Eastern (UTC-05:00). Each timestamp names its source:
 | after 23:55 | Commit `c281389`: 0.6.0 benchmark records and runner fix | git |
 | after 23:55 | Third-slot sizing on the 0.6.0 streams (issue model, calibrated on the measured 2-wide results): an ALU-only third slot that never uses the second slot's result saves about 12% (reference) to 16% (fast); a direct count of ALU instructions issued alone suggested zero, because the gain comes from regrouping, not from single issues | output |
 | after 23:55 | 0.7.0 third slot written, with a third retirement port carried through the RAM wrapper, testbenches and visualizer. New test `triple_issue` (forwarding from slot one, a third that depends on the second, three writes to one register). Regression 150/150 with default and 2-line caches; B cross-check passes; all lessons verify; C demo 8,756 clocks | output |
+| after 23:55 | Commit `a6e3f87`, third issue slot (0.7.0); tagged `cpu-v0.7.0`. Runs: `rv64imb` reference 256.8 clocks per run, CPI 0.467, 2.2163 DMIPS/MHz (8.52x over 0.1.0); `rv64imb` fast 216.9, 2.6243; `rv64im` reference 258.8, 2.1991; [devlog-a6e3f87.md](devlog/devlog-a6e3f87.md) | record |
+| after 23:55 | First logic-depth results (generic Yosys + ABC, 6-input LUTs, 4-line caches): 0.3.0 has a longest path of 30 LUT levels, 6,309 LUTs, 3,662 flip-flops; the run started on 0.6.0 reports 78 levels, 33,046 LUTs, 4,250 flip-flops. That report was stamped "0.7.0" because the script read the version and hash at the end, after the working copy had moved on; the RTL it synthesized was read at the start (0.6.0). The script now snapshots and hashes its source first | output |
+| after 23:55 | Finding: depth grew 2.6x from 0.3.0 while DMIPS/MHz grew about 2.1x. If clock frequency fell in proportion to depth, absolute performance would not have improved. Three variants of 0.7.0 are being synthesized (as built, multiplier removed, multiplier removed with forwarding and folding off) to find what the deep path is | output |
 
 ### Optimization loop
 
@@ -199,6 +202,8 @@ Each step changes the core, passes the main regression, is committed and tagged 
 | 0.5.5, `rv64i` build | Same core, `rv64i` build | 308.9 | 0.515 | 1.8428 | 7.08x | |
 | 0.6.0, `rv64imb` build | B extension (Zba, Zbb, Zbs) | 285.8 | 0.520 | 1.9916 | 7.66x | 1.01x |
 | 0.6.0, `rv64imb`, fast runtime | Same core, fast runtime using `orc.b` | 247.8 | 0.556 | 2.2964 | | 1.02x |
+| 0.7.0, `rv64imb` build | ALU-only third issue slot | 256.8 | 0.467 | 2.2163 | 8.52x | 1.11x |
+| 0.7.0, `rv64imb`, fast runtime | Same core, fast runtime | 216.9 | 0.486 | 2.6243 | | 1.14x |
 
 Every step measured what the previous profile estimated. The loop stopped after 0.4.0 because the core completes about one instruction per clock; see findings 23 to 27.
 
@@ -591,3 +596,6 @@ One row per benchmark run, oldest first. Each run's full record (result, rubric 
 | 2026-11-20 23:13:45 -0500 | `f78d62a` | yes | 0.6.0 | clang version 23.1.5 `-O2` `rv64imb` fast runtime | 247.8 | 2.2964 | 37.1 | [devlog-f78d62a.md](devlog/devlog-f78d62a.md) |
 | 2026-11-20 23:15:11 -0500 | `f78d62a` | yes | 0.6.0 | clang version 23.1.5 `-O2` `rv64im` | 287.8 | 1.9777 | 37.1 | [devlog-f78d62a.md](devlog/devlog-f78d62a.md) |
 | 2026-11-20 23:16:18 -0500 | `f78d62a` | yes | 0.6.0 | clang version 23.1.5 `-O2` `rv64im` fast runtime | 251.9 | 2.2598 | 37.1 | [devlog-f78d62a.md](devlog/devlog-f78d62a.md) |
+| 2026-11-20 23:23:03 -0500 | `a6e3f87` | yes | 0.7.0 | clang version 23.1.5 `-O2` `rv64imb` | 256.8 | 2.2163 | 37.1 | [devlog-a6e3f87.md](devlog/devlog-a6e3f87.md) |
+| 2026-11-20 23:24:16 -0500 | `a6e3f87` | yes | 0.7.0 | clang version 23.1.5 `-O2` `rv64imb` fast runtime | 216.9 | 2.6243 | 37.1 | [devlog-a6e3f87.md](devlog/devlog-a6e3f87.md) |
+| 2026-11-20 23:25:56 -0500 | `a6e3f87` | yes | 0.7.0 | clang version 23.1.5 `-O2` `rv64im` | 258.8 | 2.1991 | 37.1 | [devlog-a6e3f87.md](devlog/devlog-a6e3f87.md) |
