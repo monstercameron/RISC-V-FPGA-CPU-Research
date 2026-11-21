@@ -12,4 +12,5 @@ Describe affected arithmetic/profile, ABI/layout, resource/traffic assumptions o
 
 - [ ] Relevant repository checks pass, or failures are explained.
 - [ ] Claims match the evidence and pending gates remain explicit.
+- [ ] Any claim that the CPU is good, performant or fast cites a review record under `cpu/review-rubric.md`.
 - [ ] Imported material retains its license/provenance; generated files and weights are excluded.

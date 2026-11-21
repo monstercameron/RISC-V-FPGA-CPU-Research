@@ -23,6 +23,7 @@ MAINTAINED_DOCS = (
     'fpga/README.md', 'llm-accelerator/planning-evidence/README.md',
     'llm-rva23-mapping.md', 'isa/README.md',
     'cpu/README.md', 'cpu/architecture.md', 'cpu/c-demo.md', 'cpu/visualizer.md', 'cpu/addition.md', 'cpu/programs.md', 'cpu/inputs.md',
+    'cpu/review-rubric.md',
 )
 REQUIRED = MAINTAINED_DOCS + (
     'LICENSE', '.gitignore', '.gitattributes', '.editorconfig',

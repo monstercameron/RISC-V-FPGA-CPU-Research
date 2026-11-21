@@ -23,7 +23,7 @@ Run `bash sim/starter/run.sh` with Icarus when changing the historical CPU start
 
 ## Pull requests
 
-Describe the problem, resulting behavior and validation. Include exact reproduction commands and relevant output summaries. For a performance or resource claim, include workload, width/clock, memory topology, effective service rates and whether the result is measured. Explain any unrun gate and the next required evidence.
+Describe the problem, resulting behavior and validation. A pull request that calls the CPU good, performant or fast needs a review record under the [CPU review rubric](cpu/review-rubric.md). Include exact reproduction commands and relevant output summaries. For a performance or resource claim, include workload, width/clock, memory topology, effective service rates and whether the result is measured. Explain any unrun gate and the next required evidence.
 
 Keep weights, full waveforms, tool installation trees, credentials and personal machine records out of commits. Preserve compact reproducibility fixtures and meaningful checked-in evidence. Git ignores are conveniences; inspect the actual diff before committing.
 

@@ -39,6 +39,7 @@ python -B scripts/check_repo.py
 | [Interactive core infographic](cpu/core-explainer.html) | Plain-language component tour and instruction walkthrough |
 | [CPU quick start](cpu/README.md) | Files, commands, tested behavior and current limits |
 | [CPU architecture](cpu/architecture.md) | Datapath, memory/trap contracts, RVA23 obligations and C0-C7 stages |
+| [CPU review rubric](cpu/review-rubric.md) | Gates, scores and evidence needed before calling the CPU good or performant |
 | [CPU RTL](rtl/cpu/rv64_core.sv) / [RAM wrapper](rtl/cpu/rv64_bram_soc.sv) | Original SystemVerilog implementation |
 | [LLM operations to RVA23](llm-rva23-mapping.md) / [assembly examples](isa/README.md) | Future workload mapping and optional BF16 instruction examples |
 | [Earlier accelerator plan](plan.md) / [memory plan](memory-plan.md) | Preserved LLM architecture and bandwidth research |

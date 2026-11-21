@@ -4,6 +4,8 @@
 
 ### Added
 
+- CPU review rubric: scope label, evidence classes, hard gates, 0-4 scoring across nine weighted dimensions, benchmark rules and the claims each result permits, with the current core's gate status.
+
 - Editable inputs for all seven CPU lessons, separate draft/recorded values, generated C with input-specific result checks, bounded validation, and zero-input firmware support.
 
 - Seven selectable CPU study lessons with verified saved runs, questions and explanations, opcode-grounded checkpoints, and a command to rebuild the complete library.
