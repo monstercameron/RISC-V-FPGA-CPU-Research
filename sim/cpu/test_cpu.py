@@ -568,6 +568,31 @@ def cases():
     body.append(store(2, 19, 21, 4 * (len(body) + 2)))
     body += [i_type(0x13, 23, 0, 0, 3), i_type(0x13, 22, 0, 0, 1), store(3, 30, 22, 0x158), 0x100073]
     yield 'x4_store_patches_code', prefix() + patch + body, 0, MASK
+    add_ = lambda rd, a, b: r_type(0x33, rd, 0, a, b)
+    # More load and store-address ports (N_LD / N_ST): a block of independent loads and
+    # stores to the same and neighbouring beats, so several store addresses and loads
+    # execute in one clock; loads after stores to their bytes must see the stores.
+    body = []
+    for n in range(6):
+        body += [store(3, 30, 10 + n, 0x240 + 8 * n), i_type(3, 16 + n, 3, 30, 0x240 + 8 * n),
+                 store(0, 30, 3, 0x241 + 8 * n), i_type(3, 22, 4, 30, 0x240 + 8 * n), add_(28, 28, 22)]
+    body += [add_(27, 16, 17), add_(27, 27, 21), i_type(0x13, 29, 0, 29, -1)]
+    body.append(branch(1, 29, 0, -4 * len(body)))
+    p = prefix() + [i_type(0x13, 29, 0, 0, 3)] + body + [store(3, 30, 27, 0x280), store(3, 30, 28, 0x288), 0x100073]
+    yield 'many_memory_ports', p, 0, MASK
+
+    # Bus faults inside a full group of memory operations (4 load ports, 3 store-address
+    # ports): four independent loads where the third or fourth faults, three stores where
+    # the second faults, and loads and stores mixed with the last load faulting.
+    lui1 = (2 << 12) | (1 << 7) | 0x37                                   # x1 = 0x2000
+    loads4 = [i_type(3, 2, 3, 1, 0), i_type(3, 3, 3, 1, 8), i_type(3, 4, 3, 1, 16), i_type(3, 5, 3, 1, 24)]
+    yield 'ports_load_fault_third', [lui1, i_type(0x13, 9, 0, 0, 1)] + loads4 + [0x100073], 2, 8208
+    yield 'ports_load_fault_fourth', [lui1, i_type(0x13, 9, 0, 0, 1)] + loads4 + [0x100073], 2, 8216
+    stores3 = [i_type(0x13, 6, 0, 0, 0x11), store(3, 1, 6, 0), store(3, 1, 6, 8), store(3, 1, 6, 16)]
+    yield 'ports_store_fault_second', [lui1] + stores3 + [0x100073], 3, 8200
+    mixed = [i_type(0x13, 6, 0, 0, 0x22), store(3, 1, 6, 32), i_type(3, 2, 3, 1, 40), store(3, 1, 6, 48),
+             i_type(3, 3, 3, 1, 32), store(2, 1, 6, 56), i_type(3, 4, 3, 1, 48), i_type(3, 5, 3, 1, 64)]
+    yield 'ports_mixed_fault_last_load', [lui1] + mixed + [0x100073], 2, 8256
 
 def command(args):
     result = subprocess.run([str(x) for x in args], capture_output=True, text=True, timeout=60)

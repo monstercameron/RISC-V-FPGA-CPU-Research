@@ -83,7 +83,7 @@ module rv64_core #(
     // performance core (useless-husband/m5-uarch); since 0.12.0 16 instructions per clock
     // through fetch, rename and retirement (wider than the M5's measured 10 per clock), a
     // 256-entry reorder buffer, 288 physical registers, a 128-entry issue queue, 8 integer ALUs of which 3 also execute branches, jumps,
-    // system instructions and multiply/divide, 3 load ports and 2 store-address ports.
+    // system instructions and multiply/divide, 4 load ports and 3 store-address ports (3 and 2 until 0.13.0).
     // Multiply takes 3 clocks (pipelined), divide 7 (one unit). Loads that cannot finish
     // (cache miss, store data not ready, partial overlap with an older store) stay in
     // the issue queue and replay. Each branch saves the rename map, so a mispredict
@@ -114,8 +114,8 @@ module rv64_core #(
     localparam integer Q_B = 5;
     localparam integer N_ALU = 8;        // integer ports
     localparam integer N_BR = 3;         // of which these also take branches, system and M
-    localparam integer N_LD = 3;
-    localparam integer N_ST = 2;
+    localparam integer N_LD = 4;         // load ports (Zen 5: 4 loads per clock)
+    localparam integer N_ST = 3;         // store-address ports (Lion Cove: 3)
     localparam integer NP = N_ALU + N_LD + N_ST;
     localparam integer MUL_LAT = 3;
     localparam integer DIV_LAT = 7;
