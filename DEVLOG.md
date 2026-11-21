@@ -123,6 +123,9 @@ Times are US Eastern (UTC-05:00). Each timestamp names its source:
 | after 21:50 | Loop stopped: only 2.6 of 555.7 clocks per run are not instruction execution. Profiler fix: the "issue loads and stores in EXECUTE" estimate counted every load and store, even those that no longer wait; it now counts only loads and stores that waited, and gives 555.6 instead of 361.7 for 0.4.0 | output |
 | after 21:50 | Visualizer testbench fixed: it recognized RAM writes as "accepted but not yet acknowledged", which no longer happens since 0.2.2. All seven lessons rebuilt and verified on 0.4.0 at 21:51:24; the C demo takes 22,859 clocks instead of 69,157 | record |
 | 21:51:40 | Expanded regression with compiled C firmware on 0.4.0: 111/111 runs, 37 programs, 66 instruction names, reset and both RAM-wrapper checks pass; saved as `cpu/verification.json` with local paths removed | file |
+| 21:42:14 | Found afterwards: `main` on GitHub had been pushed to `0573f1a` by a push outside the assistant's commands; CI for it passed | CI |
+| 21:48:08 | Found afterwards: a second outside push moved `main` on GitHub to `88db627`; CI passed all jobs, including Dhrystone | CI |
+| 21:54 | Commit `186e8ca`, loop results and records, local only. The commit rows above that say "local only" were true when written; the two outside pushes later published every loop commit up to `88db627`. Tags after `cpu-v0.1.0` are still local | git |
 
 ### Optimization loop
 
@@ -391,7 +394,7 @@ Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
 
 #### Tags
 
-`cpu-v0.1.0` on `0483d99`, `cpu-v0.1.1` on `df7f489`, `cpu-v0.2.0` on `7197bd1`, `cpu-v0.2.1` on `f18223e`, `cpu-v0.2.2` on `0573f1a`, `cpu-v0.3.0` on `90ee1ea`, `cpu-v0.4.0` on `88db627`. Tags after `cpu-v0.1.0` are local until pushed.
+`cpu-v0.1.0` on `0483d99`, `cpu-v0.1.1` on `df7f489`, `cpu-v0.2.0` on `7197bd1`, `cpu-v0.2.1` on `f18223e`, `cpu-v0.2.2` on `0573f1a`, `cpu-v0.3.0` on `90ee1ea`, `cpu-v0.4.0` on `88db627`. Tags after `cpu-v0.1.0` are local until pushed. Commits up to `88db627` reached GitHub through two pushes outside the assistant's commands (21:42:14 and 21:48:08).
 
 #### Tag `cpu-v0.1.0` on `0483d99`
 
@@ -483,7 +486,7 @@ Full write-up: [cpu/dhrystone.md](cpu/dhrystone.md). Record: [cpu/dhrystone-resu
 
 #### Open at the end of the day
 
-- Push the loop commits and the tags `cpu-v0.1.1` to `cpu-v0.4.0`; they are local only.
+- Push the records commit `186e8ca` and its follow-up, and the tags `cpu-v0.1.1` to `cpu-v0.4.0`; commits up to `88db627` are already on GitHub.
 - Declare a performance target for the scope label (HG1).
 - Decide whether to commit or discard the two regenerated visualizer records, now rebuilt on 0.4.0.
 - Synthesize the core with its caches on a candidate part, and add a slow-memory model, before trusting the clock counts on hardware.
