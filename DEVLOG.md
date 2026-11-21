@@ -161,6 +161,10 @@ Times are US Eastern (UTC-05:00). Each timestamp names its source:
 | after 23:02 | First depth synthesis of 0.5.5 stopped after a long run without finishing: the 0.4.0 multiply logic built three 128x128-bit products. Replaced by one signed 65x65 product with a sign or zero bit per operand (same results; M tests pass). Depth synthesis restarted in the background | output |
 | after 23:02 | 0.6.0 B extension written: one `bitmanip` function used by both slots; encodings taken from LLVM's assembler; reference model extended. New tests: `b_extension` (all 40 instructions over extreme operands) and `random_b_606`/`random_b_707`. Regression 147/147, 106 instruction names, with default and 2-line caches; all seven lessons verify | output |
 | after 23:02 | Independent B check (`sim/cpu/check_bitmanip.py`): the same C built without B and with Zba/Zbb/Zbs gives identical results on the RTL in all 12 groups; the B build uses 28 distinct B instructions; both traces match the reference. Benchmark builds gain `rv64imb` (`rv64im_zba_zbb_zbs_zifencei`), and the fast runtime uses `orc.b` when Zbb is available | output |
+| about 23:45 | Commit `f78d62a`, B extension and single multiplier (0.6.0); tagged `cpu-v0.6.0`, local only | git |
+| about 23:46 | First `rv64imb` run failed a consistency check: timing run and trace disagreed by one instruction on the timed region. Both retire the same instructions in the same order; the difference is at the region's edges, where a marker store can retire in the same clock as the next instruction. The runner now requires exact totals, allows the region edges to differ by up to two, and takes the region's instruction count from the trace in program order. Earlier results are unaffected (their counts matched exactly) | output |
+| about 23:55 | 0.6.0 runs: `rv64imb` reference 285.8 clocks per run, 1.9916 DMIPS/MHz; `rv64imb` fast 247.8, 2.2964; `rv64im` reference unchanged 287.8; `rv64im` fast unchanged 251.9; [devlog-f78d62a.md](devlog/devlog-f78d62a.md). B gains 0.7% (reference) and 1.6% (fast), as the static check predicted | record |
+| about 23:55 | Depth synthesis of 0.6.0 completed but recorded nothing: Yosys quiet mode hid the reports. The script now saves them to files; 0.3.0 and 0.6.0 are being measured | output |
 
 ### Optimization loop
 
@@ -190,6 +194,8 @@ Each step changes the core, passes the main regression, is committed and tagged 
 | 0.5.5, `rv64im` build | Branch folding: jump or taken branch plus its target instruction in one clock | 287.8 | 0.520 | 1.9777 | 7.60x | 1.17x |
 | 0.5.5, `rv64im`, fast runtime | Same core, fast runtime | 251.9 | 0.536 | 2.2598 | | 1.07x |
 | 0.5.5, `rv64i` build | Same core, `rv64i` build | 308.9 | 0.515 | 1.8428 | 7.08x | |
+| 0.6.0, `rv64imb` build | B extension (Zba, Zbb, Zbs) | 285.8 | 0.520 | 1.9916 | 7.66x | 1.01x |
+| 0.6.0, `rv64imb`, fast runtime | Same core, fast runtime using `orc.b` | 247.8 | 0.556 | 2.2964 | | 1.02x |
 
 Every step measured what the previous profile estimated. The loop stopped after 0.4.0 because the core completes about one instruction per clock; see findings 23 to 27.
 
@@ -578,3 +584,7 @@ One row per benchmark run, oldest first. Each run's full record (result, rubric 
 | 2026-11-20 22:58:24 -0500 | `5f1f6b1` | yes | 0.5.5 | clang version 23.1.5 `-O2` `rv64im` | 287.8 | 1.9777 | 37.1 | [devlog-5f1f6b1.md](devlog/devlog-5f1f6b1.md) |
 | 2026-11-20 22:59:36 -0500 | `5f1f6b1` | yes | 0.5.5 | clang version 23.1.5 `-O2` `rv64im` fast runtime | 251.9 | 2.2598 | 37.1 | [devlog-5f1f6b1.md](devlog/devlog-5f1f6b1.md) |
 | 2026-11-20 23:01:05 -0500 | `5f1f6b1` | yes | 0.5.5 | clang version 23.1.5 `-O2` `rv64i` | 308.9 | 1.8428 | 37.1 | [devlog-5f1f6b1.md](devlog/devlog-5f1f6b1.md) |
+| 2026-11-20 23:12:36 -0500 | `f78d62a` | yes | 0.6.0 | clang version 23.1.5 `-O2` `rv64imb` | 285.8 | 1.9916 | 37.1 | [devlog-f78d62a.md](devlog/devlog-f78d62a.md) |
+| 2026-11-20 23:13:45 -0500 | `f78d62a` | yes | 0.6.0 | clang version 23.1.5 `-O2` `rv64imb` fast runtime | 247.8 | 2.2964 | 37.1 | [devlog-f78d62a.md](devlog/devlog-f78d62a.md) |
+| 2026-11-20 23:15:11 -0500 | `f78d62a` | yes | 0.6.0 | clang version 23.1.5 `-O2` `rv64im` | 287.8 | 1.9777 | 37.1 | [devlog-f78d62a.md](devlog/devlog-f78d62a.md) |
+| 2026-11-20 23:16:18 -0500 | `f78d62a` | yes | 0.6.0 | clang version 23.1.5 `-O2` `rv64im` fast runtime | 251.9 | 2.2598 | 37.1 | [devlog-f78d62a.md](devlog/devlog-f78d62a.md) |

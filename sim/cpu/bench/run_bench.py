@@ -109,7 +109,8 @@ def main():
     if not counters or not region:
         raise AssertionError('Timing run did not report its counters')
     total_cycles, total_retired = int(counters[1]), int(counters[2])
-    region_cycles, region_retired = int(region[1]), int(region[2])
+    region_cycles, soc_region_retired = int(region[1]), int(region[2])
+    region_retired = None  # counted from the trace in program order, below
     words = {int(i): int(v, 16) for i, v in re.findall(r'^MAILBOX (\d+) ([0-9a-f]{16})$', output, re.MULTILINE)}
     if words.get(1) != 0:
         raise AssertionError(f'main() returned {words.get(1)}, expected 0')
@@ -147,14 +148,21 @@ def main():
         first, last = actual_trace.index(start_write), actual_trace.index(stop_write)
         traced_region = sum(line.startswith('R ') for line in actual_trace[first:last])
         traced_total = sum(line.startswith('R ') for line in actual_trace)
-        if traced_region != region_retired or traced_total != total_retired:
+        # Totals must match exactly. The timed region's edges may differ by up to two
+        # instructions: with dual issue (0.5.0 and later) a marker store can retire in
+        # the same clock as the next instruction, and the timing testbench snapshots
+        # after both. The region's instruction count comes from the trace, in program order.
+        if traced_total != total_retired or abs(traced_region - soc_region_retired) > 2:
             raise AssertionError('Timing and differential runs disagree on retired instruction counts')
+        if region_retired is not None and traced_region != region_retired:
+            raise AssertionError('Differential runs disagree with each other')
+        region_retired = traced_region
         differential.append({'max_wait_cycles': stalls, 'events': len(actual_trace), 'result': 'PASS',
                              'simulator_summary': summary.strip().splitlines()[0]})
 
     profile = bench_profile.profile(out / 'profile.trace', out / 'symbols.txt', out / 'bench.disasm.txt',
                                     runs, region_cycles)
-    if profile['instructions'] != region_retired:
+    if profile['instructions'] != soc_region_retired:
         raise AssertionError('Profile and timing run disagree on the timed instruction count')
 
     cycles_per_run = region_cycles / runs
