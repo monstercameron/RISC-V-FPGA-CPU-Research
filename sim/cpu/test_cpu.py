@@ -124,6 +124,18 @@ def cases():
          0x100073]
     yield 'dual_issue_store_pairs', p, 0, MASK
 
+    # Second-slot loads (0.5.2). The prefix loads have filled the data cache for
+    # 0x2000..0x205f (x30 = 0x2000). Two hits pair; a load whose address depends on
+    # the first slot waits; a load from an address just stored must see the store.
+    p = prefix() + [
+        i_type(3, 20, 3, 30, 0), i_type(3, 21, 3, 30, 8),       # ld x20,0(x30); ld x21,8(x30)
+        i_type(3, 22, 3, 30, 16), i_type(0x13, 23, 0, 22, 1),   # ld x22; addi x23,x22,1
+        store(3, 30, 21, 24), i_type(3, 24, 3, 30, 24),         # sd x21,24(x30); ld x24,24(x30)
+        i_type(0x13, 25, 0, 30, 32), i_type(3, 26, 2, 25, 4),   # addi x25,x30,32; lw x26,4(x25)
+        i_type(3, 27, 0, 30, 3), i_type(3, 28, 4, 30, 5),       # lb x27,3(x30); lbu x28,5(x30)
+        0x100073]
+    yield 'dual_issue_loads', p, 0, MASK
+
     # Overwrite an initially illegal instruction, fence, then fetch the new word.
     p = [(0x02a01 << 12) | (5 << 7) | 0x37,
          i_type(0x13, 5, 0, 5, -1517), store(2, 0, 5, 512),

@@ -128,6 +128,8 @@ module rv64_core #(
     // insn writes and not write the same register, and insn must complete this
     // clock: an integer operation other than a divide, a load that hits the data
     // cache, or a store to a beat other than insn2's (so it cannot modify insn2).
+    // Since 0.5.2 insn2 may also be an aligned load that hits the data cache, read
+    // through a second port, when insn is not a store (so no memory ordering issue).
     reg [31:0] insn2;
     reg insn2_valid;
     wire [6:0] op2 = insn2[6:0];
@@ -141,14 +143,38 @@ module rv64_core #(
     wire [63:0] pc2 = pc + 64'd4;
     wire [63:0] imm_i2 = {{52{insn2[31]}},insn2[31:20]};
     wire [63:0] imm_u2 = {{32{insn2[31]}},insn2[31:12],12'b0};
-    reg simple2, uses_rs1_2, uses_rs2_2, branch2, taken2;
+    reg simple2, uses_rs1_2, uses_rs2_2, branch2, taken2, load2;
     reg [63:0] result2;
     reg [31:0] word2;
     wire [63:0] imm_b2 = {{51{insn2[31]}},insn2[31],insn2[7],insn2[30:25],insn2[11:8],1'b0};
     wire [63:0] target2 = pc2 + imm_b2;
+    // Second-slot load: address, alignment, data-cache hit and extracted value.
+    wire [63:0] ea2 = a2 + imm_i2;
+    wire [63:0] mask2 = f3_2[1:0] == 0 ? 64'd0 : f3_2[1:0] == 1 ? 64'd1 : f3_2[1:0] == 2 ? 64'd3 : 64'd7;
+    wire [DC_INDEX-1:0] dc_index2 = ea2[3 +: DC_INDEX];
+    wire hit2 = dc_valid[dc_index2] && dc_tag[dc_index2] == ea2[63 -: DC_TAG];
+    wire [63:0] shifted2 = dc_data[dc_index2] >> {ea2[2:0],3'b000};
+    reg [63:0] loaded2;
     always @* begin
-        simple2=0; uses_rs1_2=1; uses_rs2_2=0; result2=0; word2=0; branch2=0; taken2=0;
+        case (f3_2)
+            3'b000: loaded2 = {{56{shifted2[7]}},shifted2[7:0]};
+            3'b001: loaded2 = {{48{shifted2[15]}},shifted2[15:0]};
+            3'b010: loaded2 = {{32{shifted2[31]}},shifted2[31:0]};
+            3'b011: loaded2 = shifted2;
+            3'b100: loaded2 = {56'b0,shifted2[7:0]};
+            3'b101: loaded2 = {48'b0,shifted2[15:0]};
+            3'b110: loaded2 = {32'b0,shifted2[31:0]};
+            default: loaded2 = 64'b0;
+        endcase
+    end
+    always @* begin
+        simple2=0; uses_rs1_2=1; uses_rs2_2=0; result2=0; word2=0; branch2=0; taken2=0; load2=0;
         case (op2)
+            7'h03: begin
+                load2=1;
+                simple2=f3_2!=7 && (ea2 & mask2)==0 && hit2;
+                result2=loaded2;
+            end
             7'h63: begin
                 branch2=1; uses_rs2_2=1;
                 simple2=f3_2!=2 && f3_2!=3;
@@ -230,7 +256,7 @@ module rv64_core #(
                      ((op == 7'h33 || op == 7'h3b) && !is_div);
     wire pair_alu = can_pair && slot0_alu;
     wire pair_load = can_pair && load_hit;
-    wire pair_store = can_pair && store_op && effective_addr[63:3] != pc2[63:3];
+    wire pair_store = can_pair && store_op && !load2 && effective_addr[63:3] != pc2[63:3];
 
     // One DIVIDE step, and whether it is the last.
     wire div_take = div_rem >= div_den;
