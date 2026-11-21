@@ -98,13 +98,20 @@ def main():
             raise SystemExit(f'Stale or damaged build artifact: {name}')
     ram_bytes, mailbox = build['ram_bytes'], build['mailbox_address']
     core_file = {'multicycle': 'rtl/cpu/rv64_core.sv', 'pipe': 'rtl/cpu/rv64_pipe.sv', 'ooo': 'rtl/cpu/rv64_ooo.sv'}[args.core]
-    rtl = [ROOT / core_file, ROOT / 'rtl/cpu/rv64_bram_soc.sv']
+    # Snapshot the sources at the start, so a run whose files change on disk midway
+    # still compiles, times and hashes one revision (found by a Codex review, 2026-11-21).
+    snap = out / 'source-snapshot'
+    sources = [core_file, 'rtl/cpu/rv64_bram_soc.sv', 'sim/cpu/bench/tb_bench.sv', 'sim/cpu/tb_core.sv', 'cpu/VERSION']
+    for name in sources:
+        (snap / name).parent.mkdir(parents=True, exist_ok=True)
+        shutil.copyfile(ROOT / name, snap / name)
+    rtl = [snap / core_file, snap / 'rtl/cpu/rv64_bram_soc.sv']
 
     # 1. Timing on the core plus synchronous RAM wrapper.
     timing_vvp = out / 'tb_bench.vvp'
     command(['iverilog', '-g2012', '-Wall', *(['-DWIDE_TRACE'] if args.core == 'ooo' else []), '-s', 'tb_bench',
              f'-Ptb_bench.RAM_WORDS={ram_bytes // 8}',
-             '-o', timing_vvp, *rtl, ROOT / 'sim/cpu/bench/tb_bench.sv'])
+             '-o', timing_vvp, *rtl, snap / 'sim/cpu/bench/tb_bench.sv'])
     started = time.perf_counter()
     output = command(['vvp', timing_vvp, f'+image={out / "bench-words.hex"}', f'+mailbox={mailbox:x}',
                       f'+max_cycles={args.max_cycles}', f'+profile={out / "profile.trace"}'])
@@ -144,7 +151,7 @@ def main():
     trace_vvp = out / 'tb_core.vvp'
     command(['iverilog', '-g2012', '-Wall', *(['-DWIDE_TRACE'] if args.core == 'ooo' else []), '-s', 'tb_core',
              f'-Ptb_core.MEM_BYTES={ram_bytes}',
-             '-o', trace_vvp, rtl[0], ROOT / 'sim/cpu/tb_core.sv'])
+             '-o', trace_vvp, rtl[0], snap / 'sim/cpu/tb_core.sv'])
     start_write = f'W {mailbox:016x} {1:016x} ff'
     stop_write = f'W {mailbox:016x} {2:016x} ff'
     differential = []
@@ -185,11 +192,11 @@ def main():
         'label': 'Non-compliant run, simulation (rubric evidence class E1)',
         'timestamp_utc': datetime.now(timezone.utc).isoformat(),
         'scope': {
-            'architecture_version': (ROOT / 'cpu/VERSION').read_text(encoding='ascii').strip(),
+            'architecture_version': (snap / 'cpu/VERSION').read_text(encoding='ascii').strip(),
             'isa': build['isa'], 'abi': build['abi'],
             'environment': 'bare metal, laboratory terminal trap',
             'class': {'multicycle': 'multicycle', 'pipe': 'pipelined', 'ooo': 'out-of-order'}[args.core], 'core': args.core,
-            'rtl_sha256': {p.relative_to(ROOT).as_posix(): sha(p) for p in rtl},
+            'rtl_sha256': {p.relative_to(snap).as_posix(): sha(p) for p in rtl},
             'platform': f'rv64_bram_soc, {ram_bytes // 1024} KiB synchronous RAM, no added wait cycles in the timing run',
             'hardware': 'none (Icarus Verilog simulation)',
             'debug_trace': 'retirement trace ports present in the RTL',
