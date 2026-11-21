@@ -129,7 +129,9 @@ module rv64_core #(
     // clock: an integer operation other than a divide, a load that hits the data
     // cache, or a store to a beat other than insn2's (so it cannot modify insn2).
     // Since 0.5.2 insn2 may also be an aligned load that hits the data cache, read
-    // through a second port, when insn is not a store (so no memory ordering issue).
+    // through a second port; since 0.5.3 also after a store to a different beat.
+    // Since 0.5.3 insn may be a branch that is not taken, and insn2 may be a JAL or
+    // JALR with an aligned target.
     reg [31:0] insn2;
     reg insn2_valid;
     wire [6:0] op2 = insn2[6:0];
@@ -143,7 +145,7 @@ module rv64_core #(
     wire [63:0] pc2 = pc + 64'd4;
     wire [63:0] imm_i2 = {{52{insn2[31]}},insn2[31:20]};
     wire [63:0] imm_u2 = {{32{insn2[31]}},insn2[31:12],12'b0};
-    reg simple2, uses_rs1_2, uses_rs2_2, branch2, taken2, load2;
+    reg simple2, uses_rs1_2, uses_rs2_2, branch2, taken2, load2, jump2;
     reg [63:0] result2;
     reg [31:0] word2;
     wire [63:0] imm_b2 = {{51{insn2[31]}},insn2[31],insn2[7],insn2[30:25],insn2[11:8],1'b0};
@@ -167,9 +169,16 @@ module rv64_core #(
             default: loaded2 = 64'b0;
         endcase
     end
+    wire [63:0] imm_j2 = {{43{insn2[31]}},insn2[31],insn2[19:12],insn2[20],insn2[30:21],1'b0};
+    wire [63:0] jump_target2 = op2 == 7'h6f ? pc2 + imm_j2 : (a2 + imm_i2) & ~64'd1;
     always @* begin
-        simple2=0; uses_rs1_2=1; uses_rs2_2=0; result2=0; word2=0; branch2=0; taken2=0; load2=0;
+        simple2=0; uses_rs1_2=1; uses_rs2_2=0; result2=0; word2=0; branch2=0; taken2=0; load2=0; jump2=0;
         case (op2)
+            7'h6f, 7'h67: begin
+                jump2=1; uses_rs1_2=op2 == 7'h67;
+                simple2=(op2 == 7'h6f || f3_2 == 0) && jump_target2[1:0] == 0;
+                result2=pc2 + 64'd4;
+            end
             7'h03: begin
                 load2=1;
                 simple2=f3_2!=7 && (ea2 & mask2)==0 && hit2;
@@ -249,14 +258,15 @@ module rv64_core #(
     end
     wire slot0_writes = (load_op || write_rd) && rd != 0;
     wire [4:0] dest2 = branch2 ? 5'b0 : rd2;
-    wire [63:0] next2 = taken2 ? target2 : pc + 64'd8;
+    wire [63:0] next2 = jump2 ? jump_target2 : taken2 ? target2 : pc + 64'd8;
     wire hazard2 = slot0_writes && ((uses_rs1_2 && rs1_2 == rd) || (uses_rs2_2 && rs2_2 == rd) || dest2 == rd);
     wire can_pair = insn2_valid && simple2 && !hazard2;
     wire slot0_alu = op == 7'h37 || op == 7'h17 || op == 7'h13 || op == 7'h1b ||
-                     ((op == 7'h33 || op == 7'h3b) && !is_div);
+                     ((op == 7'h33 || op == 7'h3b) && !is_div) || (op == 7'h63 && !branch_taken);
     wire pair_alu = can_pair && slot0_alu;
     wire pair_load = can_pair && load_hit;
-    wire pair_store = can_pair && store_op && !load2 && effective_addr[63:3] != pc2[63:3];
+    wire pair_store = can_pair && store_op && effective_addr[63:3] != pc2[63:3] &&
+                      !(load2 && ea2[63:3] == effective_addr[63:3]);
 
     // One DIVIDE step, and whether it is the last.
     wire div_take = div_rem >= div_den;

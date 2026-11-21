@@ -144,6 +144,9 @@ Times are US Eastern (UTC-05:00). Each timestamp names its source:
 | about 23:08 | Zba/Zbb check: compiling Dhrystone and the fast runtime for `rv64im_zba_zbb` changes only a few instructions (`sh2add`, `add.uw`, `max`); the compiler never emits `orc.b` from portable C. Estimated 5 to 7% on the fast runtime, about 1% on the reference. Deferred | output |
 | about 23:10 | Issue-width model on the fast-runtime stream: a second memory port for loads in the second slot gives 318.1 clocks per run (about 1.79 DMIPS/MHz); 3-wide 275.0; 8-wide in-order 241.0 (2.36) | output |
 | after 23:10 | 0.5.2 written: data-cache-hit loads in the second slot. New test `dual_issue_loads` (two hits pair, dependent address waits, store then load sees the store). Regression 120/120 with default and 2-line caches | output |
+| about 23:20 | Commit `c05a1ce`, second-slot loads (0.5.2); tagged `cpu-v0.5.2`. Runs: `rv64im` reference 388.8 clocks per run, 1.4640 DMIPS/MHz; `rv64im` fast runtime 348.9, 1.6315; `rv64i` reference 416.9, 1.3653; [devlog-c05a1ce.md](devlog/devlog-c05a1ce.md). Less than the model predicted (318.1 fast), because the model also let a load pair after any store | record |
+| about 23:22 | Pairing-blocker analysis on the 0.5.2 fast-runtime stream (clocks per run issued alone, by reason): branch first 40.0, store second 37.1, ALU-to-ALU dependency 32.0, JALR first 32.0, JALR second 22.1, load after store 14.0, ALU-to-branch dependency 14.0 | output |
+| after 23:22 | 0.5.3 written: not-taken branch first, JAL/JALR second, load after a store to another beat. New tests `dual_issue_jumps` and `misaligned_jalr_after_alu`. Regression 126/126 with default and 2-line caches | output |
 
 ### Optimization loop
 
@@ -163,6 +166,9 @@ Each step changes the core, passes the main regression, is committed and tagged 
 | 0.5.0, `rv64i` build | Same core, `rv64i` build | 471.8 | 0.786 | 1.2063 | 4.64x | 1.27x |
 | 0.5.1, `rv64im` build | Pair across beats; branches in the second slot | 397.8 | 0.719 | 1.4309 | 5.50x | 1.10x |
 | 0.5.1, `rv64i` build | Same core, `rv64i` build | 424.9 | 0.708 | 1.3396 | 5.15x | 1.11x |
+| 0.5.1, `rv64im`, fast runtime | Word-at-a-time `strcpy`/`strcmp` (labelled; not compared with the reference runtime) | 360.8 | 0.768 | 1.5773 | | |
+| 0.5.2, `rv64im` build | Data-cache-hit loads in the second slot | 388.8 | 0.703 | 1.4640 | 5.63x | 1.02x |
+| 0.5.2, `rv64im`, fast runtime | Same core, fast runtime | 348.9 | 0.742 | 1.6315 | | 1.03x |
 
 Every step measured what the previous profile estimated. The loop stopped after 0.4.0 because the core completes about one instruction per clock; see findings 23 to 27.
 
@@ -539,3 +545,6 @@ One row per benchmark run, oldest first. Each run's full record (result, rubric 
 | 2026-11-20 22:24:21 -0500 | `4ca8908` | yes | 0.5.1 | clang version 23.1.5 `-O2` | 397.8 | 1.4309 | 37.1 | [devlog-4ca8908.md](devlog/devlog-4ca8908.md) |
 | 2026-11-20 22:25:39 -0500 | `4ca8908` | yes | 0.5.1 | clang version 23.1.5 `-O2` | 424.9 | 1.3396 | 37.1 | [devlog-4ca8908.md](devlog/devlog-4ca8908.md) |
 | 2026-11-20 22:31:05 -0500 | `5db3914` | yes | 0.5.1 | clang version 23.1.5 `-O2` `rv64im` fast runtime | 360.8 | 1.5773 | 37.1 | [devlog-5db3914.md](devlog/devlog-5db3914.md) |
+| 2026-11-20 22:34:43 -0500 | `c05a1ce` | yes | 0.5.2 | clang version 23.1.5 `-O2` `rv64im` | 388.8 | 1.4640 | 37.1 | [devlog-c05a1ce.md](devlog/devlog-c05a1ce.md) |
+| 2026-11-20 22:35:51 -0500 | `c05a1ce` | yes | 0.5.2 | clang version 23.1.5 `-O2` `rv64im` fast runtime | 348.9 | 1.6315 | 37.1 | [devlog-c05a1ce.md](devlog/devlog-c05a1ce.md) |
+| 2026-11-20 22:37:10 -0500 | `c05a1ce` | yes | 0.5.2 | clang version 23.1.5 `-O2` `rv64i` | 416.9 | 1.3653 | 37.1 | [devlog-c05a1ce.md](devlog/devlog-c05a1ce.md) |

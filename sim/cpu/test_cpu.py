@@ -136,6 +136,16 @@ def cases():
         0x100073]
     yield 'dual_issue_loads', p, 0, MASK
 
+    # 0.5.3: ALU + JALR and ALU + JAL pairs, and a not-taken branch first.
+    p = [i_type(0x13, 1, 0, 0, 32), i_type(0x13, 5, 0, 0, 1),     # 0, 4
+         i_type(0x13, 9, 0, 0, 2), i_type(0x67, 6, 0, 1, 0),      # 8: addi; 12: jalr x6,0(x1) -> 32
+         0xffffffff, 0xffffffff, 0xffffffff, 0xffffffff,          # 16..28 skipped
+         i_type(0x13, 7, 0, 0, 3), jal(8, 8),                     # 32: addi; 36: jal x8,+8 -> 44
+         0xffffffff,                                              # 40 skipped
+         branch(1, 0, 0, 8), i_type(0x13, 10, 0, 0, 4),          # 44: bne not taken; 48: addi
+         i_type(0x13, 11, 0, 10, 6), 0x100073]                    # 52: depends on 48; 56: ebreak
+    yield 'dual_issue_jumps', p, 0, MASK
+
     # Overwrite an initially illegal instruction, fence, then fetch the new word.
     p = [(0x02a01 << 12) | (5 << 7) | 0x37,
          i_type(0x13, 5, 0, 5, -1517), store(2, 0, 5, 512),
@@ -190,6 +200,7 @@ def cases():
         # Dual issue (0.5.1): a branch that would trap must not pair with the ALU
         # instruction before it; one that depends on it must wait for it.
         ('misaligned_branch_after_alu', [i_type(0x13, 1, 0, 0, 5), branch(0, 0, 0, 2)]),
+        ('misaligned_jalr_after_alu', [i_type(0x13, 1, 0, 0, 6), i_type(0x67, 0, 0, 1, 0)]),
         ('branch_depends_on_alu', [i_type(0x13, 1, 0, 0, 0), i_type(0x13, 1, 0, 0, 1),
                                    branch(1, 1, 0, 8), 0xffffffff]),
         ('misaligned_jalr', [i_type(0x13, 1, 0, 0, 3), i_type(0x67, 2, 0, 1, 0)]),
