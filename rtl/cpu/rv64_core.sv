@@ -120,12 +120,14 @@ module rv64_core #(
                 else m_result = div_finish(64'b0, mag_a, neg_a ^ neg_b, neg_a, want_rem, m_word);
         endcase
     end
-    // Dual issue (0.5.0). insn2 is the instruction at pc+4 when it is in the same
-    // 8-byte beat as insn. It executes alongside insn when it is a simple integer
-    // operation (OP, OP-IMM, their 32-bit forms, LUI, AUIPC; no M), reads no register
-    // that insn writes, does not write the same register, and insn completes this
+    // Dual issue (0.5.0, widened in 0.5.1). insn2 is the instruction at pc+4, from
+    // the same 8-byte beat or, since 0.5.1, the next beat when it is in the
+    // instruction cache. It executes alongside insn when it is a simple integer
+    // operation (OP, OP-IMM, their 32-bit forms, LUI, AUIPC; no M) or, since 0.5.1,
+    // a conditional branch with an aligned target; it must read no register that
+    // insn writes and not write the same register, and insn must complete this
     // clock: an integer operation other than a divide, a load that hits the data
-    // cache, or a store to a different beat (which therefore cannot modify insn2).
+    // cache, or a store to a beat other than insn2's (so it cannot modify insn2).
     reg [31:0] insn2;
     reg insn2_valid;
     wire [6:0] op2 = insn2[6:0];
@@ -139,12 +141,28 @@ module rv64_core #(
     wire [63:0] pc2 = pc + 64'd4;
     wire [63:0] imm_i2 = {{52{insn2[31]}},insn2[31:20]};
     wire [63:0] imm_u2 = {{32{insn2[31]}},insn2[31:12],12'b0};
-    reg simple2, uses_rs1_2, uses_rs2_2;
+    reg simple2, uses_rs1_2, uses_rs2_2, branch2, taken2;
     reg [63:0] result2;
     reg [31:0] word2;
+    wire [63:0] imm_b2 = {{51{insn2[31]}},insn2[31],insn2[7],insn2[30:25],insn2[11:8],1'b0};
+    wire [63:0] target2 = pc2 + imm_b2;
     always @* begin
-        simple2=0; uses_rs1_2=1; uses_rs2_2=0; result2=0; word2=0;
+        simple2=0; uses_rs1_2=1; uses_rs2_2=0; result2=0; word2=0; branch2=0; taken2=0;
         case (op2)
+            7'h63: begin
+                branch2=1; uses_rs2_2=1;
+                simple2=f3_2!=2 && f3_2!=3;
+                case (f3_2)
+                    0: taken2=a2==b2;
+                    1: taken2=a2!=b2;
+                    4: taken2=$signed(a2)<$signed(b2);
+                    5: taken2=$signed(a2)>=$signed(b2);
+                    6: taken2=a2<b2;
+                    7: taken2=a2>=b2;
+                    default: taken2=0;
+                endcase
+                if (taken2 && target2[1:0]!=0) simple2=0; // would trap: leave it unpaired
+            end
             7'h37: begin simple2=1; uses_rs1_2=0; result2=imm_u2; end
             7'h17: begin simple2=1; uses_rs1_2=0; result2=pc2+imm_u2; end
             7'h13: begin
@@ -204,13 +222,15 @@ module rv64_core #(
         endcase
     end
     wire slot0_writes = (load_op || write_rd) && rd != 0;
-    wire hazard2 = slot0_writes && ((uses_rs1_2 && rs1_2 == rd) || (uses_rs2_2 && rs2_2 == rd) || rd2 == rd);
+    wire [4:0] dest2 = branch2 ? 5'b0 : rd2;
+    wire [63:0] next2 = taken2 ? target2 : pc + 64'd8;
+    wire hazard2 = slot0_writes && ((uses_rs1_2 && rs1_2 == rd) || (uses_rs2_2 && rs2_2 == rd) || dest2 == rd);
     wire can_pair = insn2_valid && simple2 && !hazard2;
     wire slot0_alu = op == 7'h37 || op == 7'h17 || op == 7'h13 || op == 7'h1b ||
                      ((op == 7'h33 || op == 7'h3b) && !is_div);
     wire pair_alu = can_pair && slot0_alu;
     wire pair_load = can_pair && load_hit;
-    wire pair_store = can_pair && store_op && effective_addr[63:3] != pc[63:3];
+    wire pair_store = can_pair && store_op && effective_addr[63:3] != pc2[63:3];
 
     // One DIVIDE step, and whether it is the last.
     wire div_take = div_rem >= div_den;
@@ -408,19 +428,21 @@ module rv64_core #(
         end
     endtask
     // flush: fence.i clears the cache. stored: a store to store_addr completed.
-    // pair: insn2 retires on the second slot in the same clock; successor is pc+8.
+    // pair: insn2 retires on the second slot in the same clock; successor follows it.
     task automatic retire(input [4:0] dest, input [63:0] data, input [63:0] successor,
                           input flush, input stored, input [63:0] store_addr, input pair);
+        reg [63:0] after_successor;
         begin
+            after_successor = successor + 64'd4;
             retire_valid<=1; retire_pc<=pc; retire_insn<=insn;
             retire_rd<=dest; retire_data<=dest==0 ? 64'b0 : data;
             retire_next_pc<=pair ? pc2 : successor;
             if (dest!=0) regs[dest]<=data;
             if (pair) begin
                 retire2_valid<=1; retire2_pc<=pc2; retire2_insn<=insn2;
-                retire2_rd<=rd2; retire2_data<=rd2==0 ? 64'b0 : result2;
+                retire2_rd<=dest2; retire2_data<=dest2==0 ? 64'b0 : result2;
                 retire2_next_pc<=successor;
-                if (rd2!=0) regs[rd2]<=result2;
+                if (dest2!=0) regs[dest2]<=result2;
             end
             pc<=successor;
             insn2_valid<=0;
@@ -432,8 +454,15 @@ module rv64_core #(
                 !(stored && store_addr[63:3]==successor[63:3])) begin
                 insn<=successor[2] ? ic_data[successor[3 +: IC_INDEX]][63:32]
                                    : ic_data[successor[3 +: IC_INDEX]][31:0];
-                insn2<=ic_data[successor[3 +: IC_INDEX]][63:32];
-                insn2_valid<=!successor[2];
+                if (!successor[2]) begin
+                    insn2<=ic_data[successor[3 +: IC_INDEX]][63:32];
+                    insn2_valid<=1'b1;
+                end else begin
+                    insn2<=ic_data[after_successor[3 +: IC_INDEX]][31:0];
+                    insn2_valid<=ic_valid[after_successor[3 +: IC_INDEX]] &&
+                        ic_tag[after_successor[3 +: IC_INDEX]]==after_successor[63 -: IC_TAG] &&
+                        !(stored && store_addr[63:3]==after_successor[63:3]);
+                end
                 state<=EXECUTE;
             end else state<=FETCH;
         end
@@ -480,7 +509,13 @@ module rv64_core #(
                         if (mem_error) report_trap(1,pc);
                         else begin
                             insn<=pc[2] ? mem_rdata[63:32] : mem_rdata[31:0];
-                            insn2<=mem_rdata[63:32]; insn2_valid<=!pc[2];
+                            if (!pc[2]) begin
+                                insn2<=mem_rdata[63:32]; insn2_valid<=1'b1;
+                            end else begin // next beat, if cached
+                                insn2<=ic_data[pc2[3 +: IC_INDEX]][31:0];
+                                insn2_valid<=ic_valid[pc2[3 +: IC_INDEX]] &&
+                                    ic_tag[pc2[3 +: IC_INDEX]]==pc2[63 -: IC_TAG];
+                            end
                             ic_valid[pc[3 +: IC_INDEX]]<=1'b1;
                             ic_tag[pc[3 +: IC_INDEX]]<=pc[63 -: IC_TAG];
                             ic_data[pc[3 +: IC_INDEX]]<=mem_rdata;
@@ -498,13 +533,13 @@ module rv64_core #(
                         div_want_rem<=want_rem; div_is_word<=m_word;
                         state<=DIVIDE;
                     end
-                    else if (load_hit) retire(rd,load_result,pair_load ? pc+64'd8 : next_pc,1'b0,1'b0,64'b0,pair_load);
+                    else if (load_hit) retire(rd,load_result,pair_load ? next2 : next_pc,1'b0,1'b0,64'b0,pair_load);
                     else if (load_op || store_op) begin
                         if (mem_ready) begin // completed in the same clock it was issued
                             if (mem_error) report_trap(load_op ? 5 : 7,effective_addr);
                             else begin
                                 dcache_update(load_op,effective_addr,mem_rdata,issue_wdata,issue_wstrb);
-                                retire(load_op ? rd : 5'b0,load_result,pair_store ? pc+64'd8 : next_pc,
+                                retire(load_op ? rd : 5'b0,load_result,pair_store ? next2 : next_pc,
                                        1'b0,store_op,effective_addr,pair_store);
                             end
                         end else begin
@@ -513,7 +548,7 @@ module rv64_core #(
                             pending_load<=load_op; pending_f3<=f3; pending_rd<=rd;
                             pending_next_pc<=next_pc; state<=MEMORY;
                         end
-                    end else retire(write_rd ? rd : 5'b0,result,pair_alu ? pc+64'd8 : next_pc,
+                    end else retire(write_rd ? rd : 5'b0,result,pair_alu ? next2 : next_pc,
                                     op==7'h0f && f3==1,1'b0,64'b0,pair_alu);
                 end
                 MEMORY: if (mem_ready) begin

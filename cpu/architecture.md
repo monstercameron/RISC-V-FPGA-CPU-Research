@@ -1,4 +1,4 @@
-# CPU architecture, version 0.5.0
+# CPU architecture, version 0.5.1
 
 Versioned with [semantic versioning](https://semver.org/); rules and history are in section 9. "Revision 0" in this document is version 0.1.0.
 
@@ -203,3 +203,4 @@ Once Zicsr arrives in C1, consider reporting the version in the implementation-d
 | 0.3.0 | 2026-11-20 | tag `cpu-v0.3.0` | Data cache for loads: direct-mapped, write-through, `DCACHE_BEATS` 8-byte lines (default 512, 4 KiB), new parameter on `rv64_core` and `rv64_bram_soc`. Loads that hit complete in EXECUTE with no bus request; all memory treated as cacheable. | No (new parameter; loads that hit no longer reach the bus) | `d8359ad08ebe` / `385b91fe9a8a` |
 | 0.4.0 | 2026-11-20 | tag `cpu-v0.4.0` | M extension: `mul`, `mulh`, `mulhsu`, `mulhu`, `div`, `divu`, `rem`, `remu` and the `w` forms. Multiply completes in EXECUTE; divide-by-zero, signed overflow and small dividends complete in EXECUTE; other divides use a DIVIDE state, one step per clock from the quotient's highest possible bit. ISA string `rv64im_zifencei`. | No (instructions added) | `e7bf693e3b31` / `385b91fe9a8a` |
 | 0.5.0 | 2026-11-20 | tag `cpu-v0.5.0` | Dual issue: the instruction after an integer operation, a data-cache-hit load or a store to another beat executes in the same clock when it is a simple integer operation in the same 8-byte beat, independent of the first. New second retirement port `retire2_*` on `rv64_core` and `retire2_valid` on `rv64_bram_soc`. | No (new ports; trace order unchanged) | `ecd87864afb3` / `94a9e078dbd9` |
+| 0.5.1 | 2026-11-20 | tag `cpu-v0.5.1` | Second slot widened: it may come from the next 8-byte beat when that beat is in the instruction cache, and may be a conditional branch with an aligned target. | No | `58d055bc8e34` / `94a9e078dbd9` |

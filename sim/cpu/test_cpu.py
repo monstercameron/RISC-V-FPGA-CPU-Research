@@ -175,6 +175,11 @@ def cases():
         ('illegal_jalr', [i_type(0x67, 1, 1, 0, 0)]),
         ('illegal_csr', [0x300010f3]), ('ecall', [0x73]),
         ('misaligned_jal', [jal(1, 2)]), ('misaligned_taken_branch', [branch(0, 0, 0, 2)]),
+        # Dual issue (0.5.1): a branch that would trap must not pair with the ALU
+        # instruction before it; one that depends on it must wait for it.
+        ('misaligned_branch_after_alu', [i_type(0x13, 1, 0, 0, 5), branch(0, 0, 0, 2)]),
+        ('branch_depends_on_alu', [i_type(0x13, 1, 0, 0, 0), i_type(0x13, 1, 0, 0, 1),
+                                   branch(1, 1, 0, 8), 0xffffffff]),
         ('misaligned_jalr', [i_type(0x13, 1, 0, 0, 3), i_type(0x67, 2, 0, 1, 0)]),
         ('misaligned_lh', [i_type(3, 1, 1, 0, 1)]),
         ('misaligned_lw', [i_type(3, 1, 2, 0, 2)]),

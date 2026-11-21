@@ -132,6 +132,10 @@ Times are US Eastern (UTC-05:00). Each timestamp names its source:
 | about 22:20 | New user goal: aim for 20 DMIPS/MHz and keep optimizing and documenting. Plan: dual issue (0.5.0), a labelled word-at-a-time runtime, the B extension, then whatever the profile shows | approx. |
 | after 22:20 | 0.5.0 dual issue written. First regression failed on `random_m_404`: `sraw` on the second slot gave 1 instead of -1, because a Verilog `?:` mixing a signed and an unsigned arm is evaluated unsigned. Fixed by using `if`/`else` as the first slot does; the differential check caught it | output |
 | after 22:20 | Added `dual_issue_store_pairs`: a store rewriting the next instruction in its own beat must not pair and the new instruction must run (it did: x20 = 42), and a store followed by an ALU instruction pairs. Regression 111/111 with default and 2-line caches. Visualizer carries the second retirement slot; all seven lessons verify; C demo 22,859 to 16,755 clocks | output |
+| about 22:40 | Commit `ba03c09`, limited dual issue (0.5.0); tagged `cpu-v0.5.0`, local only | git |
+| about 22:42 | 0.5.0 runs: `rv64im` 435.7 clocks per run, CPI 0.788, 1.3062 DMIPS/MHz (estimate 434.8); `rv64i` 471.8 clocks, 1.2063 DMIPS/MHz; [devlog-ba03c09.md](devlog/devlog-ba03c09.md) | record |
+| about 22:45 | Issue-width model on the 0.5.0 stream (matches 0.5.0 within 0.4%): pairing across beats 417.1; plus branch second 395.1; plus load or store second 391.1; two memory ports 367.1; 3-wide 317.0; 4-wide 293.0; even 8-wide in-order 283.0 clocks per run, about 2.0 DMIPS/MHz. In-order issue saturates near 2.0 on Dhrystone because dependencies and branches end issue groups | output |
+| after 22:45 | 0.5.1 written: second slot from the next beat, and conditional branches in it. Regression 117/117 with default and 2-line caches, with new tests `misaligned_branch_after_alu` and `branch_depends_on_alu` | output |
 
 ### Optimization loop
 
@@ -147,6 +151,8 @@ Each step changes the core, passes the main regression, is committed and tagged 
 | 0.3.0 | 4 KiB write-through data cache for loads | 600.8 | 1.001 | 0.9473 | 3.64x | 1.20x |
 | 0.4.0, `rv64i` build | M extension, not used by this build | 600.8 | 1.001 | 0.9473 | 3.64x | 1.00x |
 | 0.4.0, `rv64im` build | M extension: hardware divide replaces the software routine | 555.7 | 1.005 | 1.0242 | 3.94x | 1.08x |
+| 0.5.0, `rv64im` build | Limited dual issue within an 8-byte beat | 435.7 | 0.788 | 1.3062 | 5.02x | 1.28x |
+| 0.5.0, `rv64i` build | Same core, `rv64i` build | 471.8 | 0.786 | 1.2063 | 4.64x | 1.27x |
 
 Every step measured what the previous profile estimated. The loop stopped after 0.4.0 because the core completes about one instruction per clock; see findings 23 to 27.
 
@@ -518,3 +524,5 @@ One row per benchmark run, oldest first. Each run's full record (result, rubric 
 | 2026-11-20 21:43:28 -0500 | `90ee1ea` | yes | 0.3.0 | clang version 23.1.5 `-O2` | 600.8 | 0.9473 | 37.1 | [devlog-90ee1ea.md](devlog/devlog-90ee1ea.md) |
 | 2026-11-20 21:48:47 -0500 | `88db627` | yes | 0.4.0 | clang version 23.1.5 `-O2` | 555.7 | 1.0242 | 37.1 | [devlog-88db627.md](devlog/devlog-88db627.md) |
 | 2026-11-20 21:49:53 -0500 | `88db627` | yes | 0.4.0 | clang version 23.1.5 `-O2` | 600.8 | 0.9473 | 37.1 | [devlog-88db627.md](devlog/devlog-88db627.md) |
+| 2026-11-20 22:19:24 -0500 | `ba03c09` | yes | 0.5.0 | clang version 23.1.5 `-O2` | 435.7 | 1.3062 | 37.1 | [devlog-ba03c09.md](devlog/devlog-ba03c09.md) |
+| 2026-11-20 22:20:37 -0500 | `ba03c09` | yes | 0.5.0 | clang version 23.1.5 `-O2` | 471.8 | 1.2063 | 37.1 | [devlog-ba03c09.md](devlog/devlog-ba03c09.md) |
