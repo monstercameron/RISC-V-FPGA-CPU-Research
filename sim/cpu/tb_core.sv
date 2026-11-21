@@ -10,15 +10,17 @@ module tb_core #(parameter integer MEM_BYTES=16384, parameter integer ICACHE_BEA
     wire [7:0] wstrb;
     reg ready=0,error=0;
     reg [63:0] rdata=0;
-    wire trapped,retired;
-    wire [63:0] tpc,cause,tval,rpc,rval,npc;
-    wire [31:0] rinsn;
-    wire [4:0] rd;
+    wire trapped,retired,retired2;
+    wire [63:0] tpc,cause,tval,rpc,rval,npc,rpc2,rval2,npc2;
+    wire [31:0] rinsn,rinsn2;
+    wire [4:0] rd,rd2;
     rv64_core #(.ICACHE_BEATS(ICACHE_BEATS),.DCACHE_BEATS(DCACHE_BEATS)) dut(.clk(clk),.reset(reset),.mem_valid(valid),.mem_instr(instr),
         .mem_addr(addr),.mem_wdata(wdata),.mem_wstrb(wstrb),.mem_ready(ready),
         .mem_rdata(rdata),.mem_error(error),.trap_valid(trapped),.trap_pc(tpc),
         .trap_cause(cause),.trap_tval(tval),.retire_valid(retired),.retire_pc(rpc),
-        .retire_insn(rinsn),.retire_rd(rd),.retire_data(rval),.retire_next_pc(npc));
+        .retire_insn(rinsn),.retire_rd(rd),.retire_data(rval),.retire_next_pc(npc),
+        .retire2_valid(retired2),.retire2_pc(rpc2),.retire2_insn(rinsn2),.retire2_rd(rd2),
+        .retire2_data(rval2),.retire2_next_pc(npc2));
 
     string image_path,trace_path;
     integer fd,i,lane,cycles=0,retire_count=0;
@@ -51,6 +53,11 @@ module tb_core #(parameter integer MEM_BYTES=16384, parameter integer ICACHE_BEA
         else begin
             if (retired) begin
                 $fdisplay(fd,"R %016h %08h %02h %016h %016h",rpc,rinsn,rd,rval,npc);
+                retire_count=retire_count+1;
+            end
+            if (retired2) begin // second slot: after the first, in program order
+                if (!retired) $fatal(1,"second retirement slot without the first");
+                $fdisplay(fd,"R %016h %08h %02h %016h %016h",rpc2,rinsn2,rd2,rval2,npc2);
                 retire_count=retire_count+1;
             end
             if (trapped) begin

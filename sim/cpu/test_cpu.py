@@ -111,6 +111,19 @@ def cases():
     p += [branch(1, 0, 0, 2), 0x100073]  # misaligned target not taken
     yield 'control_flow', p, 0, MASK
 
+    # Dual issue (0.5.0): a store that rewrites the next instruction in its own beat
+    # must not pair with it, and the new instruction must execute; a store to another
+    # beat followed by an independent ALU instruction pairs.
+    new_word = i_type(0x13, 20, 0, 0, 42)
+    low = new_word & 0xfff
+    low = low - 4096 if low & 0x800 else low
+    high = ((new_word - low) >> 12) & 0xfffff
+    p = [(high << 12) | (5 << 7) | 0x37, i_type(0x13, 5, 0, 5, low),
+         store(2, 0, 5, 12), i_type(0x13, 20, 0, 0, 1),        # 8: sw x5,12(x0); 12: replaced
+         store(3, 0, 20, 256), i_type(0x13, 22, 0, 20, 1),      # 16: sd x20,256(x0); 20: addi x22,x20,1
+         0x100073]
+    yield 'dual_issue_store_pairs', p, 0, MASK
+
     # Overwrite an initially illegal instruction, fence, then fetch the new word.
     p = [(0x02a01 << 12) | (5 << 7) | 0x37,
          i_type(0x13, 5, 0, 5, -1517), store(2, 0, 5, 512),

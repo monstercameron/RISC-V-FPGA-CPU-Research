@@ -117,9 +117,10 @@ def main():
     frames=[];retirements=[];writes=0
     for line in (OUT/'clocks.trace').read_text().splitlines():
         raw=line.split()
-        if len(raw)!=24: raise AssertionError('Malformed clock capture')
+        if len(raw)!=30: raise AssertionError('Malformed clock capture')
         cycle=int(raw[0]); x=[int(field,16) for field in raw[1:]]
-        state,pc,insn,a,b,result,ea,flags,addr,wd,rdata,strobe,after,after_pc,retired,rpc,rinsn,rd,rval,npc,trapped,cause,tval=x
+        (state,pc,insn,a,b,result,ea,flags,addr,wd,rdata,strobe,after,after_pc,retired,rpc,rinsn,rd,rval,npc,
+         trapped,cause,tval,retired2,rpc2,rinsn2,rd2,rval2,npc2)=x
         if cycle!=len(frames)+1: raise AssertionError('Non-contiguous clocks')
         if pc not in assembly: raise AssertionError('Missing instruction disassembly')
         if state in (1,2) and int(assembly[pc][2],16)!=insn: raise AssertionError('Instruction mismatch')
@@ -135,11 +136,18 @@ def main():
             retirement=len(retirements)
             retirements.append([cycle,rd,value_id(rval),rpc,npc])
             if rd: registers[rd]=rval
+        # Second retirement slot (architecture 0.5.0): same clock, next in program order.
+        retirement2=-1
+        if retired2:
+            actual_trace.append(f'R {rpc2:016x} {rinsn2:08x} {rd2:02x} {rval2:016x} {npc2:016x}')
+            retirement2=len(retirements)
+            retirements.append([cycle,rd2,value_id(rval2),rpc2,npc2])
+            if rd2: registers[rd2]=rval2
         if trapped:
             flags|=32
             actual_trace.append(f'T {pc:016x} {cause:016x} {tval:016x}')
         frames.append([state,pc,flags,addr,value_id(wd),value_id(rdata),strobe,after,after_pc,
-                       value_id(a),value_id(b),value_id(result),value_id(ea),retirement])
+                       value_id(a),value_id(b),value_id(result),value_id(ea),retirement,retirement2])
     if actual_trace!=expected_trace: raise AssertionError('Captured events differ from sequential ISA reference')
     observed=[int.from_bytes(memory[0x3000+i*8:0x3008+i*8],'little') for i in range(len(expected))]
     if observed!=expected or registers[10]!=0 or not frames[-1][2]&32:

@@ -2,18 +2,18 @@
   "rubric": "cpu/review-rubric.md",
   "rubric_revision": 1,
   "assessed": "2026-11-20",
-  "assessed_at_commit": "cpu-v0.4.0",
+  "assessed_at_commit": "cpu-v0.5.0",
   "assessed_by": "Author self-assessment, not an independent review (rubric HG8 and R9.4).",
-  "architecture_version": "0.4.0",
+  "architecture_version": "0.5.0",
   "rtl_sha256": {
-    "rtl/cpu/rv64_bram_soc.sv": "385b91fe9a8a9d768e7deadd976b718d1668c389da4cb74fed3634758769ae72",
-    "rtl/cpu/rv64_core.sv": "e7bf693e3b3145465437778d1a693ee8c07c5b249af6411eff8613e30bb27df7"
+    "rtl/cpu/rv64_bram_soc.sv": "94a9e078dbd90cf124fb58f360ee95d6e7e7cc3d29f5ff03a0af8d6811e0760d",
+    "rtl/cpu/rv64_core.sv": "ecd87864afb3935e262e3f9fd669647a23778766d1bc690ec6c05fdbb30c4620"
   },
   "scope": {
     "isa": "rv64im_zifencei",
     "environment": "machine-level laboratory terminal trap; no privilege modes",
     "class": "multicycle",
-    "configuration": "RESET_PC 0; ICACHE_BEATS 512; DCACHE_BEATS 512; retirement trace ports always present",
+    "configuration": "RESET_PC 0; ICACHE_BEATS 512; DCACHE_BEATS 512; limited dual issue (0.5.0); retirement trace ports always present",
     "platform": "rv64_bram_soc synchronous RAM: reads answer the next clock, writes in the same clock; 64 KiB for benchmarks, 16 KiB for the regression",
     "hardware": "none (simulation only)",
     "target": null
@@ -236,7 +236,7 @@
     },
     "R7.1": {
       "score": 2,
-      "evidence": "Trace has PC, instruction, destination, value and next PC; no source values, memory fields or trap flags."
+      "evidence": "Trace has PC, instruction, destination, value and next PC for up to two retirements per clock; no source values, memory fields or trap flags."
     },
     "R7.2": {
       "score": 3,

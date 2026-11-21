@@ -32,7 +32,15 @@ module rv64_core #(
     output reg [31:0]  retire_insn,
     output reg [4:0]   retire_rd,
     output reg [63:0]  retire_data,
-    output reg [63:0]  retire_next_pc
+    output reg [63:0]  retire_next_pc,
+    // Second retirement slot (0.5.0): an instruction retired in the same clock as,
+    // and in program order immediately after, the one on the first slot.
+    output reg         retire2_valid,
+    output reg [63:0]  retire2_pc,
+    output reg [31:0]  retire2_insn,
+    output reg [4:0]   retire2_rd,
+    output reg [63:0]  retire2_data,
+    output reg [63:0]  retire2_next_pc
 );
     localparam [2:0] FETCH=0, EXECUTE=1, MEMORY=2, HALTED=3, DIVIDE=4;
     reg [2:0] state;
@@ -112,6 +120,98 @@ module rv64_core #(
                 else m_result = div_finish(64'b0, mag_a, neg_a ^ neg_b, neg_a, want_rem, m_word);
         endcase
     end
+    // Dual issue (0.5.0). insn2 is the instruction at pc+4 when it is in the same
+    // 8-byte beat as insn. It executes alongside insn when it is a simple integer
+    // operation (OP, OP-IMM, their 32-bit forms, LUI, AUIPC; no M), reads no register
+    // that insn writes, does not write the same register, and insn completes this
+    // clock: an integer operation other than a divide, a load that hits the data
+    // cache, or a store to a different beat (which therefore cannot modify insn2).
+    reg [31:0] insn2;
+    reg insn2_valid;
+    wire [6:0] op2 = insn2[6:0];
+    wire [2:0] f3_2 = insn2[14:12];
+    wire [6:0] f7_2 = insn2[31:25];
+    wire [4:0] rd2 = insn2[11:7];
+    wire [4:0] rs1_2 = insn2[19:15];
+    wire [4:0] rs2_2 = insn2[24:20];
+    wire [63:0] a2 = rs1_2 == 0 ? 64'b0 : regs[rs1_2];
+    wire [63:0] b2 = rs2_2 == 0 ? 64'b0 : regs[rs2_2];
+    wire [63:0] pc2 = pc + 64'd4;
+    wire [63:0] imm_i2 = {{52{insn2[31]}},insn2[31:20]};
+    wire [63:0] imm_u2 = {{32{insn2[31]}},insn2[31:12],12'b0};
+    reg simple2, uses_rs1_2, uses_rs2_2;
+    reg [63:0] result2;
+    reg [31:0] word2;
+    always @* begin
+        simple2=0; uses_rs1_2=1; uses_rs2_2=0; result2=0; word2=0;
+        case (op2)
+            7'h37: begin simple2=1; uses_rs1_2=0; result2=imm_u2; end
+            7'h17: begin simple2=1; uses_rs1_2=0; result2=pc2+imm_u2; end
+            7'h13: begin
+                simple2=1;
+                case (f3_2)
+                    0: result2=a2+imm_i2;
+                    2: result2={63'b0,$signed(a2)<$signed(imm_i2)};
+                    3: result2={63'b0,a2<imm_i2};
+                    4: result2=a2^imm_i2;
+                    6: result2=a2|imm_i2;
+                    7: result2=a2&imm_i2;
+                    1: begin simple2=insn2[31:26]==0; result2=a2<<insn2[25:20]; end
+                    5: begin
+                        simple2=insn2[31:26]==0 || insn2[31:26]==6'h10;
+                        if (insn2[30]) result2=$signed(a2)>>>insn2[25:20]; else result2=a2>>insn2[25:20];
+                    end
+                endcase
+            end
+            7'h1b: begin
+                case (f3_2)
+                    0: begin simple2=1; word2=a2[31:0]+imm_i2[31:0]; end
+                    1: begin simple2=f7_2==0; word2=a2[31:0]<<insn2[24:20]; end
+                    5: begin
+                        simple2=f7_2==0 || f7_2==7'h20;
+                        if (insn2[30]) word2=$signed(a2[31:0])>>>insn2[24:20]; else word2=a2[31:0]>>insn2[24:20];
+                    end
+                    default: simple2=0;
+                endcase
+                result2={{32{word2[31]}},word2};
+            end
+            7'h33: begin
+                uses_rs2_2=1;
+                simple2=f7_2==0 || (f7_2==7'h20 && (f3_2==0 || f3_2==5));
+                case (f3_2)
+                    0: result2=insn2[30] ? a2-b2 : a2+b2;
+                    1: result2=a2<<b2[5:0];
+                    2: result2={63'b0,$signed(a2)<$signed(b2)};
+                    3: result2={63'b0,a2<b2};
+                    4: result2=a2^b2;
+                    5: if (insn2[30]) result2=$signed(a2)>>>b2[5:0]; else result2=a2>>b2[5:0];
+                    6: result2=a2|b2;
+                    7: result2=a2&b2;
+                endcase
+            end
+            7'h3b: begin
+                uses_rs2_2=1;
+                simple2=(f7_2==0 && (f3_2==0 || f3_2==1 || f3_2==5)) || (f7_2==7'h20 && (f3_2==0 || f3_2==5));
+                case (f3_2)
+                    0: word2=insn2[30] ? a2[31:0]-b2[31:0] : a2[31:0]+b2[31:0];
+                    1: word2=a2[31:0]<<b2[4:0];
+                    5: if (insn2[30]) word2=$signed(a2[31:0])>>>b2[4:0]; else word2=a2[31:0]>>b2[4:0];
+                    default: word2=0;
+                endcase
+                result2={{32{word2[31]}},word2};
+            end
+            default: simple2=0;
+        endcase
+    end
+    wire slot0_writes = (load_op || write_rd) && rd != 0;
+    wire hazard2 = slot0_writes && ((uses_rs1_2 && rs1_2 == rd) || (uses_rs2_2 && rs2_2 == rd) || rd2 == rd);
+    wire can_pair = insn2_valid && simple2 && !hazard2;
+    wire slot0_alu = op == 7'h37 || op == 7'h17 || op == 7'h13 || op == 7'h1b ||
+                     ((op == 7'h33 || op == 7'h3b) && !is_div);
+    wire pair_alu = can_pair && slot0_alu;
+    wire pair_load = can_pair && load_hit;
+    wire pair_store = can_pair && store_op && effective_addr[63:3] != pc[63:3];
+
     // One DIVIDE step, and whether it is the last.
     wire div_take = div_rem >= div_den;
     wire [63:0] div_rem_next = div_take ? div_rem - div_den : div_rem;
@@ -308,14 +408,22 @@ module rv64_core #(
         end
     endtask
     // flush: fence.i clears the cache. stored: a store to store_addr completed.
+    // pair: insn2 retires on the second slot in the same clock; successor is pc+8.
     task automatic retire(input [4:0] dest, input [63:0] data, input [63:0] successor,
-                          input flush, input stored, input [63:0] store_addr);
+                          input flush, input stored, input [63:0] store_addr, input pair);
         begin
             retire_valid<=1; retire_pc<=pc; retire_insn<=insn;
             retire_rd<=dest; retire_data<=dest==0 ? 64'b0 : data;
-            retire_next_pc<=successor;
+            retire_next_pc<=pair ? pc2 : successor;
             if (dest!=0) regs[dest]<=data;
+            if (pair) begin
+                retire2_valid<=1; retire2_pc<=pc2; retire2_insn<=insn2;
+                retire2_rd<=rd2; retire2_data<=rd2==0 ? 64'b0 : result2;
+                retire2_next_pc<=successor;
+                if (rd2!=0) regs[rd2]<=result2;
+            end
             pc<=successor;
+            insn2_valid<=0;
             if (flush) ic_valid<=0;
             else if (stored && ic_tag[store_addr[3 +: IC_INDEX]]==store_addr[63 -: IC_TAG])
                 ic_valid[store_addr[3 +: IC_INDEX]]<=1'b0;
@@ -324,6 +432,8 @@ module rv64_core #(
                 !(stored && store_addr[63:3]==successor[63:3])) begin
                 insn<=successor[2] ? ic_data[successor[3 +: IC_INDEX]][63:32]
                                    : ic_data[successor[3 +: IC_INDEX]][31:0];
+                insn2<=ic_data[successor[3 +: IC_INDEX]][63:32];
+                insn2_valid<=!successor[2];
                 state<=EXECUTE;
             end else state<=FETCH;
         end
@@ -352,6 +462,9 @@ module rv64_core #(
             trap_valid<=0; trap_pc<=0; trap_cause<=0; trap_tval<=0;
             retire_valid<=0; retire_pc<=0; retire_insn<=0;
             retire_rd<=0; retire_data<=0; retire_next_pc<=0;
+            retire2_valid<=0; retire2_pc<=0; retire2_insn<=0;
+            retire2_rd<=0; retire2_data<=0; retire2_next_pc<=0;
+            insn2<=0; insn2_valid<=0;
             pending_addr<=0; pending_wdata<=0; pending_wstrb<=0;
             pending_f3<=0; pending_rd<=0; pending_load<=0; pending_next_pc<=0;
             ic_valid<=0; dc_valid<=0;
@@ -359,7 +472,7 @@ module rv64_core #(
             div_neg_q<=0; div_neg_r<=0; div_want_rem<=0; div_is_word<=0;
             for (i=0;i<32;i=i+1) regs[i]<=0;
         end else begin
-            retire_valid<=0;
+            retire_valid<=0; retire2_valid<=0;
             case (state)
                 FETCH: begin
                     if (pc[1:0]!=0) report_trap(0,pc);
@@ -367,6 +480,7 @@ module rv64_core #(
                         if (mem_error) report_trap(1,pc);
                         else begin
                             insn<=pc[2] ? mem_rdata[63:32] : mem_rdata[31:0];
+                            insn2<=mem_rdata[63:32]; insn2_valid<=!pc[2];
                             ic_valid[pc[3 +: IC_INDEX]]<=1'b1;
                             ic_tag[pc[3 +: IC_INDEX]]<=pc[63 -: IC_TAG];
                             ic_data[pc[3 +: IC_INDEX]]<=mem_rdata;
@@ -384,13 +498,14 @@ module rv64_core #(
                         div_want_rem<=want_rem; div_is_word<=m_word;
                         state<=DIVIDE;
                     end
-                    else if (load_hit) retire(rd,load_result,next_pc,1'b0,1'b0,64'b0);
+                    else if (load_hit) retire(rd,load_result,pair_load ? pc+64'd8 : next_pc,1'b0,1'b0,64'b0,pair_load);
                     else if (load_op || store_op) begin
                         if (mem_ready) begin // completed in the same clock it was issued
                             if (mem_error) report_trap(load_op ? 5 : 7,effective_addr);
                             else begin
                                 dcache_update(load_op,effective_addr,mem_rdata,issue_wdata,issue_wstrb);
-                                retire(load_op ? rd : 5'b0,load_result,next_pc,1'b0,store_op,effective_addr);
+                                retire(load_op ? rd : 5'b0,load_result,pair_store ? pc+64'd8 : next_pc,
+                                       1'b0,store_op,effective_addr,pair_store);
                             end
                         end else begin
                             pending_addr<=effective_addr; pending_wdata<=issue_wdata;
@@ -398,20 +513,21 @@ module rv64_core #(
                             pending_load<=load_op; pending_f3<=f3; pending_rd<=rd;
                             pending_next_pc<=next_pc; state<=MEMORY;
                         end
-                    end else retire(write_rd ? rd : 5'b0,result,next_pc,op==7'h0f && f3==1,1'b0,64'b0);
+                    end else retire(write_rd ? rd : 5'b0,result,pair_alu ? pc+64'd8 : next_pc,
+                                    op==7'h0f && f3==1,1'b0,64'b0,pair_alu);
                 end
                 MEMORY: if (mem_ready) begin
                     if (mem_error) report_trap(pending_load ? 5 : 7,pending_addr);
                     else begin
                         dcache_update(pending_load,pending_addr,mem_rdata,pending_wdata,pending_wstrb);
                         retire(pending_load ? pending_rd : 5'b0,load_result,pending_next_pc,
-                               1'b0,!pending_load,pending_addr);
+                               1'b0,!pending_load,pending_addr,1'b0);
                     end
                 end
                 DIVIDE: begin
                     if (div_bit == 64'd1)
                         retire(rd,div_finish(div_quot_next,div_rem_next,div_neg_q,div_neg_r,div_want_rem,div_is_word),
-                               next_pc,1'b0,1'b0,64'b0);
+                               next_pc,1'b0,1'b0,64'b0,1'b0);
                     else begin
                         div_rem<=div_rem_next; div_quot<=div_quot_next;
                         div_den<=div_den >> 1; div_bit<=div_bit >> 1;

@@ -128,6 +128,10 @@ Times are US Eastern (UTC-05:00). Each timestamp names its source:
 | 21:54 | Commit `186e8ca`, loop results and records, local only. The commit rows above that say "local only" were true when written; the two outside pushes later published every loop commit up to `88db627`. Tags after `cpu-v0.1.0` are still local | git |
 | about 22:00 | Dual-issue estimate from the 0.4.0 `rv64im` profile trace, pairing an instruction with the next one in the same 8-byte beat when they are independent: ALU after ALU or load saves 82.9 clocks per run (472.8, 1.175x); also allowing a branch second and a store first saves 120.9 (434.8, 1.278x, about 1.31 DMIPS/MHz). Estimate only; not built | output |
 | about 22:02 | New user goal: 20 DMIPS/MHz. Needs 28.5 clocks per Dhrystone run, about 19.4 instructions per clock on this 553-instruction build; an ideal 2-wide core reaches 2.06 and an ideal 4-wide core 4.12. Not reachable by core changes without breaking Dhrystone's rules; reported to the user instead of attempted | output |
+| about 22:05 | Pushed `ec2ff65` and tags `cpu-v0.1.1` to `cpu-v0.4.0` on request; CI passed all seven jobs | CI |
+| about 22:20 | New user goal: aim for 20 DMIPS/MHz and keep optimizing and documenting. Plan: dual issue (0.5.0), a labelled word-at-a-time runtime, the B extension, then whatever the profile shows | approx. |
+| after 22:20 | 0.5.0 dual issue written. First regression failed on `random_m_404`: `sraw` on the second slot gave 1 instead of -1, because a Verilog `?:` mixing a signed and an unsigned arm is evaluated unsigned. Fixed by using `if`/`else` as the first slot does; the differential check caught it | output |
+| after 22:20 | Added `dual_issue_store_pairs`: a store rewriting the next instruction in its own beat must not pair and the new instruction must run (it did: x20 = 42), and a store followed by an ALU instruction pairs. Regression 111/111 with default and 2-line caches. Visualizer carries the second retirement slot; all seven lessons verify; C demo 22,859 to 16,755 clocks | output |
 
 ### Optimization loop
 

@@ -15,7 +15,8 @@ module rv64_bram_soc #(
     output wire [63:0] trap_cause,
     output wire [63:0] trap_tval,
     output wire retire_valid,
-    output wire [63:0] retire_pc
+    output wire [63:0] retire_pc,
+    output wire retire2_valid // second retirement slot, same clock (0.5.0)
 );
     localparam integer INDEX_BITS = $clog2(RAM_WORDS);
     reg [63:0] ram [0:RAM_WORDS-1];
@@ -56,6 +57,8 @@ module rv64_bram_soc #(
         .mem_ready(ready),.mem_rdata(rdata),.mem_error(error),
         .trap_valid(trapped),.trap_pc(trap_pc),.trap_cause(trap_cause),.trap_tval(trap_tval),
         .retire_valid(retire_valid),.retire_pc(retire_pc),.retire_insn(),
-        .retire_rd(),.retire_data(),.retire_next_pc()
+        .retire_rd(),.retire_data(),.retire_next_pc(),
+        .retire2_valid(retire2_valid),.retire2_pc(),.retire2_insn(),.retire2_rd(),
+        .retire2_data(),.retire2_next_pc()
     );
 endmodule
