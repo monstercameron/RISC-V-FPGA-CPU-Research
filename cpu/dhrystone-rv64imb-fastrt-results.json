@@ -2,15 +2,15 @@
   "status": "PASS",
   "benchmark": "Dhrystone (riscv-tests edition, version string \"C, Version 2.2\")",
   "label": "Non-compliant run, simulation (rubric evidence class E1)",
-  "timestamp_utc": "2026-11-21T04:24:16.842595+00:00",
+  "timestamp_utc": "2026-11-21T04:55:03.151291+00:00",
   "scope": {
-    "architecture_version": "0.7.0",
+    "architecture_version": "0.7.1",
     "isa": "rv64im_zba_zbb_zbs_zifencei",
     "abi": "lp64",
     "environment": "bare metal, laboratory terminal trap",
     "class": "multicycle",
     "rtl_sha256": {
-      "rtl/cpu/rv64_core.sv": "72a8e92ff35c149be89fa0794ed1b7c69aa37d0f3824882b21b070d80752f00f",
+      "rtl/cpu/rv64_core.sv": "dd153c8d943a348dda45b02c5636048f5f6e201f839ca1da2753c1666983e4eb",
       "rtl/cpu/rv64_bram_soc.sv": "1043cf3322255e6eddc1349d4fe7228ff876afc582b66dd7037fb8bfbe925a4b"
     },
     "platform": "rv64_bram_soc, 64 KiB synchronous RAM, no added wait cycles in the timing run",
@@ -185,7 +185,7 @@
     "definition": "from the start-marker store to the instruction before the stop-marker store"
   },
   "whole_program": {
-    "cycles_after_reset": 112634,
+    "cycles_after_reset": 112635,
     "retired_instructions": 229793
   },
   "cycles_per_run": 216.88,
@@ -301,13 +301,13 @@
       "max_wait_cycles": 0,
       "events": 259050,
       "result": "PASS",
-      "simulator_summary": "DONE retirements=229793 cycles=108123"
+      "simulator_summary": "DONE retirements=229793 cycles=108124"
     },
     {
       "max_wait_cycles": 7,
       "events": 259050,
       "result": "PASS",
-      "simulator_summary": "DONE retirements=229793 cycles=236988"
+      "simulator_summary": "DONE retirements=229793 cycles=236989"
     }
   ],
   "profile": {
@@ -710,8 +710,8 @@
     "python": "3.12.3"
   },
   "wall_seconds": {
-    "timing_run": 20.35141795000027,
-    "reference_model": 0.3523419839998496
+    "timing_run": 19.57452238199994,
+    "reference_model": 0.370514908000132
   },
   "build_input_sha256": {
     "sim/cpu/bench/vendor/dhrystone/dhrystone_main.c": "45f1aeb092b50ccbd2f37782e5b054b446c93c49771a45a36c940386f72d338d",

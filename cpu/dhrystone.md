@@ -1,6 +1,6 @@
 # Dhrystone on our custom CPU
 
-**Current result, architecture 0.7.0: 2.216 DMIPS/MHz** built for `rv64im_zba_zbb_zbs_zifencei` with the reference runtime (2.199 for `rv64im`), and 2.624 with the labelled fast runtime. The first 0.1.0 core scored 0.260. All are simulation runs of the core with its synchronous RAM, so they are non-compliant runs under the [review rubric](review-rubric.md), evidence class E1, and do not support calling the core performant.
+**Current result, architecture 0.7.1: 2.216 DMIPS/MHz** built for `rv64im_zba_zbb_zbs_zifencei` with the reference runtime (2.174 for `rv64im`, 2.078 for `rv64i`), and 2.624 with the labelled fast runtime. The first 0.1.0 core scored 0.260. All are simulation runs of the core with its synchronous RAM, so they are non-compliant runs under the [review rubric](review-rubric.md), evidence class E1, and do not support calling the core performant.
 
 Dhrystone is the secondary benchmark in the rubric. Report it next to CoreMark once that runs, never on its own.
 
@@ -26,8 +26,9 @@ Each step was chosen from the previous run's profile, passed the main regression
 | 0.5.5 | Branch folding: a jump or taken branch and its target instruction in one clock | 287.8 | 0.520 | 1.9777 | 7.60x |
 | 0.6.0, `rv64imb` build | B extension (Zba, Zbb, Zbs); 550 instructions per run | 285.8 | 0.520 | 1.9916 | 7.66x |
 | 0.7.0, `rv64imb` build | ALU-only third issue slot | 256.8 | 0.467 | 2.2163 | 8.52x |
+| 0.7.1, `rv64imb` build | Registered multiplier (two clocks); this build does not multiply at run time | 256.8 | 0.467 | 2.2163 | 8.52x |
 
-Rows from 0.4.0 on are the `rv64im` build with the reference runtime. With the labelled fast runtime (word-at-a-time `strcpy`/`strcmp`, 470 instead of 553 instructions per run) the same 0.5.x cores run 360.8, 348.9, 310.9, 269.9 and 251.9 clocks per run from 0.5.1 to 0.5.5; 0.5.5 reaches 2.2598 DMIPS/MHz. Fast-runtime results are not compared with reference-runtime results.
+Rows from 0.4.0 to 0.5.5 are the `rv64im` build with the reference runtime. At 0.7.1 the `rv64im` build runs 261.8 clocks per run (258.8 at 0.7.0: its multiplies take a clock more) and `rv64i` 273.9. With the labelled fast runtime (word-at-a-time `strcpy`/`strcmp`, 470 instead of 553 instructions per run) the same 0.5.x cores run 360.8, 348.9, 310.9, 269.9 and 251.9 clocks per run from 0.5.1 to 0.5.5; 0.5.5 reaches 2.2598 DMIPS/MHz. Fast-runtime results are not compared with reference-runtime results.
 
 Up to 0.4.0 every measured result matched the profile's estimate. From 0.5.0 each step was chosen from a measured count of why instructions issued alone.
 
