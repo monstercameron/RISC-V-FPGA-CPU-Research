@@ -704,6 +704,86 @@
      "time": "12:41",
      "text": "Caching research agent: the 2025-2026 cache papers the user listed are mostly verified (ICP, Berti, Prophet, IP-CaT, ICARUS, Bumper, TRRIP, Garibaldi, FURBYS, Victima; \"R-Max\" not found) but target L2/LLC and long memory latency; on our 1-clock memory and Dhrystone they can give about 0-2%. Plan: a realistic memory model and a wider benchmark set first",
      "kind": "research"
+    },
+    {
+     "time": "12:42",
+     "text": "Commit `4ae598a`, architecture 0.12.0 with the site update (gallery works for 0.11.2 and 0.12.0, journal, Open Graph tags, README Pages link) and the AGENTS.md rules; tagged `cpu-v0.12.0`, local only. Council resumed",
+     "kind": "git"
+    },
+    {
+     "time": "12:43 to 12:46",
+     "text": "0.13.0 candidate (scratch `w013`: canonical 0.12.0 + middle hand-off 1, folding, + frontend hand-off 1, 4 taken / 4 calls+returns; `test_cpu.py` gains `fetch_many_calls`, `fetch_deep_recursion`, `fold_shared_register`, `fold_byte_loop`, `fold_calls_constants`, `fold_branch_operands`, 74 programs). Probe: reference **25,091** clocks (11.34 DMIPS/MHz), fast **19,197** (14.82), same as the engineers'. `regress_cand.sh`: default caches 222/222 pass; 2-line caches fail on `fold_byte_loop` (\"store write without its store retiring on the same clock\", `tb_core.sv` line 102). Middle reports the same failure on committed 0.12.0, so released versions have the bug and the new test exposes it; blocking 0.13.0; assigned to the memory engineer",
+     "kind": "output"
+    },
+    {
+     "time": "12:44",
+     "text": "First periodic Codex review (`build/cpu/ooo-debug/council/codex/review-20261121-1239.md`, 319 s). Bugs: (1) the bus-candidate scan stops at `rb_viol` and `rb_fencei` but not at `rb_vpbad`, while retirement stops at `rb_vpbad`, so a store younger than a value-mispredicted load can be written and then discarded (assigned to memory, a likely cause of the `fold_byte_loop` failure); (2) a correct load can be marked as violating when an older store to its byte resolves after a younger store forwarded the right byte, setting a sticky untagged wait bit (memory, performance); (3) the middle engineer's probe counts 16 retirement lanes and a fixed IQ threshold, wrong for wider builds (middle). Suggestions: load lanes 4-5 and store-address 3 with the four-store path (the reference mix needs about 4.15 loads and 2.67 stores per clock at the goal; backend + memory); compare fetch/rename and retire widths separately (middle + frontend); a fourth branch-capable port (backend). All accepted for measurement",
+     "kind": "review"
+    },
+    {
+     "time": "12:48 to 12:53",
+     "text": "Memory hand-off 6 (fix): the store-write scan and retirement read one stop wire (`rb_ends = rb_fencei | rb_vpbad`); a load whose bytes came from a younger resolved store is no longer flushed by an older store's address. On the 0.13.0 candidate: 222/222 at both cache sizes, clocks unchanged (25,091 / 19,197). Root cause dates from 0.11.1 (value prediction added `rb_vpbad` to retirement only). New tests `vp_store_scan_12`, `vp_store_scan_16` (fail before the fix with 2-line caches), `mdp_forward_from_younger`",
+     "kind": "output"
+    },
+    {
+     "time": "12:55",
+     "text": "User stopped the first 0.13.0 full check and asked for 5-minute status updates; added to AGENTS.md. Full check restarted at 12:56",
+     "kind": "process"
+    },
+    {
+     "time": "12:51 to 13:00",
+     "text": "Council measurements (board): frontend, wider fetch/rename (24) does not pay while the ROB fills; loop replay and a trace cache would gain about nothing; I-cache prefetch -0.05% / -0.2% (perfect I-cache bound -1.3% / -2.0%), dropped. Middle, on fold + fetch 4/4: ROB 512 alone no gain; two instructions per ROB entry 23,609 / 17,717; ROB 512 + retire 24 22,608 / 16,731; ROB 512 + retire 32 21,629 / 15,743. Backend, on memory's stack (fold + fetch 4/4 + 4 stores + store-first): 4 load ports 19,640 / 16,234; 5 load + 3 store-address 18,572 / 15,333; a fourth branch port about 5 clocks (not pursued); cascade, OFF_LAT 0 and divide 2 clocks under 0.1%",
+     "kind": "output"
+    },
+    {
+     "time": "12:55 to 13:03",
+     "text": "0.13.0 candidate full check (`full_check.sh`): all three cores 222/222, 2-line caches and `check_bitmanip.py` pass; with the three new memory tests the out-of-order core passes 231/231 at both cache sizes (13:06, 13:10)",
+     "kind": "output"
+    },
+    {
+     "time": "13:04",
+     "text": "User direction: a research agent on latency hiding (report back to the coordinator). Summary in `build/cpu/ooo-debug/council/RESEARCH.md`: at idealized latencies, retire-block fixes are worth about 1-3%; the important honesty step is to model realistic latencies (mispredict 10-12 clocks with ~10 stages, 4-clock load-to-use, L2 10-15 clocks), which would lower the present figures; memory renaming, speculative wakeup with replay and better value prediction would recover part of it",
+     "kind": "research"
+    },
+    {
+     "time": "13:10 to 13:13",
+     "text": "Memory hand-off 4 added to 0.13.0: store-address ports before load ports in a clock, and up to four stores per write request (`EXTRA_WRITES` 2, ports `mem_xaddr`/`mem_xwdata`/`mem_xwstrb`/`mem_xerror`; SoC and `tb_core.sv` patched; tests for faults on stores 2, 3 and 4, same-beat stores, a store patching code ahead, four beats; 83 programs). Probe: reference **20,801** clocks (13.68 DMIPS/MHz), fast **16,235** (17.53), the memory engineer's figures. Recorded as 0.13.0 (MINOR: new parameter and ports); full check started 13:13",
+     "kind": "output"
+    },
+    {
+     "time": "13:13 to 13:21",
+     "text": "Combined state (0.12.0 + memory fix + frontend fetch 4/4 + middle folding + memory four-store writes): `full_check.sh` all three cores 249/249 (83 programs), 2-line caches and `check_bitmanip.py` pass",
+     "kind": "output"
+    },
+    {
+     "time": "13:19 to 13:24",
+     "text": "User direction: no bundling; each change its own semver step, so the history shows the evolution (added to AGENTS.md); keep this log going. The combined change is split into 0.12.1 (fix), 0.12.2 (fetch 4/4), 0.12.3 (folding) and 0.13.0 (four-store writes; new ports, MINOR). Each step was rebuilt from the 0.12.0 sources by applying the hand-offs in that order (scratch `v1`-`v4`; step 4 is byte-identical to the combined state) and checked with its own test set and the 0.12.0 testbench (`build/cpu/ooo-debug/split/check.sh`): 0.12.1 213/213 at both cache sizes, probe 28,749 / 22,269; 0.12.2 219/219, 27,735 / 20,661; 0.12.3 231/231, 25,091 / 19,197; 0.13.0 as the combined state, 20,801 / 16,235",
+     "kind": "output"
+    },
+    {
+     "time": "about 13:27",
+     "text": "Backend hand-off 2 (4 load + 3 store-address ports; agreed with memory): on 0.13.0, 20,801 / 16,235 to 18,575 / 15,335 (-10.7% / -5.5%); 4/2 19,640 / 16,234; 3/3 20,752 / 15,314; 5/3 18,572 / 15,333; 6/4 18,550 / 15,310; regression 273/273 at both cache sizes (its test set); the divide no longer matters on that stack (divide 2 clocks: 18,562 / 15,315; a variable-latency divider: 18,570 / 15,325; not handed off). Precedent: Zen 5 (4 loads per clock), Lion Cove (3 store-address ports)",
+     "kind": "output"
+    },
+    {
+     "time": "about 13:27",
+     "text": "Frontend stack (probe): 0.13.0 + middle ROB 512 / retire 32 + 5 load / 3 store-address ports + fetch/rename 24: reference **15,797** clocks (18.0 DMIPS/MHz in the probe), fast **11,002** (25.9); the same stack with fetch 16: 18,056 / 14,650; fetch 24 without the ports: 20,772 / 14,728. The three pieces pay only together. Probe numbers on an idealized 5-stage model (1-clock loads, ~3-clock mispredict recovery); not logged runs",
+     "kind": "output"
+    },
+    {
+     "time": "13:32",
+     "text": "Commits `f879961` (0.12.1), `074cc24` (0.12.2), `c866d19` (0.12.3), `c60e9fa` (0.13.0), tagged `cpu-v0.12.1` to `cpu-v0.13.0`, local only. Mistake: the script that wrote each step's `sim/cpu/test_cpu.py` rebuilt it from the previous commit instead of from 0.12.0, so the files committed at 0.12.2, 0.12.3 and 0.13.0 contain repeated copies of earlier test blocks (the same tests run again; 100 test programs at 0.13.0 instead of 83). Results are unaffected (each repeated test is identical); corrected by a test-only commit without a version bump (83 programs, 249/249 at both cache sizes at 13:35); released tags are not moved",
+     "kind": "git"
+    },
+    {
+     "time": "13:36 to 13:47",
+     "text": "Logged runs for 0.13.0 on `4d74a0b` (`run_dhrystone.ps1 -Isa rv64im_zba_zbb_zbs_zifencei -Core ooo -Record`, then `-Runtime fast -Record`; clang 23.1.5 `-O2`), council paused: see the run index (reference 13.6809 DMIPS/MHz, 41.6 clocks per run)",
+     "kind": "output"
+    },
+    {
+     "time": "about 13:40",
+     "text": "Frontend engineer final: hand-off 2 (fetch/rename width separate from retire width, 64-entry fetch queue) applied after middle's wider retirement and backend's ports: with fetch 32 the stack gives reference **15,704** / fast **10,371** clocks (probe; 18.1 / 27.4 DMIPS/MHz), fetch 24 15,724 / 11,002, fetch 16 about 18,060 / 14,650; regression of that stack 249/249 at both cache sizes (its own 32-slot tb_core copy). Taken transfers 8 add under 0.3%. Hand-off 3 (64-entry return stack): no Dhrystone change, 231/231; for a later release",
+     "kind": "output"
     }
    ],
    "commits": []
@@ -2128,6 +2208,26 @@
    "compiler": "clang version 23.1.5 -O2 rv64imb fast runtime out-of-order core",
    "clocks": 44.5,
    "dmips_mhz": 12.779,
+   "fast": true
+  },
+  {
+   "time": "2026-11-21 13:42:39 -0500",
+   "commit": "4d74a0b",
+   "uncommitted": "yes",
+   "version": "0.13.0",
+   "compiler": "clang version 23.1.5 -O2 rv64imb out-of-order core",
+   "clocks": 41.6,
+   "dmips_mhz": 13.6809,
+   "fast": false
+  },
+  {
+   "time": "2026-11-21 13:47:30 -0500",
+   "commit": "4d74a0b",
+   "uncommitted": "yes",
+   "version": "0.13.0",
+   "compiler": "clang version 23.1.5 -O2 rv64imb fast runtime out-of-order core",
+   "clocks": 32.5,
+   "dmips_mhz": 17.5285,
    "fast": true
   }
  ]

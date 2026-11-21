@@ -355,6 +355,20 @@ WORKS = [
      "256 in the reorder buffer, 288 physical registers, 128 waiting. Behind it the same eight execution units, unchanged.",
      dict(fetch_w=16, decode_w=16, retire=16, issue=16, rob=256, prf=288, iq=128,
           marks=["sixteen lanes"])),
+    ("0.12.1", "La Réparation",
+     "A small mending: the scan that sends stores to memory now stops exactly where retirement stops, "
+     "so a store behind a wrongly guessed value can no longer slip out unretired. Found by a reviewer, mended by the memory engineer.",
+     dict(marks=["one rule for stores and retirement"])),
+    ("0.12.2", "Les Quatre Tournants",
+     "The council's first gain: fetch follows four taken turns and holds four calls and returns in one clock.",
+     dict(taken=4, marks=["four taken turns"])),
+    ("0.12.3", "Le Pliage",
+     "The simplest instructions (moves, constants, small additions, direct jumps) are folded at rename into a register and an offset; "
+     "a third of the program never reaches an execution unit.",
+     dict(marks=["folded at rename"])),
+    ("0.13.0", "Les Quatre Lettres",
+     "Up to four stores leave together in one write, and store addresses are worked out before the loads of the same clock.",
+     dict(marks=["four stores a write"])),
 ]
 
 ERAS = [
@@ -363,7 +377,7 @@ ERAS = [
     ("III", "Salle III", "La Chaîne", "The same contract, drawn again as a pipeline.", "0.8.0", "0.8.1"),
     ("IV", "Salle IV", "Le Désordre", "Out of order: instructions run when ready, retire in order.", "0.9.0", "0.9.4"),
     ("V", "Salle V", "L'Octuple", "Eight wide, and learning to guess.", "0.10.0", "0.11.2"),
-    ("VI", "Salle VI", "Le Grand Format", "Sixteen wide: a window twice the size before the same eight execution units.", "0.12.0", "0.12.0"),
+    ("VI", "Salle VI", "Le Grand Format", "Sixteen wide, and then a council of engineers.", "0.12.0", "0.13.0"),
 ]
 
 

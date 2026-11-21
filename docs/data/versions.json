@@ -1837,7 +1837,7 @@
   "date": "2026-11-21",
   "date_fr": "21 novembre 2026",
   "kind": "ooo",
-  "status": "in progress",
+  "status": "tagged",
   "tag": "cpu-v0.12.0",
   "register": "Out-of-order core 16 instructions per clock through fetch, rename and retirement (RW default 16), 256-entry ROB, 288 physical registers, 128-entry issue queue; testbenches follow RW. Timing probe: reference 38,103 to 28,749 clocks, fast runtime 31,158 to 22,269",
   "breaking": "Yes: the out-of-order core's RW default (trace width) changes from 8 to 16",
@@ -1933,5 +1933,435 @@
   "dmips_fast": 12.779,
   "ref_run": "2026-11-21 12:14:56 -0500",
   "art": "art/v0.12.0.svg"
+ },
+ {
+  "no": 30,
+  "version": "0.12.1",
+  "title": "La Réparation",
+  "caption": "A small mending: the scan that sends stores to memory now stops exactly where retirement stops, so a store behind a wrongly guessed value can no longer slip out unretired. Found by a reviewer, mended by the memory engineer.",
+  "date": "2026-11-21",
+  "date_fr": "21 novembre 2026",
+  "kind": "ooo",
+  "status": "tagged",
+  "tag": "cpu-v0.12.1",
+  "register": "Fix (memory engineer, after a Codex review): the store-write scan and retirement share one stop rule (a store behind a wrongly value-predicted load could be written without retiring, since 0.11.1); no false memory-order violation for a load fed by a younger resolved store. Tests vp_store_scan_12/16, mdp_forward_from_younger. Probe unchanged: 28,749 / 22,269",
+  "breaking": "No (bug fix)",
+  "units": [
+   [
+    "Organisation",
+    "Out of order (rtl/cpu/rv64_ooo.sv)"
+   ],
+   [
+    "Fetch / rename / retire",
+    "16 / 16 / 16 per clock"
+   ],
+   [
+    "Reorder buffer",
+    "256 entries"
+   ],
+   [
+    "Physical registers",
+    "288"
+   ],
+   [
+    "Issue queue",
+    "128 entries"
+   ],
+   [
+    "ALUs",
+    "8, of which 3 full (branch, multiply, divide)"
+   ],
+   [
+    "Memory ports",
+    "3 load, 2 store-address"
+   ],
+   [
+    "Branch target buffer",
+    "1,024 entries, with return stack"
+   ],
+   [
+    "Caches",
+    "128 KiB instruction, 128 KiB data, two-way data cache"
+   ],
+   [
+    "Taken transfers per fetch",
+    "2"
+   ],
+   [
+    "Loop predictor",
+    "1,024 entries"
+   ],
+   [
+    "Branch bias",
+    "a branch that has gone one way at least 4 times with no exit is predicted that way"
+   ],
+   [
+    "Instruction fusion",
+    "a simple integer producer and the next instruction reading it"
+   ],
+   [
+    "Store writes",
+    "paired on the bus"
+   ],
+   [
+    "Value prediction",
+    "loads, multiplies, divides"
+   ],
+   [
+    "Fetch predecode",
+    "direct jumps, calls, returns, backward branches"
+   ]
+  ],
+  "marks": [
+   "a one-beat fetch buffer",
+   "requests issue from EXECUTE",
+   "writes acknowledged in the same clock",
+   "second slot across beats",
+   "second data-cache port",
+   "jump in the second slot",
+   "slot-to-slot forwarding",
+   "branch folding",
+   "registered multiplier",
+   "fetch queue and X stage",
+   "store-to-load forwarding",
+   "stores finish at retirement",
+   "cross-beat fetch",
+   "instruction fusion",
+   "1,024-entry predictors",
+   "fixed-direction bias",
+   "sixteen lanes",
+   "one rule for stores and retirement"
+  ],
+  "width": 16,
+  "alus": 8,
+  "dmips_ref": null,
+  "clocks_ref": null,
+  "dmips_fast": null,
+  "ref_run": null,
+  "art": "art/v0.12.1.svg"
+ },
+ {
+  "no": 31,
+  "version": "0.12.2",
+  "title": "Les Quatre Tournants",
+  "caption": "The council's first gain: fetch follows four taken turns and holds four calls and returns in one clock.",
+  "date": "2026-11-21",
+  "date_fr": "21 novembre 2026",
+  "kind": "ooo",
+  "status": "tagged",
+  "tag": "cpu-v0.12.2",
+  "register": "Fetch: up to 4 predicted-taken transfers and 4 calls/returns per group (frontend engineer). Tests fetch_many_calls, fetch_deep_recursion. Probe: reference 28,749 to 27,735, fast 22,269 to 20,661",
+  "breaking": "No",
+  "units": [
+   [
+    "Organisation",
+    "Out of order (rtl/cpu/rv64_ooo.sv)"
+   ],
+   [
+    "Fetch / rename / retire",
+    "16 / 16 / 16 per clock"
+   ],
+   [
+    "Reorder buffer",
+    "256 entries"
+   ],
+   [
+    "Physical registers",
+    "288"
+   ],
+   [
+    "Issue queue",
+    "128 entries"
+   ],
+   [
+    "ALUs",
+    "8, of which 3 full (branch, multiply, divide)"
+   ],
+   [
+    "Memory ports",
+    "3 load, 2 store-address"
+   ],
+   [
+    "Branch target buffer",
+    "1,024 entries, with return stack"
+   ],
+   [
+    "Caches",
+    "128 KiB instruction, 128 KiB data, two-way data cache"
+   ],
+   [
+    "Taken transfers per fetch",
+    "4"
+   ],
+   [
+    "Loop predictor",
+    "1,024 entries"
+   ],
+   [
+    "Branch bias",
+    "a branch that has gone one way at least 4 times with no exit is predicted that way"
+   ],
+   [
+    "Instruction fusion",
+    "a simple integer producer and the next instruction reading it"
+   ],
+   [
+    "Store writes",
+    "paired on the bus"
+   ],
+   [
+    "Value prediction",
+    "loads, multiplies, divides"
+   ],
+   [
+    "Fetch predecode",
+    "direct jumps, calls, returns, backward branches"
+   ]
+  ],
+  "marks": [
+   "a one-beat fetch buffer",
+   "requests issue from EXECUTE",
+   "writes acknowledged in the same clock",
+   "second slot across beats",
+   "second data-cache port",
+   "jump in the second slot",
+   "slot-to-slot forwarding",
+   "branch folding",
+   "registered multiplier",
+   "fetch queue and X stage",
+   "store-to-load forwarding",
+   "stores finish at retirement",
+   "cross-beat fetch",
+   "instruction fusion",
+   "1,024-entry predictors",
+   "fixed-direction bias",
+   "sixteen lanes",
+   "one rule for stores and retirement",
+   "four taken turns"
+  ],
+  "width": 16,
+  "alus": 8,
+  "dmips_ref": null,
+  "clocks_ref": null,
+  "dmips_fast": null,
+  "ref_run": null,
+  "art": "art/v0.12.2.svg"
+ },
+ {
+  "no": 32,
+  "version": "0.12.3",
+  "title": "Le Pliage",
+  "caption": "The simplest instructions (moves, constants, small additions, direct jumps) are folded at rename into a register and an offset; a third of the program never reaches an execution unit.",
+  "date": "2026-11-21",
+  "date_fr": "21 novembre 2026",
+  "kind": "ooo",
+  "status": "tagged",
+  "tag": "cpu-v0.12.3",
+  "register": "Rename-time folding (middle engineer): register + offset map entries; addi/mv/li/lui/auipc/jal/constant-base jalr finish at rename; reference-counted shared registers. Tests fold_shared_register, fold_byte_loop, fold_calls_constants, fold_branch_operands. Probe: reference 27,735 to 25,091, fast 20,661 to 19,197",
+  "breaking": "No",
+  "units": [
+   [
+    "Organisation",
+    "Out of order (rtl/cpu/rv64_ooo.sv)"
+   ],
+   [
+    "Fetch / rename / retire",
+    "16 / 16 / 16 per clock"
+   ],
+   [
+    "Reorder buffer",
+    "256 entries"
+   ],
+   [
+    "Physical registers",
+    "288"
+   ],
+   [
+    "Issue queue",
+    "128 entries"
+   ],
+   [
+    "ALUs",
+    "8, of which 3 full (branch, multiply, divide)"
+   ],
+   [
+    "Memory ports",
+    "3 load, 2 store-address"
+   ],
+   [
+    "Branch target buffer",
+    "1,024 entries, with return stack"
+   ],
+   [
+    "Caches",
+    "128 KiB instruction, 128 KiB data, two-way data cache"
+   ],
+   [
+    "Taken transfers per fetch",
+    "4"
+   ],
+   [
+    "Loop predictor",
+    "1,024 entries"
+   ],
+   [
+    "Branch bias",
+    "a branch that has gone one way at least 4 times with no exit is predicted that way"
+   ],
+   [
+    "Instruction fusion",
+    "a simple integer producer and the next instruction reading it"
+   ],
+   [
+    "Store writes",
+    "paired on the bus"
+   ],
+   [
+    "Value prediction",
+    "loads, multiplies, divides"
+   ],
+   [
+    "Fetch predecode",
+    "direct jumps, calls, returns, backward branches"
+   ]
+  ],
+  "marks": [
+   "a one-beat fetch buffer",
+   "requests issue from EXECUTE",
+   "writes acknowledged in the same clock",
+   "second slot across beats",
+   "second data-cache port",
+   "jump in the second slot",
+   "slot-to-slot forwarding",
+   "branch folding",
+   "registered multiplier",
+   "fetch queue and X stage",
+   "store-to-load forwarding",
+   "stores finish at retirement",
+   "cross-beat fetch",
+   "instruction fusion",
+   "1,024-entry predictors",
+   "fixed-direction bias",
+   "sixteen lanes",
+   "one rule for stores and retirement",
+   "four taken turns",
+   "folded at rename"
+  ],
+  "width": 16,
+  "alus": 8,
+  "dmips_ref": null,
+  "clocks_ref": null,
+  "dmips_fast": null,
+  "ref_run": null,
+  "art": "art/v0.12.3.svg"
+ },
+ {
+  "no": 33,
+  "version": "0.13.0",
+  "title": "Les Quatre Lettres",
+  "caption": "Up to four stores leave together in one write, and store addresses are worked out before the loads of the same clock.",
+  "date": "2026-11-21",
+  "date_fr": "21 novembre 2026",
+  "kind": "ooo",
+  "status": "tagged",
+  "tag": "cpu-v0.13.0",
+  "register": "Up to four stores per write request and store addresses before loads (memory engineer); new EXTRA_WRITES parameter and mem_x* ports, used by the SoC and tb_core in out-of-order builds. Tests for faults on stores 2-4, same-beat stores, code patching, four beats. Probe: reference 25,091 to 20,801, fast 19,197 to 16,235",
+  "breaking": "Yes: new EXTRA_WRITES parameter and mem_xaddr/mem_xwdata/mem_xwstrb/mem_xerror ports on the out-of-order core",
+  "units": [
+   [
+    "Organisation",
+    "Out of order (rtl/cpu/rv64_ooo.sv)"
+   ],
+   [
+    "Fetch / rename / retire",
+    "16 / 16 / 16 per clock"
+   ],
+   [
+    "Reorder buffer",
+    "256 entries"
+   ],
+   [
+    "Physical registers",
+    "288"
+   ],
+   [
+    "Issue queue",
+    "128 entries"
+   ],
+   [
+    "ALUs",
+    "8, of which 3 full (branch, multiply, divide)"
+   ],
+   [
+    "Memory ports",
+    "3 load, 2 store-address"
+   ],
+   [
+    "Branch target buffer",
+    "1,024 entries, with return stack"
+   ],
+   [
+    "Caches",
+    "128 KiB instruction, 128 KiB data, two-way data cache"
+   ],
+   [
+    "Taken transfers per fetch",
+    "4"
+   ],
+   [
+    "Loop predictor",
+    "1,024 entries"
+   ],
+   [
+    "Branch bias",
+    "a branch that has gone one way at least 4 times with no exit is predicted that way"
+   ],
+   [
+    "Instruction fusion",
+    "a simple integer producer and the next instruction reading it"
+   ],
+   [
+    "Store writes",
+    "paired on the bus"
+   ],
+   [
+    "Value prediction",
+    "loads, multiplies, divides"
+   ],
+   [
+    "Fetch predecode",
+    "direct jumps, calls, returns, backward branches"
+   ]
+  ],
+  "marks": [
+   "a one-beat fetch buffer",
+   "requests issue from EXECUTE",
+   "writes acknowledged in the same clock",
+   "second slot across beats",
+   "second data-cache port",
+   "jump in the second slot",
+   "slot-to-slot forwarding",
+   "branch folding",
+   "registered multiplier",
+   "fetch queue and X stage",
+   "store-to-load forwarding",
+   "stores finish at retirement",
+   "cross-beat fetch",
+   "instruction fusion",
+   "1,024-entry predictors",
+   "fixed-direction bias",
+   "sixteen lanes",
+   "one rule for stores and retirement",
+   "four taken turns",
+   "folded at rename",
+   "four stores a write"
+  ],
+  "width": 16,
+  "alus": 8,
+  "dmips_ref": 13.6809,
+  "clocks_ref": 41.6,
+  "dmips_fast": 17.5285,
+  "ref_run": "2026-11-21 13:42:39 -0500",
+  "art": "art/v0.13.0.svg"
  }
 ]
