@@ -13,7 +13,7 @@ instruction rate of the CPU under test and is comparable across ISAs only as a s
 Compression depends heavily on memory latency and cache size (it searches a large dictionary);
 decompression depends more on branch prediction and short dependency chains. Use `-mmt1` (one thread)
 and the **Rating** column (not Usage or R/U), state the dictionary (`-md22` = 4 MB, `-md25` = 32 MB),
-the 7-Zip version, and divide by the measured clock in MHz for a per-MHz figure (corrected 18:05: earlier text said per GHz, a factor-of-1,000 unit error found by the Codex review).
+the 7-Zip version, and divide by the measured clock in MHz for a per-MHz figure (corrected 2026-11-21 17:57: earlier text said per GHz, a factor-of-1,000 unit error found by the Codex review).
 
 Source code used here: 7-Zip 26.06, `https://github.com/ip7z/7zip`, commit
 `d3296e39e1f1f92c7b41c0c3848e65640428d42d` (copy in the ignored `build/third-party/7zip/`).
