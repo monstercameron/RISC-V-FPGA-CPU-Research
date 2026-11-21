@@ -117,7 +117,7 @@ def add_index_row(root, record, log_name):
         text += '\n\n---\n\n' + INDEX_HEADING + '\n' + INDEX_INTRO
     dirty = record['dirty'].split(' (')[0]
     text += (f'\n| {record["time"]} | `{record["commit"]}` | {dirty} | '
-             f'{record.get("architecture_version", "unrecorded")} | {record["compiler"]} `-{record["optimization"]}` `{record["isa"].split("_")[0]}`'
+             f'{record.get("architecture_version", "unrecorded")} | {record["compiler"]} `-{record["optimization"]}` `{record["isa"].split("_")[0] + ("b" if "_zbb" in record["isa"] else "")}`'
              f'{"" if record.get("runtime", "reference") == "reference" else " fast runtime"} | '
              f'{record["cycles_per_run"]:,.1f} | {record["dmips_per_mhz"]:.4f} | {record["rubric_total"]:.1f} | '
              f'[{log_name}]({LOG_DIR}/{log_name}) |\n')

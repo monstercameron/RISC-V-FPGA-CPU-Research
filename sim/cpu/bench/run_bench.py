@@ -222,7 +222,8 @@ def main():
     (out / 'profile.md').write_text(bench_profile.markdown(profile) + '\n', encoding='utf-8')
     log_path = runlog.write(ROOT, report, card, profile, bench_profile.markdown(profile)) if args.devlog else None
     if args.record:
-        suffix = ('' if build['isa'] == 'rv64i_zifencei' else '-' + build['isa'].split('_')[0]) + \
+        label = build['isa'].split('_')[0] + ('b' if '_zbb' in build['isa'] else '')
+        suffix = ('' if build['isa'] == 'rv64i_zifencei' else '-' + label) + \
             ('' if build.get('runtime', 'reference') == 'reference' else '-fastrt')
         (ROOT / f'cpu/{args.benchmark}{suffix}-results.json').write_bytes((json.dumps(report, indent=2) + '\n').encode())
     print(f'PASS: Dhrystone, {runs} runs; all {len(checks)} result checks match.')

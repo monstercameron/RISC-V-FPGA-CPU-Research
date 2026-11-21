@@ -154,6 +154,13 @@ Times are US Eastern (UTC-05:00). Each timestamp names its source:
 | about 23:45 | Commit `241a9af`, second-slot stores and forwarding (0.5.4); tagged `cpu-v0.5.4`. Runs: `rv64im` reference 335.8 clocks per run, 1.6951 DMIPS/MHz; fast runtime 269.9, 2.1091 (first build past 2 DMIPS/MHz); `rv64i` reference 358.8, 1.5861; [devlog-241a9af.md](devlog/devlog-241a9af.md) | record |
 | about 23:47 | Blockers on 0.5.4: fast runtime issues 413.8 of 470.1 instructions per run in pairs (2-wide floor about 235 clocks); remaining: JALR first 18.0, taken branch first 15.0, store second 10.1 clocks per run. Reference runtime: taken branch first 55.0, load-to-branch dependency 23.0, JALR first 20.0 | output |
 | after 23:47 | 0.5.5 branch folding written. Regression 135/135 passed, but the visualizer lesson build failed: when a fetch completed, the next instruction was captured from `pc2`, which since 0.5.5 is the folding target computed from the stale previous instruction. In the lesson it captured `j .` from 0x10 instead of the instruction at 0x30. Fixed (use pc+4 in FETCH). New test `fetch_after_stale_jump` reproduces it: with the bug put back it fails (x5 = 7 at 0x30 instead of x7 = 2); with the fix it passes. Regression 138/138 with default and 2-line caches; all lessons verify; C demo 11,568 clocks. Lesson rebuilds are now part of every step | output |
+| about 22:57 | Commit `5f1f6b1`, branch folding (0.5.5); tagged `cpu-v0.5.5`. Runs: `rv64im` reference 287.8 clocks per run, 1.9777 DMIPS/MHz (7.60x over 0.1.0); fast runtime 251.9, 2.2598; `rv64i` reference 308.9, 1.8428; [devlog-5f1f6b1.md](devlog/devlog-5f1f6b1.md) | record |
+| about 22:59 | Second issue model, with folding, forwarding depth and port limits, calibrated against 0.5.5 (287.0 modelled against 287.8 measured, reference runtime). 3-wide with one level of forwarding: 213 clocks per run reference (2.67 DMIPS/MHz), 182 fast (3.13). 4-wide with two taken branches and three levels of forwarding: 144 reference (3.95), 123 fast (4.63). 8-wide with forwarding chains of seven: 73 and 63 (7.8 and 9.0) | output |
+| about 22:59 | Caution recorded: forwarding chains raise DMIPS/MHz by doing more work per clock, which lengthens the clock; at the extreme a whole program fits in one very long clock. DMIPS/MHz gains from deeper logic are not real performance unless synthesis shows the clock survives. Decided to measure logic depth before going wider | output |
+| 23:02:08 | Yosys 0.33 installed in Ubuntu; `sim/cpu/synth_depth.py` written to map the core to 6-input LUTs and report the longest path in LUT levels | apt |
+| after 23:02 | First depth synthesis of 0.5.5 stopped after a long run without finishing: the 0.4.0 multiply logic built three 128x128-bit products. Replaced by one signed 65x65 product with a sign or zero bit per operand (same results; M tests pass). Depth synthesis restarted in the background | output |
+| after 23:02 | 0.6.0 B extension written: one `bitmanip` function used by both slots; encodings taken from LLVM's assembler; reference model extended. New tests: `b_extension` (all 40 instructions over extreme operands) and `random_b_606`/`random_b_707`. Regression 147/147, 106 instruction names, with default and 2-line caches; all seven lessons verify | output |
+| after 23:02 | Independent B check (`sim/cpu/check_bitmanip.py`): the same C built without B and with Zba/Zbb/Zbs gives identical results on the RTL in all 12 groups; the B build uses 28 distinct B instructions; both traces match the reference. Benchmark builds gain `rv64imb` (`rv64im_zba_zbb_zbs_zifencei`), and the fast runtime uses `orc.b` when Zbb is available | output |
 
 ### Optimization loop
 
@@ -180,6 +187,9 @@ Each step changes the core, passes the main regression, is committed and tagged 
 | 0.5.3, `rv64im`, fast runtime | Same core, fast runtime | 310.9 | 0.661 | 1.8309 | | 1.12x |
 | 0.5.4, `rv64im` build | Second-slot stores; ALU forwarding into the second slot | 335.8 | 0.607 | 1.6951 | 6.52x | 1.09x |
 | 0.5.4, `rv64im`, fast runtime | Same core, fast runtime | 269.9 | 0.574 | 2.1091 | | 1.15x |
+| 0.5.5, `rv64im` build | Branch folding: jump or taken branch plus its target instruction in one clock | 287.8 | 0.520 | 1.9777 | 7.60x | 1.17x |
+| 0.5.5, `rv64im`, fast runtime | Same core, fast runtime | 251.9 | 0.536 | 2.2598 | | 1.07x |
+| 0.5.5, `rv64i` build | Same core, `rv64i` build | 308.9 | 0.515 | 1.8428 | 7.08x | |
 
 Every step measured what the previous profile estimated. The loop stopped after 0.4.0 because the core completes about one instruction per clock; see findings 23 to 27.
 
@@ -565,3 +575,6 @@ One row per benchmark run, oldest first. Each run's full record (result, rubric 
 | 2026-11-20 22:48:39 -0500 | `241a9af` | yes | 0.5.4 | clang version 23.1.5 `-O2` `rv64im` | 335.8 | 1.6951 | 37.1 | [devlog-241a9af.md](devlog/devlog-241a9af.md) |
 | 2026-11-20 22:49:50 -0500 | `241a9af` | yes | 0.5.4 | clang version 23.1.5 `-O2` `rv64im` fast runtime | 269.9 | 2.1091 | 37.1 | [devlog-241a9af.md](devlog/devlog-241a9af.md) |
 | 2026-11-20 22:51:16 -0500 | `241a9af` | yes | 0.5.4 | clang version 23.1.5 `-O2` `rv64i` | 358.8 | 1.5861 | 37.1 | [devlog-241a9af.md](devlog/devlog-241a9af.md) |
+| 2026-11-20 22:58:24 -0500 | `5f1f6b1` | yes | 0.5.5 | clang version 23.1.5 `-O2` `rv64im` | 287.8 | 1.9777 | 37.1 | [devlog-5f1f6b1.md](devlog/devlog-5f1f6b1.md) |
+| 2026-11-20 22:59:36 -0500 | `5f1f6b1` | yes | 0.5.5 | clang version 23.1.5 `-O2` `rv64im` fast runtime | 251.9 | 2.2598 | 37.1 | [devlog-5f1f6b1.md](devlog/devlog-5f1f6b1.md) |
+| 2026-11-20 23:01:05 -0500 | `5f1f6b1` | yes | 0.5.5 | clang version 23.1.5 `-O2` `rv64i` | 308.9 | 1.8428 | 37.1 | [devlog-5f1f6b1.md](devlog/devlog-5f1f6b1.md) |

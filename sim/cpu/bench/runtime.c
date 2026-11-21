@@ -56,7 +56,12 @@ typedef __UINTPTR_TYPE__ uptr;
 
 #define ONES64 0x0101010101010101ull
 #define HIGHS64 0x8080808080808080ull
+#ifdef __riscv_zbb
+/* With Zbb, orc.b turns every non-zero byte into 0xff: a zero byte leaves a hole. */
+#define HAS_ZERO64(w) (__builtin_riscv_orc_b_64(w) != ~0ull)
+#else
 #define HAS_ZERO64(w) ((((w) - ONES64) & ~(w) & HIGHS64) != 0)
+#endif
 
 char *strcpy(char *destination, const char *source) {
     char *out = destination;

@@ -50,9 +50,11 @@ Optimizations the Dhrystone profile points to, measured on every run (see [cpu/d
 - [x] **Fetch buffer.** Architecture 0.1.1: 2,188.2 to 1,706.2 clocks per run (1.28x), as estimated. Superseded by the instruction cache in 0.2.0.
 - [x] **Instruction cache, loads and stores from EXECUTE, same-clock writes, data cache.** Architectures 0.2.0 to 0.3.0: down to 600.8 clocks per run, CPI 1.001. See the [optimization history](cpu/dhrystone.md#optimization-history).
 - [ ] **Overlap fetch with execute.** No longer worth doing for Dhrystone: with the instruction cache, fetch is 0.1% of clocks. Revisit with a slow-memory model or code larger than the cache.
-- [ ] **Pipeline or multiple issue.** The core already completes about one instruction per clock on Dhrystone, so a classic pipeline would mainly raise the clock frequency, and fewer clocks need more than one instruction per clock. Do either only after an external model is in the regression and a first synthesis shows the frequency, because these designs are where subtle bugs come from.
+- [x] **Limited dual issue.** Architectures 0.5.0 to 0.5.5: a second instruction per clock, including loads, stores, branches, jumps, forwarding and branch folding; Dhrystone `rv64im` 555.7 to 287.8 clocks per run. See the [optimization history](cpu/dhrystone.md#optimization-history).
+- [ ] **Measure logic depth before going wider.** Dual issue, forwarding and folding lengthen the clock. Record the longest path in LUT levels for each version (`sim/cpu/synth_depth.py`) and report it beside DMIPS/MHz; a gain that costs more in clock than it saves in clocks is not real.
+- [ ] **Three-wide issue.** Modelled at about 2.7 DMIPS/MHz (reference runtime) with one level of forwarding. Only after the depth measurement, and after an external model is in the regression.
 - [ ] **Synthesize the caches.** The cache lookups use the just-computed next PC and data address in the same clock; check their timing on a real part before relying on these clock counts.
-- [ ] **Runtime string routines.** Word-at-a-time `strcpy` and `strcmp` would cut nearly half the instructions, but it changes the runtime, not the core. Keep the byte-at-a-time version as the reference and label any result built with a different runtime.
+- [x] **Runtime string routines.** A labelled `--runtime fast` build moves 8 bytes per step, shifting misaligned words together; 553 to 470 instructions per run. The byte-at-a-time runtime stays the reference.
 
 Then:
 

@@ -9,14 +9,15 @@ param(
     [string]$Distribution = 'Ubuntu-24.04',
     [string]$LLVMDirectory = 'C:\Program Files\LLVM\bin',
     [ValidateSet(32,64,128,256,512,1024)][int]$RamKiB = 64,
-    [ValidateSet('rv64i_zifencei','rv64im_zifencei')][string]$Isa = 'rv64i_zifencei',
+    [ValidateSet('rv64i_zifencei','rv64im_zifencei','rv64im_zba_zbb_zbs_zifencei')][string]$Isa = 'rv64i_zifencei',
     [ValidateSet('reference','fast')][string]$Runtime = 'reference',
     [switch]$Record,
     [switch]$NoDevlog
 )
 $ErrorActionPreference = 'Stop'
 $repoPath = (Resolve-Path (Join-Path $PSScriptRoot '../../..')).Path
-$outDir = if ($Isa -eq 'rv64i_zifencei') { 'build/cpu/bench/dhrystone' } else { 'build/cpu/bench/dhrystone-' + $Isa.Split('_')[0] }
+$label = $Isa.Split('_')[0] + $(if ($Isa -match '_zbb') { 'b' } else { '' })
+$outDir = if ($Isa -eq 'rv64i_zifencei') { 'build/cpu/bench/dhrystone' } else { 'build/cpu/bench/dhrystone-' + $label }
 if ($Runtime -eq 'fast') { $outDir += '-fastrt' }
 & python -B (Join-Path $PSScriptRoot 'build_bench.py') --benchmark dhrystone --ram-kib $RamKiB --isa $Isa --runtime $Runtime --out-dir $outDir `
     --clang (Join-Path $LLVMDirectory 'clang.exe') `

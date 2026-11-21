@@ -1,4 +1,4 @@
-# CPU architecture, version 0.5.5
+# CPU architecture, version 0.6.0
 
 Versioned with [semantic versioning](https://semver.org/); rules and history are in section 9. "Revision 0" in this document is version 0.1.0.
 
@@ -8,7 +8,7 @@ Decision date: October 23, 2026. User priority: **CPU core first**. This design 
 
 Long-term target: little-endian **RVA23U64**, including its mandatory scalar, vector and execution-environment behavior. Full RVA23S64 is a separate later project scope: it adds supervisor, virtual-memory and hypervisor requirements. A CPU with RV64I plus a vector MAC is insufficient to claim either profile. [RVA23 specification](https://github.com/riscv/riscv-profiles/blob/main/src/rva23-profile.adoc).
 
-The implemented foundation is an RV64I instruction execution engine, plus local FENCE.I semantics and, since 0.4.0, the M extension (ISA string `rv64im_zifencei`), with a terminal laboratory execution environment. Its supported operations are tested but not ISA-certified. No A/C/B/F/D/V, CSR instructions, contained privilege traps, interrupts or MMU are implemented; instruction and data caches were added in 0.2.0 and 0.3.0. Unsupported operations trap; hardware capabilities are not falsely advertised through a fabricated `misa` CSR.
+The implemented foundation is an RV64I instruction execution engine, plus local FENCE.I semantics, since 0.4.0 the M extension and since 0.6.0 the B extension (Zba, Zbb, Zbs; ISA string `rv64im_zba_zbb_zbs_zifencei`), with a terminal laboratory execution environment. Its supported operations are tested but not ISA-certified. No A/C/F/D/V, CSR instructions, contained privilege traps, interrupts or MMU are implemented; instruction and data caches were added in 0.2.0 and 0.3.0. Unsupported operations trap; hardware capabilities are not falsely advertised through a fabricated `misa` CSR.
 
 | Choice | Revision 0 decision | Reason |
 |---|---|---|
@@ -21,6 +21,7 @@ The implemented foundation is an RV64I instruction execution engine, plus local 
 | Instruction cache (0.2.0) | Direct-mapped, 8-byte lines, `ICACHE_BEATS` lines, store-coherent | Fetch was more than half of all clocks |
 | Multiply and divide (0.4.0) | Multiply in one clock; divide and remainder by shift-subtract from the quotient's highest bit, one step per clock in a DIVIDE state | Dhrystone's one software divide per run cost about 36 instructions |
 | Dual issue (0.5.0) | Second simple integer instruction from the same 8-byte beat retires in the same clock through a second retirement port | The core had reached one instruction per clock |
+| B extension (0.6.0) | Zba, Zbb and Zbs in both issue slots, from one shared function | Required by RVA23; `orc.b` speeds word-at-a-time string code |
 | Data cache (0.3.0) | Direct-mapped, write-through, no store allocation, 8-byte lines, `DCACHE_BEATS` lines | Loads waited a clock for the synchronous RAM |
 | Instruction alignment | 32 bits until C arrives | Explicitly trap taken misaligned branches/jumps |
 | Data alignment | Naturally aligned accesses; misalignment traps | Keeps first LSU bounded; must change for RVA23's specified main-memory behavior |
@@ -104,7 +105,8 @@ The following covers every mandatory entry named in RVA23U64. Entries group rela
 | Zicntr, Zihpm | Unsupported | C1/C6; counters and access controls |
 | M | Implemented in 0.4.0: single-clock multiply, early-terminating iterative divide; local tests pass | C2 external-model comparison |
 | A, Ziccrse, Ziccamoa, Za64rs, Zawrs | Unsupported | C3; atomicity/reservation/fabric together |
-| C, B, Zcb, Zcmop | Unsupported | C2 |
+| B | Implemented in 0.6.0 (Zba, Zbb, Zbs); local tests and a compiler cross-check pass | C2 external-model comparison |
+| C, Zcb, Zcmop | Unsupported | C2 |
 | Zicond, Zimop, Zihintpause, Zihintntl | Not qualified as extensions | C2 |
 | F, D, Zfhmin, Zfa, Zkt | Unsupported | C4 |
 | V, Zvfhmin, Zvbb, Zvkt | Unsupported | C5 |
@@ -208,3 +210,4 @@ Once Zicsr arrives in C1, consider reporting the version in the implementation-d
 | 0.5.3 | 2026-11-20 | tag `cpu-v0.5.3` | Pairing widened again: a not-taken branch may be first; JAL or JALR with an aligned target may be second; a data-cache-hit load may pair after a store to a different beat. | No | `f08610530ed5` / `94a9e078dbd9` |
 | 0.5.4 | 2026-11-20 | tag `cpu-v0.5.4` | Second slot may be an aligned store when the first slot does not use the bus (it waits in MEMORY if the bus stalls, and traps precisely on a bus error); integer results of the first slot are forwarded to the second slot's operands in the same clock; same-destination pairs allowed. | No | `07851e6f58ea` / `94a9e078dbd9` |
 | 0.5.5 | 2026-11-20 | tag `cpu-v0.5.5` | Branch folding: when the first slot is a jump or a taken branch, the second slot executes the instruction at its target, read from the instruction cache in the same clock; JAL/JALR links are forwarded. | No | `295688213e26` / `94a9e078dbd9` |
+| 0.6.0 | 2026-11-20 | tag `cpu-v0.6.0` | B extension (Zba, Zbb, Zbs) in both issue slots; ISA string `rv64im_zba_zbb_zbs_zifencei`. The three 128-bit multipliers are replaced by one signed 65x65 product (same results). | No (instructions added) | `ea4e77e4cad2` / `94a9e078dbd9` |

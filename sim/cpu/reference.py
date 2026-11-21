@@ -11,7 +11,70 @@ def signed(value, bits=64):
     return value - (1 << bits) if value >> (bits - 1) else value
 
 
-def execute(image, fault_kind=0, fault_addr=MASK, max_steps=20000):
+def bitmanip_op(ins, a, b):
+    """Zba, Zbb and Zbs per the RISC-V bit-manipulation specification.
+
+    Returns (name, value) for a B instruction, or None for anything else.
+    Encodings were checked against LLVM's assembler.
+    """
+    op, f3, f7 = ins & 127, (ins >> 12) & 7, ins >> 25
+    f6, f12, rs2 = ins >> 26, ins >> 20, (ins >> 20) & 31
+    shamt6, shamt5 = (ins >> 20) & 63, (ins >> 20) & 31
+    a32 = a & 0xffffffff
+    rot = lambda x, n, w: ((x << n) | (x >> (w - n))) & ((1 << w) - 1) if n else x
+    if op == 0x33:
+        if f7 == 0x10 and f3 in (2, 4, 6):
+            n = f3 // 2
+            return f'sh{n}add', (a << n) + b
+        if f7 == 0x20 and f3 == 7: return 'andn', a & ~b
+        if f7 == 0x20 and f3 == 6: return 'orn', a | (~b & MASK)
+        if f7 == 0x20 and f3 == 4: return 'xnor', ~(a ^ b) & MASK
+        if f7 == 0x05:
+            sa, sb = signed(a), signed(b)
+            return {4: ('min', min(sa, sb)), 5: ('minu', min(a, b)),
+                    6: ('max', max(sa, sb)), 7: ('maxu', max(a, b))}.get(f3)
+        if f7 == 0x30 and f3 == 1: return 'rol', rot(a, b & 63, 64)
+        if f7 == 0x30 and f3 == 5: return 'ror', rot(a, (64 - (b & 63)) % 64, 64)
+        if f7 == 0x24 and f3 == 1: return 'bclr', a & ~(1 << (b & 63))
+        if f7 == 0x24 and f3 == 5: return 'bext', (a >> (b & 63)) & 1
+        if f7 == 0x34 and f3 == 1: return 'binv', a ^ (1 << (b & 63))
+        if f7 == 0x14 and f3 == 1: return 'bset', a | (1 << (b & 63))
+        return None
+    if op == 0x3b:
+        if f7 == 0x04 and f3 == 0: return 'add.uw', a32 + b
+        if f7 == 0x04 and f3 == 4 and rs2 == 0: return 'zext.h', a & 0xffff
+        if f7 == 0x10 and f3 in (2, 4, 6):
+            n = f3 // 2
+            return f'sh{n}add.uw', (a32 << n) + b
+        if f7 == 0x30 and f3 == 1: return 'rolw', signed(rot(a32, b & 31, 32), 32)
+        if f7 == 0x30 and f3 == 5: return 'rorw', signed(rot(a32, (32 - (b & 31)) % 32, 32), 32)
+        return None
+    if op == 0x13:
+        if f3 == 1 and f12 == 0x600: return 'clz', 64 - a.bit_length()
+        if f3 == 1 and f12 == 0x601: return 'ctz', (a & -a).bit_length() - 1 if a else 64
+        if f3 == 1 and f12 == 0x602: return 'cpop', bin(a).count('1')
+        if f3 == 1 and f12 == 0x604: return 'sext.b', signed(a, 8)
+        if f3 == 1 and f12 == 0x605: return 'sext.h', signed(a, 16)
+        if f3 == 5 and f6 == 0x18: return 'rori', rot(a, (64 - shamt6) % 64, 64)
+        if f3 == 5 and f12 == 0x287:
+            return 'orc.b', sum((0xff << (8 * i)) for i in range(8) if (a >> (8 * i)) & 0xff)
+        if f3 == 5 and f12 == 0x6b8: return 'rev8', int.from_bytes(a.to_bytes(8, 'little'), 'big')
+        if f3 == 1 and f6 == 0x12: return 'bclri', a & ~(1 << shamt6)
+        if f3 == 5 and f6 == 0x12: return 'bexti', (a >> shamt6) & 1
+        if f3 == 1 and f6 == 0x1a: return 'binvi', a ^ (1 << shamt6)
+        if f3 == 1 and f6 == 0x0a: return 'bseti', a | (1 << shamt6)
+        return None
+    if op == 0x1b:
+        if f3 == 1 and f6 == 0x02: return 'slli.uw', a32 << shamt6
+        if f3 == 1 and f12 == 0x600: return 'clzw', 32 - a32.bit_length()
+        if f3 == 1 and f12 == 0x601: return 'ctzw', (a32 & -a32).bit_length() - 1 if a32 else 32
+        if f3 == 1 and f12 == 0x602: return 'cpopw', bin(a32).count('1')
+        if f3 == 5 and f7 == 0x30: return 'roriw', signed(rot(a32, (32 - shamt5) % 32, 32), 32)
+        return None
+    return None
+
+
+def execute(image, fault_kind=0, fault_addr=MASK, max_steps=20000, bitmanip=True):
     memory = bytearray(image)
     regs = [0] * 32
     pc = 0
@@ -89,6 +152,10 @@ def execute(image, fault_kind=0, fault_addr=MASK, max_steps=20000):
                         value = signed(value, 32)
                 name = ('mul', 'mulh', 'mulhsu', 'mulhu', 'div', 'divu', 'rem', 'remu')[f3] + ('w' if word else '')
                 destination = rd
+        elif bitmanip and op in (0x13, 0x1b, 0x33, 0x3b) and bitmanip_op(ins, a, b) is not None:
+            # B extension (Zba, Zbb, Zbs), when the run enables it (architecture 0.6.0).
+            name, value = bitmanip_op(ins, a, b)
+            destination = rd
         elif op in (0x13, 0x1b, 0x33, 0x3b):
             immediate = op in (0x13, 0x1b)
             word = op in (0x1b, 0x3b)

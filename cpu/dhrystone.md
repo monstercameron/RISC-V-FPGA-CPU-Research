@@ -1,6 +1,6 @@
 # Dhrystone on our custom CPU
 
-**Current result, architecture 0.4.0: 1.024 DMIPS/MHz** built for `rv64im_zifencei`, and 0.947 DMIPS/MHz built for `rv64i_zifencei`. The first 0.1.0 core scored 0.260. All are simulation runs of the core with its synchronous RAM, so they are non-compliant runs under the [review rubric](review-rubric.md), evidence class E1, and do not support calling the core performant.
+**Current result, architecture 0.5.5: 1.978 DMIPS/MHz** built for `rv64im_zifencei` with the reference runtime, 1.843 for `rv64i_zifencei`, and 2.260 with the labelled fast runtime. The first 0.1.0 core scored 0.260. All are simulation runs of the core with its synchronous RAM, so they are non-compliant runs under the [review rubric](review-rubric.md), evidence class E1, and do not support calling the core performant.
 
 Dhrystone is the secondary benchmark in the rubric. Report it next to CoreMark once that runs, never on its own.
 
@@ -18,10 +18,18 @@ Each step was chosen from the previous run's profile, passed the main regression
 | 0.3.0 | 4 KiB write-through data cache for loads | 600.8 | 1.001 | 0.9473 | 3.64x |
 | 0.4.0, `rv64i` build | M extension; this build does not use it | 600.8 | 1.001 | 0.9473 | 3.64x |
 | 0.4.0, `rv64im` build | Hardware divide replaces the software routine; 553 instructions per run instead of 600 | 555.7 | 1.005 | 1.0242 | 3.94x |
+| 0.5.0 | Limited dual issue: a simple second instruction from the same 8-byte beat | 435.7 | 0.788 | 1.3062 | 5.02x |
+| 0.5.1 | Second slot from the next beat; branches in it | 397.8 | 0.719 | 1.4309 | 5.50x |
+| 0.5.2 | Data-cache-hit loads in the second slot | 388.8 | 0.703 | 1.4640 | 5.63x |
+| 0.5.3 | Not-taken branch first; JAL/JALR second; load after a store to another beat | 366.8 | 0.663 | 1.5518 | 5.97x |
+| 0.5.4 | Stores in the second slot; ALU results forwarded into it | 335.8 | 0.607 | 1.6951 | 6.52x |
+| 0.5.5 | Branch folding: a jump or taken branch and its target instruction in one clock | 287.8 | 0.520 | 1.9777 | 7.60x |
 
-Every measured result matched the estimate the profile made before the change.
+Rows from 0.4.0 on are the `rv64im` build with the reference runtime. With the labelled fast runtime (word-at-a-time `strcpy`/`strcmp`, 470 instead of 553 instructions per run) the same 0.5.x cores run 360.8, 348.9, 310.9, 269.9 and 251.9 clocks per run from 0.5.1 to 0.5.5; 0.5.5 reaches 2.2598 DMIPS/MHz. Fast-runtime results are not compared with reference-runtime results.
 
-**Where it stopped.** On 0.4.0 the core completes almost exactly one instruction per clock: 2.6 of 555.7 clocks per run are not instruction execution (two divide steps, 0.6 fetch, 0.1 memory). Going lower needs fewer instructions, which is a compiler or runtime change rather than a core change, or more than one instruction per clock, which is a superscalar redesign rather than a refinement. The caches assume Dhrystone's code and data fit in 4 KiB each and that memory answers in one clock; a slow-memory model, still a to-do, would show how much of the gain survives on board DRAM.
+Up to 0.4.0 every measured result matched the profile's estimate. From 0.5.0 each step was chosen from a measured count of why instructions issued alone.
+
+**Caution about the 0.5.x gains.** Dual issue, forwarding and branch folding do more work in each clock: two ALUs in a chain, or a branch decision followed by an instruction-cache read and a second instruction. That lengthens the clock. DMIPS/MHz counts clocks, so it improves even when the clock gets slower; only synthesis on a real part shows whether the design still runs fast. A logic-depth measurement with Yosys is the next check, and wider designs wait for it. The caches assume Dhrystone's code and data fit in 4 KiB each and that memory answers in one clock; a slow-memory model, still a to-do, would show how much of the gain survives on board DRAM.
 
 The full records are [dhrystone-results.json](dhrystone-results.json) (`rv64i`) and [dhrystone-rv64im-results.json](dhrystone-rv64im-results.json). DMIPS per MHz is runs x 1,000,000 / (clocks x 1,757); 1,757 Dhrystones per second is the VAX 11/780 reference.
 

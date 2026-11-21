@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Original CPU foundation. RV64IM execution + serialized FENCE.I, terminal EEI.
+// Original CPU foundation. RV64IM + B execution, serialized FENCE.I, terminal EEI.
 // Architecture version: see cpu/VERSION and cpu/architecture.md section 9.
 // No RVA23 compliance claim. See cpu/architecture.md and cpu/README.md.
 module rv64_core #(
@@ -60,6 +60,98 @@ module rv64_core #(
     wire [63:0] imm_j = {{43{insn[31]}},insn[31],insn[19:12],insn[20],insn[30:21],1'b0};
 
     reg legal, write_rd, load_op, store_op, branch_taken, exception;
+    // B extension (0.6.0): Zba, Zbb and Zbs, per the RISC-V bit-manipulation
+    // specification; encodings checked against LLVM's assembler. Returns
+    // {valid, result}; valid is 0 for anything that is not a B instruction.
+    function automatic [64:0] bitmanip(input [31:0] ins, input [63:0] x, input [63:0] y);
+        reg [6:0] opb, f7b;
+        reg [2:0] f3b;
+        reg [5:0] f6b, sh6;
+        reg [11:0] f12b;
+        reg [4:0] sh5;
+        reg [63:0] r, xw;
+        reg [31:0] w;
+        reg ok;
+        integer k;
+        begin
+            opb = ins[6:0]; f3b = ins[14:12]; f7b = ins[31:25]; f6b = ins[31:26];
+            f12b = ins[31:20]; sh6 = ins[25:20]; sh5 = ins[24:20];
+            xw = {32'b0, x[31:0]};
+            ok = 1; r = 0; w = 0;
+            case (opb)
+                7'h33: case ({f7b, f3b})
+                    {7'h10, 3'd2}: r = (x << 1) + y;
+                    {7'h10, 3'd4}: r = (x << 2) + y;
+                    {7'h10, 3'd6}: r = (x << 3) + y;
+                    {7'h20, 3'd7}: r = x & ~y;
+                    {7'h20, 3'd6}: r = x | ~y;
+                    {7'h20, 3'd4}: r = ~(x ^ y);
+                    {7'h05, 3'd4}: r = ($signed(x) < $signed(y)) ? x : y;
+                    {7'h05, 3'd5}: r = (x < y) ? x : y;
+                    {7'h05, 3'd6}: r = ($signed(x) < $signed(y)) ? y : x;
+                    {7'h05, 3'd7}: r = (x < y) ? y : x;
+                    {7'h30, 3'd1}: r = (x << y[5:0]) | (x >> (7'd64 - {1'b0, y[5:0]}));
+                    {7'h30, 3'd5}: r = (x >> y[5:0]) | (x << (7'd64 - {1'b0, y[5:0]}));
+                    {7'h24, 3'd1}: r = x & ~(64'd1 << y[5:0]);
+                    {7'h24, 3'd5}: r = {63'b0, x[y[5:0]]};
+                    {7'h34, 3'd1}: r = x ^ (64'd1 << y[5:0]);
+                    {7'h14, 3'd1}: r = x | (64'd1 << y[5:0]);
+                    default: ok = 0;
+                endcase
+                7'h3b: case ({f7b, f3b})
+                    {7'h04, 3'd0}: r = xw + y;
+                    {7'h04, 3'd4}: if (ins[24:20] == 0) r = {48'b0, x[15:0]}; else ok = 0;
+                    {7'h10, 3'd2}: r = (xw << 1) + y;
+                    {7'h10, 3'd4}: r = (xw << 2) + y;
+                    {7'h10, 3'd6}: r = (xw << 3) + y;
+                    {7'h30, 3'd1}: begin
+                        w = (x[31:0] << y[4:0]) | (x[31:0] >> (6'd32 - {1'b0, y[4:0]}));
+                        r = {{32{w[31]}}, w};
+                    end
+                    {7'h30, 3'd5}: begin
+                        w = (x[31:0] >> y[4:0]) | (x[31:0] << (6'd32 - {1'b0, y[4:0]}));
+                        r = {{32{w[31]}}, w};
+                    end
+                    default: ok = 0;
+                endcase
+                7'h13:
+                    if (f3b == 1 && f12b == 12'h600) begin
+                        r = 64; for (k = 0; k < 64; k = k + 1) if (x[k]) r = 63 - k;
+                    end else if (f3b == 1 && f12b == 12'h601) begin
+                        r = 64; for (k = 63; k >= 0; k = k - 1) if (x[k]) r = k;
+                    end else if (f3b == 1 && f12b == 12'h602) begin
+                        r = 0; for (k = 0; k < 64; k = k + 1) r = r + x[k];
+                    end else if (f3b == 1 && f12b == 12'h604) r = {{56{x[7]}}, x[7:0]};
+                    else if (f3b == 1 && f12b == 12'h605) r = {{48{x[15]}}, x[15:0]};
+                    else if (f3b == 1 && f6b == 6'h12) r = x & ~(64'd1 << sh6);
+                    else if (f3b == 1 && f6b == 6'h1a) r = x ^ (64'd1 << sh6);
+                    else if (f3b == 1 && f6b == 6'h0a) r = x | (64'd1 << sh6);
+                    else if (f3b == 5 && f6b == 6'h18) r = (x >> sh6) | (x << (7'd64 - {1'b0, sh6}));
+                    else if (f3b == 5 && f6b == 6'h12) r = {63'b0, x[sh6]};
+                    else if (f3b == 5 && f12b == 12'h287) begin
+                        for (k = 0; k < 8; k = k + 1) r[8*k +: 8] = x[8*k +: 8] != 0 ? 8'hff : 8'h00;
+                    end else if (f3b == 5 && f12b == 12'h6b8) begin
+                        for (k = 0; k < 8; k = k + 1) r[8*k +: 8] = x[8*(7-k) +: 8];
+                    end else ok = 0;
+                7'h1b:
+                    if (f3b == 1 && f6b == 6'h02) r = xw << sh6;
+                    else if (f3b == 1 && f12b == 12'h600) begin
+                        r = 32; for (k = 0; k < 32; k = k + 1) if (x[k]) r = 31 - k;
+                    end else if (f3b == 1 && f12b == 12'h601) begin
+                        r = 32; for (k = 31; k >= 0; k = k - 1) if (x[k]) r = k;
+                    end else if (f3b == 1 && f12b == 12'h602) begin
+                        r = 0; for (k = 0; k < 32; k = k + 1) r = r + x[k];
+                    end else if (f3b == 5 && f7b == 7'h30) begin
+                        w = (x[31:0] >> sh5) | (x[31:0] << (6'd32 - {1'b0, sh5}));
+                        r = {{32{w[31]}}, w};
+                    end else ok = 0;
+                default: ok = 0;
+            endcase
+            bitmanip = {ok, r};
+        end
+    endfunction
+    wire [64:0] bm0 = bitmanip(insn, a, b);
+
     reg [63:0] result, next_pc, effective_addr, exception_cause, exception_tval;
     reg [31:0] word_result;
     reg [7:0] byte_mask;
@@ -84,10 +176,15 @@ module rv64_core #(
     wire div_by_zero = db == 0;
     wire div_overflow = div_signed && da == (m_word ? 64'hffffffff80000000 : 64'h8000000000000000) && db == {64{1'b1}};
     wire div_start = is_div && !div_by_zero && !div_overflow && mag_a >= mag_b;
-    wire [127:0] p_uu = {64'b0,a} * {64'b0,b};
-    wire [127:0] p_ss = {{64{a[63]}},a} * {{64{b[63]}},b};
-    wire [127:0] p_su = {{64{a[63]}},a} * {64'b0,b};
-    wire [31:0] p_w = a[31:0] * b[31:0];
+    // One signed 65x65 product serves every multiply (0.6.0): each operand gets its
+    // sign bit (signed operand) or a zero (unsigned) as bit 64; the low 64 bits are
+    // the same either way, and mulh/mulhsu/mulhu take bits 127:64.
+    wire mul_a_signed = f3 == 1 || f3 == 2;
+    wire mul_b_signed = f3 == 1;
+    wire signed [64:0] mul_a = {mul_a_signed & a[63], a};
+    wire signed [64:0] mul_b = {mul_b_signed & b[63], b};
+    wire signed [129:0] product = mul_a * mul_b;
+    wire [31:0] p_w = product[31:0];
     reg [63:0] m_result;
     reg [63:0] div_rem, div_den, div_quot, div_bit;
     reg div_neg_q, div_neg_r, div_want_rem, div_is_word;
@@ -110,10 +207,8 @@ module rv64_core #(
 
     always @* begin
         case (f3)
-            0: m_result = m_word ? {{32{p_w[31]}},p_w} : p_uu[63:0];
-            1: m_result = p_ss[127:64];
-            2: m_result = p_su[127:64];
-            3: m_result = p_uu[127:64];
+            0: m_result = m_word ? {{32{p_w[31]}},p_w} : product[63:0];
+            1, 2, 3: m_result = product[127:64];
             default:
                 if (div_by_zero) m_result = want_rem ? (m_word ? sext_a32 : a) : {64{1'b1}};
                 else if (div_overflow) m_result = want_rem ? 64'b0 : da;
@@ -162,6 +257,7 @@ module rv64_core #(
     wire [63:0] imm_i2 = {{52{insn2[31]}},insn2[31:20]};
     wire [63:0] imm_u2 = {{32{insn2[31]}},insn2[31:12],12'b0};
     reg simple2, uses_rs1_2, uses_rs2_2, branch2, taken2, load2, jump2, store2;
+    wire [64:0] bm2 = bitmanip(insn2, a2, b2);
     reg [63:0] result2;
     reg [31:0] word2;
     wire [63:0] imm_b2 = {{51{insn2[31]}},insn2[31],insn2[7],insn2[30:25],insn2[11:8],1'b0};
@@ -283,6 +379,9 @@ module rv64_core #(
             end
             default: simple2=0;
         endcase
+        if ((op2==7'h13 || op2==7'h1b || op2==7'h33 || op2==7'h3b) && bm2[64]) begin
+            simple2=1; result2=bm2[63:0];  // B extension (0.6.0)
+        end
     end
     wire slot0_writes = (load_op || write_rd) && rd != 0;
     wire [4:0] dest2 = (branch2 || store2) ? 5'b0 : rd2;
@@ -483,6 +582,9 @@ module rv64_core #(
             end
             default: legal=0;
         endcase
+        if ((op==7'h13 || op==7'h1b || op==7'h33 || op==7'h3b) && bm0[64]) begin
+            legal=1; write_rd=1; result=bm0[63:0];  // B extension (0.6.0)
+        end
         if (!legal) begin
             exception=1; exception_cause=2; exception_tval={32'b0,insn};
         end else if (next_pc[1:0]!=0) begin

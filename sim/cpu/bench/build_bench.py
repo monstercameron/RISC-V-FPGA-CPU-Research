@@ -18,8 +18,13 @@ import time
 ROOT = Path(__file__).resolve().parents[3]
 BENCH = ROOT / 'sim/cpu/bench'
 VENDOR = BENCH / 'vendor/dhrystone'
-ISAS = ('rv64i_zifencei', 'rv64im_zifencei')  # rv64im needs architecture 0.4.0 or later
+ISAS = ('rv64i_zifencei', 'rv64im_zifencei', 'rv64im_zba_zbb_zbs_zifencei')  # M needs 0.4.0+, B needs 0.6.0+
 ABI = 'lp64'
+
+
+def isa_label(isa):
+    """Short name for folders and records: rv64i, rv64im, rv64imb (Zba, Zbb and Zbs)."""
+    return isa.split('_')[0] + ('b' if '_zbb' in isa else '')
 MAILBOX_BYTES = 256
 STACK_RESERVE = 8192
 
@@ -108,7 +113,7 @@ def main():
     args = parser.parse_args()
     if args.ram_kib not in (32, 64, 128, 256, 512, 1024):
         parser.error('--ram-kib must be a power of two from 32 to 1024')
-    suffix = ('' if args.isa == ISAS[0] else '-' + args.isa.split('_')[0]) + \
+    suffix = ('' if args.isa == ISAS[0] else '-' + isa_label(args.isa)) + \
         ('' if args.runtime == 'reference' else '-fastrt')
     out = (ROOT / (args.out_dir or f'build/cpu/bench/{args.benchmark}{suffix}')).resolve()
     if not out.is_relative_to((ROOT / 'build').resolve()):

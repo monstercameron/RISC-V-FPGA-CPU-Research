@@ -90,6 +90,34 @@ def cases():
     p += [r_type(0x33, 0, 4, 5, 2, 1), 0x100073]  # divide into x0: no write
     yield 'm_extension', p, 0, MASK
 
+    # B extension (architecture 0.6.0): every Zba/Zbb/Zbs instruction over the same
+    # operand pairs. Encodings: (opcode, funct3, funct7 or None for unary/immediate).
+    p = prefix()
+    register_ops = [(0x33, 2, 0x10), (0x33, 4, 0x10), (0x33, 6, 0x10), (0x33, 7, 0x20), (0x33, 6, 0x20),
+                    (0x33, 4, 0x20), (0x33, 4, 0x05), (0x33, 5, 0x05), (0x33, 6, 0x05), (0x33, 7, 0x05),
+                    (0x33, 1, 0x30), (0x33, 5, 0x30), (0x33, 1, 0x24), (0x33, 5, 0x24), (0x33, 1, 0x34),
+                    (0x33, 1, 0x14), (0x3b, 0, 0x04), (0x3b, 2, 0x10), (0x3b, 4, 0x10), (0x3b, 6, 0x10),
+                    (0x3b, 1, 0x30), (0x3b, 5, 0x30)]
+    for op, f3, f7 in register_ops:
+        for a in operands:
+            for b in (1, 2, 3, 4, 8, 9, 10, 12):
+                p.append(r_type(op, 20, f3, a, b, f7))
+    unary = [(0x13, 1, 0x600), (0x13, 1, 0x601), (0x13, 1, 0x602), (0x13, 1, 0x604), (0x13, 1, 0x605),
+             (0x13, 5, 0x287), (0x13, 5, 0x6b8), (0x1b, 1, 0x600), (0x1b, 1, 0x601), (0x1b, 1, 0x602),
+             (0x3b, 4, 0x080)]
+    for op, f3, f12 in unary:
+        for a in operands + (1, 9, 10, 11):
+            p.append(i_type(op, 20, f3, a, f12))
+    for op, f3, top in ((0x13, 5, 0x18), (0x13, 1, 0x12), (0x13, 5, 0x12), (0x13, 1, 0x1a), (0x13, 1, 0x0a),
+                        (0x1b, 1, 0x02)):
+        for shamt in (0, 1, 31, 32, 63):
+            for a in (3, 4, 7, 12):
+                p.append(i_type(op, 20, f3, a, (top << 6) | shamt))
+    for shamt in (0, 1, 31):
+        for a in (3, 4, 7, 12):
+            p.append(r_type(0x1b, 20, 5, a, shamt, 0x30))       # roriw
+    yield 'b_extension', p + [0x100073], 0, MASK
+
     p = prefix() + [(3 << 12) | (31 << 7) | 0x37]
     for f3 in range(4):
         size = 1 << f3
@@ -186,6 +214,28 @@ def cases():
          0x0000100f, jal(0, 512 - 16)]
     p += [0] * (129 - len(p)) + [0x100073]
     yield 'self_modifying_fence_i', p, 0, MASK
+
+    for seed in (606, 707):
+        rng = random.Random(seed)
+        p = prefix()
+        bops = [(0x33, 2, 0x10), (0x33, 7, 0x20), (0x33, 4, 0x05), (0x33, 7, 0x05), (0x33, 1, 0x30),
+                (0x33, 5, 0x30), (0x33, 5, 0x24), (0x33, 1, 0x14), (0x3b, 0, 0x04), (0x3b, 4, 0x10),
+                (0x3b, 5, 0x30)]
+        for _ in range(600):
+            rd, a, b = rng.randrange(1, 29), rng.randrange(29), rng.randrange(29)
+            pick = rng.randrange(4)
+            if pick == 0:
+                op, f3, f7 = rng.choice(bops)
+                p.append(r_type(op, rd, f3, a, b, f7))
+            elif pick == 1:
+                p.append(i_type(0x13, rd, rng.choice((1, 1, 5)), a,
+                                rng.choice((0x600, 0x601, 0x602, 0x604, 0x605)) if rng.randrange(2) else
+                                rng.choice((0x287, 0x6b8, (0x18 << 6) | rng.randrange(64)))))
+            else:
+                op = rng.choice((0x33, 0x3b))
+                f3 = rng.choice((0, 1, 5) if op == 0x3b else tuple(range(8)))
+                p.append(r_type(op, rd, f3, a, b, 32 if f3 in (0, 5) and rng.randrange(2) else 0))
+        yield f'random_b_{seed}', p + [0x100073], 0, MASK
 
     for seed in (404, 505):
         rng = random.Random(seed)
@@ -317,7 +367,7 @@ def main():
                     e=expected[index] if index<len(expected) else '<missing>'
                     if a!=e: raise AssertionError(f'{name} stall={stalls} event {index}:\nactual {a}\nexpect {e}')
             records.append({'case':name,'max_wait_cycles':stalls,'events':len(actual),'result':'PASS','simulator_summary':output.strip()})
-    required=set('lui auipc jal jalr beq bne blt bge bltu bgeu lb lh lw ld lbu lhu lwu sb sh sw sd addi slti sltiu xori ori andi slli srli srai add sub sll slt sltu xor srl sra or and addiw slliw srliw sraiw addw subw sllw srlw sraw fence fence.i ecall ebreak mul mulh mulhsu mulhu div divu rem remu mulw divw divuw remw remuw'.split())
+    required=set('lui auipc jal jalr beq bne blt bge bltu bgeu lb lh lw ld lbu lhu lwu sb sh sw sd addi slti sltiu xori ori andi slli srli srai add sub sll slt sltu xor srl sra or and addiw slliw srliw sraiw addw subw sllw srlw sraw fence fence.i ecall ebreak mul mulh mulhsu mulhu div divu rem remu mulw divw divuw remw remuw sh1add sh2add sh3add add.uw sh1add.uw sh2add.uw sh3add.uw slli.uw andn orn xnor clz ctz cpop clzw ctzw cpopw max maxu min minu sext.b sext.h zext.h rol ror rolw rorw rori roriw orc.b rev8 bclr bclri bext bexti binv binvi bset bseti'.split())
     missing=required-coverage
     if missing: raise AssertionError('Missing instruction coverage: '+str(sorted(missing)))
     for branch_name in ('beq','bne','blt','bge','bltu','bgeu'):

@@ -2,15 +2,15 @@
   "rubric": "cpu/review-rubric.md",
   "rubric_revision": 1,
   "assessed": "2026-11-20",
-  "assessed_at_commit": "cpu-v0.5.5",
+  "assessed_at_commit": "cpu-v0.6.0",
   "assessed_by": "Author self-assessment, not an independent review (rubric HG8 and R9.4).",
-  "architecture_version": "0.5.5",
+  "architecture_version": "0.6.0",
   "rtl_sha256": {
     "rtl/cpu/rv64_bram_soc.sv": "94a9e078dbd90cf124fb58f360ee95d6e7e7cc3d29f5ff03a0af8d6811e0760d",
-    "rtl/cpu/rv64_core.sv": "295688213e26a0f94fe2a124ed41bff61e05eb35187f1b8bd6c8ff010ef35d99"
+    "rtl/cpu/rv64_core.sv": "ea4e77e4cad22f4b01d0f1c191b03e3ed3567a70c82cb1af89a174a56331d5d8"
   },
   "scope": {
-    "isa": "rv64im_zifencei",
+    "isa": "rv64im_zba_zbb_zbs_zifencei",
     "environment": "machine-level laboratory terminal trap; no privilege modes",
     "class": "multicycle",
     "configuration": "RESET_PC 0; ICACHE_BEATS 512; DCACHE_BEATS 512; limited dual issue (0.5.0); retirement trace ports always present",
@@ -76,7 +76,7 @@
   "criteria": {
     "R1.1": {
       "score": 2,
-      "evidence": "All 66 instructions of rv64im_zifencei pass local differential tests (E1); no architectural tests or external lockstep (needs E2)."
+      "evidence": "All 106 instructions of rv64im_zba_zbb_zbs_zifencei pass local differential tests (E1); B is also cross-checked against compiler-generated base code; no architectural tests or external lockstep (needs E2)."
     },
     "R1.2": {
       "score": 2,
@@ -96,7 +96,7 @@
     },
     "R1.6": {
       "score": 2,
-      "evidence": "Suite enforces coverage of all 66 instruction names; no per-item ledger mapping RTL to tests for the claimed ISA."
+      "evidence": "Suite enforces coverage of all 106 instruction names; no per-item ledger mapping RTL to tests for the claimed ISA."
     },
     "R2.1": {
       "score": 3,
