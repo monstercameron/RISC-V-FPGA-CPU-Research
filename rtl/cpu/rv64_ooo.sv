@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Original CPU foundation, wide out-of-order implementation (architecture 0.14.1).
+// Original CPU foundation, wide out-of-order implementation (architecture 0.14.2).
 // RV64IM + B execution, serialized FENCE.I, terminal EEI. Same module name and
 // contract as rv64_core.sv and rv64_pipe.sv, plus a wider retirement trace (rt_*);
 // build with one of the three files. Architecture version: cpu/VERSION,
@@ -102,6 +102,9 @@ module rv64_core #(
     end endgenerate
     generate if (DCACHE_BEATS < 2 || (DCACHE_BEATS & (DCACHE_BEATS - 1)) != 0) begin : bad_dcache_size
         initial $fatal(1, "DCACHE_BEATS must be a power of two of at least 2");
+    end endgenerate
+    generate if (EXTRA_WRITES < 0 || EXTRA_WRITES > 2 || (EXTRA_WRITES != 0 && PAIR_WRITES == 0)) begin : bad_extra_writes
+        initial $fatal(1, "EXTRA_WRITES must be 0, 1 or 2, and needs PAIR_WRITES");
     end endgenerate
     localparam integer FW = 32;          // fetch and rename width (RW until 0.13.0)
     localparam integer ROB_N = 512;       // 256 until 0.13.0
@@ -614,6 +617,9 @@ module rv64_core #(
     // Instructions that retire and then end the retirement group with a refetch (fence.i,
     // a wrong value prediction): retirement and the store-write scan both stop after them.
     wire [ROB_N-1:0] rb_ends = rb_fencei | rb_vpbad;
+    reg [ROB_N-1:0] rb_ldv;     // the load gave its consumers a value it read or forwarded
+    reg rflush_ld;              // this clock's flush refetches a load that read stale bytes
+    reg [ROB_B-1:0] rflush_e;   // that load
     reg [ROB_B-1:0] vc_e;       // memory-dependence check: a store between the two
     reg [7:0] vc_mask;          // bytes a resolving store makes stale
     integer vc_k;
@@ -899,7 +905,7 @@ module rv64_core #(
             end
 
             // ---- retirement window
-            n_ret = 0; rflush = 0; trap_now = 0; stop = 0; rflush_pc = 0; st1_seen = 0; smc = 0; st_last = 0; wb2v = 0; wb1 = 0; wb2 = 0; st_n = 0; wb3 = 0; wb4 = 0;
+            n_ret = 0; rflush = 0; trap_now = 0; stop = 0; rflush_pc = 0; rflush_ld = 0; rflush_e = 0; st1_seen = 0; smc = 0; st_last = 0; wb2v = 0; wb1 = 0; wb2 = 0; st_n = 0; wb3 = 0; wb4 = 0;
             for (s = 0; s < RW; s = s + 1) begin
                 e = rb_head + s[ROB_B-1:0];
                 if (!stop) begin
@@ -934,7 +940,7 @@ module rv64_core #(
                         stop = 1;   // fetched from a beat written this clock: refetched after
                     end else if (rb_viol[e]) begin
                         // Read stale bytes: refetch from this load; it waits for older stores from now on.
-                        rflush = 1; rflush_pc = rb_pc[e]; stop = 1; mdp_wait[rb_pc[e][9:2]] = 1;
+                        rflush = 1; rflush_pc = rb_pc[e]; stop = 1; mdp_wait[rb_pc[e][9:2]] = 1; rflush_ld = 1; rflush_e = e;
                     end else begin
                         n_ret = s + 1;
                         if (rb_ends[e]) begin rflush = 1; rflush_pc = rb_next[e]; stop = 1; end
@@ -1145,6 +1151,8 @@ module rv64_core #(
                             end
                         end
                         if (fdone && fb_lock && x_rob == fb_owner) fb_lock = 0;
+                        // It gave a value read or forwarded (finished, or full early forwarding).
+                        if (fdone || (!fwd_wait && fwd_mask == bytes_ && ex_writes[p])) rb_ldv[x_rob] = 1;
                         if (fdone) begin
                             if (ex_writes[p]) begin prf[ex_pdst[p]] = v; prf_written[ex_pdst[p]] = 1; prf_ready[ex_pdst[p]] = 1; end
                             rb_value[x_rob] = v; rb_done[x_rob] = 1; rb_exc[x_rob] = 0;
@@ -1167,7 +1175,7 @@ module rv64_core #(
                     if (ok) for (k = 0; k < ROB_N; k = k + 1) begin
                         e = k[ROB_B-1:0];
                         if (rb_live[e] && rb_load[e] && !rb_exc[e] &&
-                            (rb_done[e] || (rb_writes[e] && prf_written[rb_pdst[e]])) && (e - rb_head) > (x_rob - rb_head) &&
+                            rb_ldv[e] && (e - rb_head) > (x_rob - rb_head) &&
                             rb_addr[e][63:3] == ea[63:3] && (rb_wstrb[e] & rb_wstrb[x_rob]) != 0) begin
                             vc_mask = rb_wstrb[e] & rb_wstrb[x_rob];
                             for (vc_k = 0; vc_k < ROB_N; vc_k = vc_k + 1) begin
@@ -1240,7 +1248,8 @@ module rv64_core #(
                 rb_live = 0; rb_tail = h_after; rb_count_new = 0;
                 q_head = 0; q_tail = 0; q_count = 0;
                 f_pc = rflush_pc; f_err = 0; f_hold = 0; if (bus_hold == 1) f_stale = 1;
-                ras_sp = rb_rsp[rb_head + n_ret[ROB_B-1:0] - 1'b1];
+                // A refetched load restores its own return-stack pointer (it may be the oldest).
+                ras_sp = rflush_ld ? rb_rsp[rflush_e] : rb_rsp[rb_head + n_ret[ROB_B-1:0] - 1'b1];
             end else if (mp_any) begin
                 squash_after(o_age);
                 for (i = 0; i < 32; i = i + 1) begin rat[i] = snap[b_rob][i]; rat_off[i] = snap_off[b_rob][i]; end
@@ -1309,7 +1318,7 @@ module rv64_core #(
                             rb_cause[e] = q_fmis[j] ? 64'd0 : 64'd1; rb_tval[e] = wpc;
                             rb_pc[e] = wpc; rb_insn[e] = wi; rb_next[e] = d_want; rb_rd[e] = rd_; rb_writes[e] = writes_;
                             rb_store[e] = op == 7'h23 && !isfault; rb_load[e] = op == 7'h03 && !isfault;
-                            rb_fencei[e] = 0; rb_ctl[e] = 0; rb_sta[e] = 0; rb_viol[e] = 0; rb_wstrb[e] = 0; rb_taken[e] = 0; rb_ret[e] = 0;
+                            rb_fencei[e] = 0; rb_ctl[e] = 0; rb_sta[e] = 0; rb_viol[e] = 0; rb_ldv[e] = 0; rb_wstrb[e] = 0; rb_taken[e] = 0; rb_ret[e] = 0;
                             rb_bhit[e] = q_bhit[j]; rb_bctr[e] = q_bctr[j]; rb_rsp[e] = q_rsp[j];
                             rb_li[e] = q_li[j]; rb_lp[e] = op == 7'h63 && !isfault; rb_ld[e] = tkp;
                             rb_fence[e] = op == 7'h0f && f3_ == 3'd0 && !isfault;

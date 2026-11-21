@@ -21,7 +21,10 @@ ROOT = Path(__file__).resolve().parents[2]
 CORES = {'multicycle': 'rtl/cpu/rv64_core.sv', 'pipe': 'rtl/cpu/rv64_pipe.sv', 'ooo': 'rtl/cpu/rv64_ooo.sv'}
 # Programs written to exercise an issue slot of the multicycle core, and the testbench
 # counter that must be non-zero for them (default caches, no bus wait cycles).
-SLOT_USE = {'multicycle': {'dual_issue_fold': 'slot2', 'triple_issue': 'slot3'}, 'pipe': {}, 'ooo': {}}
+SLOT_USE = {'multicycle': {'dual_issue_fold': 'slot2', 'triple_issue': 'slot3'}, 'pipe': {},
+            # Out-of-order core: multi-store writes really use lanes 2-4 (lane cover, 0.14.x).
+            'ooo': {'x4_four_beats': 'lane4', 'x4_fault_second': 'fault_lane2', 'x4_fault_third': 'fault_lane3',
+                    'x4_fault_fourth': 'fault_lane4'}}
 OUT = ROOT / 'build/cpu'
 
 

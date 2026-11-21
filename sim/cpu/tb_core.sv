@@ -53,6 +53,8 @@ module tb_core #(parameter integer MEM_BYTES=16384, parameter integer ICACHE_BEA
 
     string image_path,trace_path,pending_write="",pending_write2="",pending_write3="",pending_write4="";
     integer fd,i,lane,cycles=0,retire_count=0,slot2_count=0,slot3_count=0,slot3_branches=0;
+    // Multi-store write lanes used, and store faults reported on lanes 2..4 (lane cover).
+    integer lane2=0,lane3=0,lane4=0,fault_lane2=0,fault_lane3=0,fault_lane4=0;
     integer max_stall=0,delay_left=0,seed_arg=1,fault_kind=0,max_cycles=200000;
     reg [31:0] rng;
     reg [63:0] fault_addr=64'hffffffffffffffff;
@@ -139,8 +141,8 @@ module tb_core #(parameter integer MEM_BYTES=16384, parameter integer ICACHE_BEA
                 if (pending_write4!="") $fdisplay(fd,"%s",pending_write4);
                 $fdisplay(fd,"T %016h %016h %016h",tpc,cause,tval);
                 $fclose(fd);
-                $display("DONE retirements=%0d cycles=%0d slot2=%0d slot3=%0d slot3_branches=%0d",
-                         retire_count,cycles,slot2_count,slot3_count,slot3_branches);
+                $display("DONE retirements=%0d cycles=%0d slot2=%0d slot3=%0d slot3_branches=%0d lane2=%0d lane3=%0d lane4=%0d fault_lane2=%0d fault_lane3=%0d fault_lane4=%0d",
+                         retire_count,cycles,slot2_count,slot3_count,slot3_branches,lane2,lane3,lane4,fault_lane2,fault_lane3,fault_lane4);
                 $finish;
             end
             if (!valid) begin ready=0; active=0; end
@@ -181,6 +183,12 @@ module tb_core #(parameter integer MEM_BYTES=16384, parameter integer ICACHE_BEA
                     for (lane=0;lane<8;lane=lane+1)
                         if (wstrb[lane]) memory[addr+lane]=wdata[8*lane+:8];
 `ifdef WIDE_TRACE
+                    if (wstrb2!=0) lane2=lane2+1;
+                    if (xwstrb[7:0]!=0) lane3=lane3+1;
+                    if (xwstrb[15:8]!=0) lane4=lane4+1;
+                    if (wstrb2!=0 && error2) fault_lane2=fault_lane2+1;
+                    if (wstrb2!=0 && !error2 && xwstrb[7:0]!=0 && xerror[0]) fault_lane3=fault_lane3+1;
+                    if (wstrb2!=0 && !error2 && xwstrb[7:0]!=0 && !xerror[0] && xwstrb[15:8]!=0 && xerror[1]) fault_lane4=fault_lane4+1;
                     if (wstrb2!=0 && !error2) begin
                         $sformat(pending_write2,"W %016h %016h %02h",addr2,wdata2,wstrb2);
                         for (lane=0;lane<8;lane=lane+1)
