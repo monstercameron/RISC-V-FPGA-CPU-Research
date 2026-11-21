@@ -428,8 +428,9 @@ module rv64_core #(
     wire f_hit = ic_valid[f_idx] && ic_tq == f_pc[63 -: IC_TAG];
     // Branch target buffer, read with f_pc: direct-mapped on pc[9:2], 10-bit partial
     // tags, 2-bit counters for conditional branches; entries marked as returns take
-    // their target from a 4-entry return-address stack. The BTB is updated in E, the
-    // return stack in D.
+    // their target from a 4-entry return-address stack. The BTB is updated in E; the
+    // return stack in F, as calls and returns are fetched (wrong-path updates are not
+    // undone).
     localparam integer BTB_BITS = 8;
     localparam integer BTB_TAG = 10;
     localparam integer BTB_ENTRIES = 1 << BTB_BITS;
@@ -462,33 +463,84 @@ module rv64_core #(
     wire [63:0] d_offset = d_jal ? {{43{d_insn[31]}},d_insn[31],d_insn[19:12],d_insn[20],d_insn[30:21],1'b0}
                                  : {{51{d_insn[31]}},d_insn[31],d_insn[7],d_insn[30:25],d_insn[11:8],1'b0};
     wire [63:0] d_target = d_pc + d_offset;
-    wire d_jump = d_jal || (d_insn[6:0] == 7'h67 && d_insn[14:12] == 0);
-    wire d_call = d_jump && (d_insn[11:7] == 1 || d_insn[11:7] == 5);
-    wire d_return = d_insn[6:0] == 7'h67 && d_insn[14:12] == 0 && d_insn[11:7] == 0 &&
-                    (d_insn[19:15] == 1 || d_insn[19:15] == 5);
-    wire d_predict = d_valid && !d_fault && !d_fpred && (d_jal || d_back) && d_target[1:0] == 0;
+    // D checks what fetch predicted for this instruction against what it can work out
+    // itself: JAL goes to its target; a conditional branch keeps the BTB's direction (or
+    // is taken if backward when the BTB had no entry) with the target recomputed here;
+    // JALR keeps the prediction (E checks it); anything else falls through. A mismatch
+    // redirects fetch once, while D holds the instruction.
+    wire d_branch = d_insn[6:0] == 7'h63;
+    wire d_jalr = d_insn[6:0] == 7'h67;
+    wire d_take_pred = (d_jal || (d_branch && (d_fpred || d_back))) && d_target[1:0] == 0;
+    wire [63:0] d_seq = d_pc + 64'd4;
+    wire [63:0] d_want = d_jalr ? d_pred : d_take_pred ? d_target : d_seq;
+    wire d_mismatch = d_valid && !d_fault && d_want != d_pred;
+    reg d_redirected, e_redirected;  // the stage's redirect has already been sent
+    reg e_ptaken;                    // E's conditional branch was predicted taken
+    reg [63:0] e_alt;                // where E's branch goes if the prediction was wrong
 
-    // ---------------- M stage -----------------------------------------------------
+    // ---------------- fetch queue (0.8.1) -------------------------------------------
+    // Four entries between F and D, so F advances whenever the queue is not full (a
+    // registered condition) instead of waiting for the whole pipeline's stall decision.
+    // When the queue is empty, D takes F's instruction directly.
+    reg [63:0] q_pc [0:3];
+    reg [31:0] q_insn [0:3];
+    reg [63:0] q_pred [0:3];
+    reg [3:0] q_fpred, q_bhit, q_fault, q_fmis;
+    reg [1:0] q_bctr [0:3];
+    reg [1:0] q_head, q_tail;
+    reg [2:0] q_count;
+
+    // ---------------- M and X stages ----------------------------------------------
+    // M finishes its instruction in one clock without waiting: it retires it (integer
+    // result, load hit, multiply, or a bus access that completes in that clock), or
+    // hands a bus access that did not complete to X. X holds that one access until the
+    // bus finishes and retires it; M waits while X is busy. So whether M takes the next
+    // instruction depends only on registers, not on this clock's cache hit.
     wire [DC_INDEX-1:0] m_idx = m_addr[3 +: DC_INDEX];
     wire [IC_INDEX-1:0] m_ic_idx = m_addr[3 +: IC_INDEX];
     wire m_hit = dc_valid[m_idx] && dq_tag == m_addr[63 -: DC_TAG];
     wire [63:0] m_sval = m_sdata_late ? w_data : m_sdata;
     wire [63:0] m_wdata = m_sval << {m_addr[2:0],3'b000};
     wire [7:0] m_wstrb = m_store ? m_mask << m_addr[2:0] : 8'b0;
-    wire m_bus = m_valid && !m_exc && (m_store || (m_load && !m_hit));
+    // A store to the beat of an already-fetched younger instruction, or fence.i, sets
+    // m_flush_r as it retires; the next clock discards every younger instruction
+    // (including one that entered M at that edge) and refetches from m_flush_pc.
+    reg m_flush_r;
+    reg [63:0] m_flush_pc;
+    reg x_valid, x_load, x_fault, x_hit, x_icdirty;
+    reg [63:0] x_pc, x_next, x_addr, x_wdata, x_line;
+    reg [31:0] x_insn;
+    reg [4:0] x_rd;
+    reg [2:0] x_f3;
+    reg [7:0] x_wstrb;
+    reg [IC_TAG-1:0] x_stq;
+    wire [DC_INDEX-1:0] x_idx = x_addr[3 +: DC_INDEX];
+    wire [IC_INDEX-1:0] x_ic_idx = x_addr[3 +: IC_INDEX];
+    reg div_early_r;
+    reg [63:0] div_early_val;
+    wire m_active = m_valid && !m_exc && !m_flush_r && !x_valid && !halted;
+    wire m_wait_div = m_div && (div_setup || (!div_early_r && div_bit != 64'd1));
+    wire m_leaves = m_active && !m_wait_div;           // from registers only
+    wire m_needs_bus = m_store || (m_load && !m_hit);
+    wire m_bus = m_leaves && m_needs_bus;               // M's first-clock attempt
 
     // ---------------- bus ---------------------------------------------------------
-    // One bus. A data access has priority over starting a fetch; a presented fetch is
-    // held until it completes. No fetch starts while M holds a faulting instruction.
+    // One bus. X's access first, then M's first-clock attempt, then a new fetch; a
+    // presented request is held until it completes (X holds what M presented). No
+    // fetch starts while M holds a load or store (whether it needs the bus depends on
+    // this clock's cache hit, which would lengthen fetch's path) or a faulting
+    // instruction.
     wire f_want = f_valid && init_done && !halted && !f_misaligned && !f_hit;
-    wire data_req = m_bus && !fetch_active && !halted;
-    wire fetch_req = !halted && (fetch_active || (f_want && !m_bus && !(m_valid && m_exc)));
+    wire x_req = x_valid && !x_fault && !halted;
+    wire data_req = !fetch_active && !halted && (x_req || m_bus);
+    wire m_memop = m_leaves && (m_load || m_store);
+    wire fetch_req = !halted && (fetch_active || (f_want && !x_valid && !m_memop && !(m_valid && m_exc)));
     wire [63:0] fetch_beat = fetch_active ? fetch_addr : {f_pc[63:3],3'b000};
     assign mem_valid = !reset && (fetch_req || data_req);
     assign mem_instr = fetch_req;
-    assign mem_addr = fetch_req ? fetch_beat : {m_addr[63:3],3'b000};
-    assign mem_wdata = fetch_req ? 64'b0 : m_wdata;
-    assign mem_wstrb = fetch_req ? 8'b0 : m_wstrb;
+    assign mem_addr = fetch_req ? fetch_beat : x_valid ? {x_addr[63:3],3'b000} : {m_addr[63:3],3'b000};
+    assign mem_wdata = fetch_req ? 64'b0 : x_valid ? x_wdata : m_wdata;
+    assign mem_wstrb = fetch_req ? 8'b0 : x_valid ? x_wstrb : m_wstrb;
     wire fetch_done = fetch_req && mem_ready;
     wire fill = fetch_done && !mem_error;
     wire [IC_INDEX-1:0] fill_idx = fetch_beat[3 +: IC_INDEX];
@@ -501,22 +553,25 @@ module rv64_core #(
     wire f_fault = f_misaligned || (fetch_for_f && mem_error);
     wire f_ready = f_valid && init_done && !halted && (f_misaligned || f_hit || fetch_for_f);
 
-    // Load data.
-    wire [63:0] read_beat = m_hit ? dq_data : mem_rdata;
-    wire [63:0] shifted_read = read_beat >> {m_addr[2:0],3'b000};
-    reg [63:0] load_result;
-    always @* begin
-        case (m_f3)
-            3'b000: load_result = {{56{shifted_read[7]}},shifted_read[7:0]};
-            3'b001: load_result = {{48{shifted_read[15]}},shifted_read[15:0]};
-            3'b010: load_result = {{32{shifted_read[31]}},shifted_read[31:0]};
-            3'b011: load_result = shifted_read;
-            3'b100: load_result = {56'b0,shifted_read[7:0]};
-            3'b101: load_result = {48'b0,shifted_read[15:0]};
-            3'b110: load_result = {32'b0,shifted_read[31:0]};
-            default: load_result = 64'b0;
-        endcase
-    end
+    // Load data, for M (cache or bus) and for X (bus).
+    function automatic [63:0] load_align(input [63:0] beat, input [2:0] lane, input [2:0] size);
+        reg [63:0] s;
+        begin
+            s = beat >> {lane,3'b000};
+            case (size)
+                3'b000: load_align = {{56{s[7]}},s[7:0]};
+                3'b001: load_align = {{48{s[15]}},s[15:0]};
+                3'b010: load_align = {{32{s[31]}},s[31:0]};
+                3'b011: load_align = s;
+                3'b100: load_align = {56'b0,s[7:0]};
+                3'b101: load_align = {48'b0,s[15:0]};
+                3'b110: load_align = {32'b0,s[31:0]};
+                default: load_align = 64'b0;
+            endcase
+        end
+    endfunction
+    wire [63:0] load_result = load_align(m_hit ? dq_data : mem_rdata, m_addr[2:0], m_f3);
+    wire [63:0] x_result = load_align(mem_rdata, x_addr[2:0], x_f3);
     reg [63:0] store_line;  // M's line with the store's bytes merged (store hits)
     integer lane;
     always @* begin
@@ -525,58 +580,88 @@ module rv64_core #(
             if (m_wstrb[lane]) store_line[8*lane +: 8] = m_wdata[8*lane +: 8];
     end
     wire [63:0] m_value = m_load ? load_result : m_mul ? mul_value
-                        : m_div ? (div_setup ? m_result
+                        : m_div ? (div_early_r ? div_early_val
                                   : div_finish(div_quot_next,div_rem_next,div_neg_q,div_neg_r,div_want_rem,div_is_word))
                         : m_alu;
-    // M completes this clock (retires), or traps.
-    wire m_done = m_valid && !m_exc && !halted &&
-                  (m_div ? (div_setup ? div_early : div_bit == 64'd1) : m_bus ? data_done && !mem_error : 1'b1);
-    wire m_bus_fault = m_valid && data_done && mem_error;
-    wire m_trap = !halted && ((m_valid && m_exc && !fetch_active) || m_bus_fault);
-    // A store to the beat of a younger instruction already fetched, or fence.i,
-    // flushes everything younger and refetches after it.
-    wire m_smc = m_store && ((e_valid && pc[63:3] == m_addr[63:3]) ||
-                             (d_valid && d_pc[63:3] == m_addr[63:3]) ||
-                             (f_valid && f_pc[63:3] == m_addr[63:3]));
-    wire m_flush = m_done && (m_fencei || m_smc);
+    wire m_bus_ok = data_done && !mem_error;   // M's attempt completed (when x is empty)
+    wire m_done = m_leaves && (!m_needs_bus || m_bus_ok);   // M retires this clock
+    wire m_to_x = m_leaves && m_needs_bus && !m_bus_ok;     // M hands its access to X
+    wire x_done = x_req && data_done && !mem_error;         // X retires this clock
+    wire x_trap = x_valid && !halted && (x_fault || (x_req && data_done && mem_error));
+    wire m_trap = m_valid && m_exc && !x_valid && !fetch_active && !m_flush_r && !halted;
+    wire any_trap = x_trap || m_trap;
+    reg [3:0] q_used;  // occupied fetch-queue entries
+    // Store retiring this clock (from X if X is busy, else from M): younger instructions
+    // already fetched from its beat must be refetched.
+    wire [63:0] s_addr = x_valid ? x_addr : m_addr;
+    wire q_match = (q_used[0] && q_pc[0][63:3] == s_addr[63:3]) || (q_used[1] && q_pc[1][63:3] == s_addr[63:3]) ||
+                   (q_used[2] && q_pc[2][63:3] == s_addr[63:3]) || (q_used[3] && q_pc[3][63:3] == s_addr[63:3]);
+    wire s_younger = (x_valid && m_valid && m_pc[63:3] == s_addr[63:3]) ||
+                     (e_valid && pc[63:3] == s_addr[63:3]) ||
+                     (d_valid && d_pc[63:3] == s_addr[63:3]) || q_match ||
+                     (f_valid && f_pc[63:3] == s_addr[63:3]);
+    wire m_flush = (m_done && (m_fencei || (m_store && s_younger))) || (x_done && !x_load && s_younger);
 
     // ---------------- stage control -----------------------------------------------
     wire uses1 = !(op == 7'h37 || op == 7'h17 || op == 7'h6f);
     wire uses2 = op == 7'h33 || op == 7'h3b || op == 7'h63 || op == 7'h23;
-    wire late_hit1 = m_late && m_rd != 0 && uses1 && rs1 == m_rd;
-    wire late_hit2 = m_late && m_rd != 0 && uses2 && rs2 == m_rd;
+    wire x_late = x_valid && x_load && x_rd != 0;
+    wire late_hit1 = (m_late && m_rd != 0 && uses1 && rs1 == m_rd) || (x_late && uses1 && rs1 == x_rd);
+    wire late_hit2 = (m_late && m_rd != 0 && uses2 && rs2 == m_rd) || (x_late && uses2 && rs2 == x_rd);
     wire e_hazard = late_hit1 || (late_hit2 && !store_op);
     wire e_exc = e_fault || exception;
     wire e_jump = op == 7'h6f || (op == 7'h67 && f3 == 0);
     wire e_control = e_jump || op == 7'h63;
     wire e_taken = e_jump || branch_taken;
     wire e_return = op == 7'h67 && f3 == 0 && rd == 0 && (rs1 == 1 || rs1 == 5);
-    wire m_free = !m_valid || m_done;
-    wire e_go = e_valid && m_free && !e_hazard && !m_flush && !m_trap;
-    wire e_redirect = e_go && !e_exc && next_pc != e_pred;
-    wire d_go = d_valid && (!e_valid || e_go) && !m_flush && !e_redirect && !m_trap;
-    wire f_go = f_ready && (!d_valid || d_go) && !m_flush && !e_redirect && !(d_go && d_predict);
-    // A return in F takes the return stack's top, or the call leaving D this clock.
-    wire [63:0] f_btarget = !btb_ret[f_bidx] ? {f_pc[63:32],btb_target[f_bidx],2'b00}
-                          : (d_go && !d_fault && d_call) ? d_pc + 64'd4 : ras[ras_sp];
+    wire e_go = e_valid && (!m_valid || m_leaves) && !e_hazard && !m_flush_r;
+    wire e_load = !e_valid || e_go;
+    // Redirects are sent once, as soon as the stage knows, without waiting to advance.
+    // E waits for valid operands (no load-use hazard) before judging its prediction.
+    // E checks only what D cannot: a conditional branch's direction and a JALR's
+    // target. A faulting instruction may redirect too; it traps in M either way.
+    wire e_branch = op == 7'h63;
+    wire e_jalr = op == 7'h67;
+    wire [63:0] e_jalr_target = (a + imm_i) & ~64'd1;
+    wire e_redirect = e_valid && !e_hazard && !e_redirected && !m_flush_r &&
+                      ((e_branch && branch_taken != e_ptaken) || (e_jalr && e_jalr_target != e_pred));
+    wire [63:0] e_redirect_pc = e_branch ? e_alt : e_jalr_target;
+    wire d_fire = d_mismatch && !d_redirected && !e_redirect && !m_flush_r;
+    wire front_kill = m_flush_r || e_redirect || d_fire;
+    wire d_go = d_valid && e_load && !e_redirect && !m_flush_r;
+    wire d_take = (!d_valid || d_go) && !front_kill;  // D loads a new instruction
+    wire f_go = f_ready && q_count != 3'd4 && !front_kill;
+    wire q_pop = d_take && q_count != 0;
+    wire f_bypass = d_take && q_count == 0 && f_go;
+    wire q_push = f_go && !f_bypass;
+    wire [6:0] f_op = f_word[6:0];
+    wire f_jump = f_op == 7'h6f || (f_op == 7'h67 && f_word[14:12] == 0);
+    wire f_call = f_jump && (f_word[11:7] == 1 || f_word[11:7] == 5);
+    wire f_return = f_op == 7'h67 && f_word[14:12] == 0 && f_word[11:7] == 0 &&
+                    (f_word[19:15] == 1 || f_word[19:15] == 5);
+    wire [63:0] f_btarget = btb_ret[f_bidx] ? ras[ras_sp] : {f_pc[63:32],btb_target[f_bidx],2'b00};
+    wire [63:0] f_pred = f_btaken ? f_btarget : f_pc + 64'd4;
     reg [63:0] fetch_next;
     always @* begin
-        if (m_flush) fetch_next = m_next;
-        else if (e_redirect) fetch_next = next_pc;
-        else if (d_go && d_predict) fetch_next = d_target;
-        else if (f_go && f_btaken) fetch_next = f_btarget;
-        else if (f_go) fetch_next = f_pc + 64'd4;
+        if (m_flush_r) fetch_next = m_flush_pc;
+        else if (e_redirect) fetch_next = e_redirect_pc;
+        else if (d_fire) fetch_next = d_want;
+        else if (f_go) fetch_next = f_pred;
         else fetch_next = f_pc;
     end
     wire [IC_INDEX-1:0] next_idx = fetch_next[3 +: IC_INDEX];
     wire [DC_INDEX-1:0] e_dc_idx = effective_addr[3 +: DC_INDEX];
     wire [IC_INDEX-1:0] e_ic_idx = effective_addr[3 +: IC_INDEX];
-    // The data-cache line M writes when it retires (load fill or store hit).
-    wire dc_write = m_done && ((m_load && !m_hit) || (m_store && m_hit));
-    wire [63:0] dc_wline = m_load ? mem_rdata : store_line;
+    // Data-cache write this clock: a load fill or store hit, retiring from M or X.
+    wire dc_write_m = m_done && ((m_load && !m_hit) || (m_store && m_hit));
+    wire dc_write_x = x_done && (x_load || x_hit);
+    wire dc_write = dc_write_m || dc_write_x;
+    wire [DC_INDEX-1:0] dcw_idx = dc_write_x ? x_idx : m_idx;
+    wire [DC_TAG-1:0] dcw_tag = dc_write_x ? x_addr[63 -: DC_TAG] : m_addr[63 -: DC_TAG];
+    wire [63:0] dcw_line = dc_write_x ? (x_load ? mem_rdata : x_line) : (m_load ? mem_rdata : store_line);
 
     // Debug view for the testbenches and the visualizer: what the core waits for.
-    wire [2:0] state = halted ? HALTED : (m_valid && m_bus && !m_done) ? MEMORY
+    wire [2:0] state = halted ? HALTED : (x_valid || m_to_x) ? MEMORY
                      : (!m_done && f_valid && !f_ready) ? FETCH : EXECUTE;
 
     always @(posedge clk) begin
@@ -588,16 +673,20 @@ module rv64_core #(
             ic_data[fill_idx] <= mem_rdata;
         end
         if (e_go) begin
-            dq_data <= (dc_write && m_idx == e_dc_idx) ? dc_wline : dc_data[e_dc_idx];
-            dq_tag <= (dc_write && m_idx == e_dc_idx) ? m_addr[63 -: DC_TAG] : dc_tag[e_dc_idx];
+            dq_data <= (dc_write && dcw_idx == e_dc_idx) ? dcw_line : dc_data[e_dc_idx];
+            dq_tag <= (dc_write && dcw_idx == e_dc_idx) ? dcw_tag : dc_tag[e_dc_idx];
             ic_stq <= (fill && fill_idx == e_ic_idx) ? fetch_beat[63 -: IC_TAG] : ic_tag[e_ic_idx];
+        end else if (dc_write_x && m_valid && x_idx == m_idx) begin
+            dq_data <= dcw_line;  // X updates the line M (waiting behind it) already read
+            dq_tag <= dcw_tag;
         end
         if (dc_write) begin
-            dc_tag[m_idx] <= m_addr[63 -: DC_TAG];
-            dc_data[m_idx] <= dc_wline;
+            dc_tag[dcw_idx] <= dcw_tag;
+            dc_data[dcw_idx] <= dcw_line;
         end
-        // Register file: the reset sequencer, or M's retirement.
+        // Register file: the reset sequencer, or a retirement from X or M.
         if (!init_done) regs[init_count[4:0]] <= 64'b0;
+        else if (x_done && x_rd != 0) regs[x_rd] <= x_result;
         else if (m_done && m_rd != 0) regs[m_rd] <= m_value;
     end
 
@@ -608,6 +697,9 @@ module rv64_core #(
             d_valid<=0; d_fault<=0; d_fcause<=0; d_pc<=0; d_insn<=0;
             d_pred<=0; d_fpred<=0; d_bhit<=0; d_bctr<=0; e_bhit<=0; e_bctr<=0;
             btb_valid<=0; btb_ret<=0; ras_sp<=0; ras[0]<=0; ras[1]<=0; ras[2]<=0; ras[3]<=0;
+            d_redirected<=0; e_redirected<=0; m_flush_r<=0; m_flush_pc<=0; e_ptaken<=0; e_alt<=0;
+            q_head<=0; q_tail<=0; q_count<=0; q_used<=0;
+            q_fpred<=0; q_bhit<=0; q_fault<=0; q_fmis<=0;
             e_valid<=0; pc<=0; insn<=0; e_a<=0; e_b<=0; e_pred<=0; e_fault<=0; e_fcause<=0;
             m_valid<=0; m_load<=0; m_store<=0; m_mul<=0; m_div<=0; m_fencei<=0; m_exc<=0;
             m_sdata_late<=0; m_icdirty<=0; m_pc<=0; m_next<=0; m_alu<=0; m_addr<=0; m_sdata<=0;
@@ -617,7 +709,9 @@ module rv64_core #(
             mul_op_a<=0; mul_op_b<=0; mul_high<=0; mul_word<=0;
             div_rem<=0; div_den<=0; div_quot<=0; div_bit<=0;
             div_neg_q<=0; div_neg_r<=0; div_want_rem<=0; div_is_word<=0;
-            dv_a<=0; dv_b<=0; dv_f3<=0; dv_word<=0; div_setup<=0;
+            dv_a<=0; dv_b<=0; dv_f3<=0; dv_word<=0; div_setup<=0; div_early_r<=0; div_early_val<=0;
+            x_valid<=0; x_load<=0; x_fault<=0; x_hit<=0; x_icdirty<=0; x_pc<=0; x_next<=0; x_addr<=0;
+            x_wdata<=0; x_line<=0; x_insn<=0; x_rd<=0; x_f3<=0; x_wstrb<=0; x_stq<=0;
             trap_valid<=0; trap_pc<=0; trap_cause<=0; trap_tval<=0;
             retire_valid<=0; retire_pc<=0; retire_insn<=0;
             retire_rd<=0; retire_data<=0; retire_next_pc<=0;
@@ -638,25 +732,47 @@ module rv64_core #(
             end
             if (fill) ic_valid[fill_idx]<=1'b1;
 
-            if (m_trap) begin
-                trap_valid<=1; trap_pc<=m_pc;
-                trap_cause<=m_exc ? m_cause : (m_load ? 64'd5 : 64'd7);
-                trap_tval<=m_exc ? m_tval : m_addr;
-                halted<=1; f_valid<=0; d_valid<=0; e_valid<=0; m_valid<=0;
+            if (any_trap) begin
+                trap_valid<=1;
+                trap_pc<=x_trap ? x_pc : m_pc;
+                trap_cause<=x_trap ? (x_load ? 64'd5 : 64'd7) : m_cause;
+                trap_tval<=x_trap ? x_addr : m_tval;
+                halted<=1; f_valid<=0; d_valid<=0; e_valid<=0; m_valid<=0; x_valid<=0;
+                q_count<=0; q_used<=0;
             end else if (!halted) begin
-                // ---- M: retire
+                // ---- X: retire a completed access
+                if (x_done) begin
+                    retire_valid<=1; retire_pc<=x_pc; retire_insn<=x_insn; retire_rd<=x_rd;
+                    retire_data<=x_rd==0 ? 64'b0 : x_result; retire_next_pc<=x_next;
+                    w_valid<=1; w_rd<=x_rd; w_data<=x_result;
+                    if (x_load) dc_valid[x_idx]<=1'b1;
+                    if (m_flush) begin m_flush_r<=1; m_flush_pc<=x_next; end
+                    if (!x_load && ic_valid[x_ic_idx] && (x_stq == x_addr[63 -: IC_TAG] || x_icdirty))
+                        ic_valid[x_ic_idx]<=1'b0;
+                    x_valid<=0;
+                end
+                if (x_valid && fill && fill_idx == x_ic_idx) x_icdirty<=1;
+                // ---- M: retire, or hand the access to X
                 if (m_done) begin
                     retire_valid<=1; retire_pc<=m_pc; retire_insn<=m_insn; retire_rd<=m_rd;
                     retire_data<=m_rd==0 ? 64'b0 : m_value; retire_next_pc<=m_next;
                     w_valid<=1; w_rd<=m_rd; w_data<=m_value;
                     if (m_load && !m_hit) dc_valid[m_idx]<=1'b1;
+                    if (m_flush) begin m_flush_r<=1; m_flush_pc<=m_next; end
                     if (m_fencei) ic_valid<=0;
                     else if (m_store && ic_valid[m_ic_idx] && (ic_stq == m_addr[63 -: IC_TAG] || m_icdirty))
                         ic_valid[m_ic_idx]<=1'b0;
                 end
-                if (m_valid && m_div && !m_done) begin
+                if (m_to_x) begin
+                    x_valid<=1; x_fault<=data_done && mem_error;  // an error here traps from X next clock
+                    x_load<=m_load; x_hit<=m_hit; x_pc<=m_pc; x_insn<=m_insn; x_next<=m_next;
+                    x_rd<=m_rd; x_f3<=m_f3; x_addr<=m_addr; x_wdata<=m_wdata; x_wstrb<=m_wstrb;
+                    x_line<=store_line; x_stq<=ic_stq;
+                    x_icdirty<=m_icdirty || (fill && fill_idx == m_ic_idx);
+                end
+                if (m_active && m_div && m_wait_div) begin
                     if (div_setup) begin
-                        div_setup<=0;
+                        div_setup<=0; div_early_r<=div_early; div_early_val<=m_result;
                         div_rem<=mag_a; div_quot<=0;
                         div_den<=mag_b << (clz64(mag_b) - clz64(mag_a));
                         div_bit<=64'd1 << (clz64(mag_b) - clz64(mag_a));
@@ -667,7 +783,7 @@ module rv64_core #(
                         div_den<=div_den >> 1; div_bit<=div_bit >> 1;
                     end
                 end
-                if (m_valid && !m_done && fill && fill_idx == m_ic_idx) m_icdirty<=1;
+                if (m_valid && !m_leaves && fill && fill_idx == m_ic_idx) m_icdirty<=1;
                 // ---- E -> M
                 if (e_go) begin
                     m_valid<=1; m_pc<=pc; m_insn<=insn; m_next<=next_pc;
@@ -685,9 +801,10 @@ module rv64_core #(
                         mul_op_a<=mul_a; mul_op_b<=mul_b; mul_high<=f3!=0; mul_word<=m_word;
                     end
                     if (is_div) begin
-                        dv_a<=a; dv_b<=b; dv_f3<=f3; dv_word<=m_word; div_setup<=1;
+                        dv_a<=a; dv_b<=b; dv_f3<=f3; dv_word<=m_word; div_setup<=1; div_early_r<=0;
                     end
-                end else if (m_done || m_flush) m_valid<=0;
+                end else if (m_leaves || m_flush_r) m_valid<=0;
+                if (m_flush_r) m_flush_r<=0;
                 // ---- BTB and return stack, from the instruction leaving E
                 if (e_go && !e_exc && e_control) begin
                     if (e_taken) begin
@@ -699,28 +816,53 @@ module rv64_core #(
                     end else if (e_bhit)
                         btb_ctr[pc[2 +: BTB_BITS]]<=e_bctr==2'd0 ? 2'd0 : e_bctr-2'd1;
                 end
-                // Return stack: calls push and returns pop as they leave D, so a
-                // return soon after its call sees it (wrong-path pushes are not undone).
-                if (d_go && !d_fault && d_call) begin
-                    ras[ras_sp+2'd1]<=d_pc+64'd4; ras_sp<=ras_sp+2'd1;
-                end else if (d_go && !d_fault && d_return) ras_sp<=ras_sp-2'd1;
+                // Return stack, as calls and returns are fetched.
+                if (f_go && !f_fault && f_call) begin
+                    ras[ras_sp+2'd1]<=f_pc+64'd4; ras_sp<=ras_sp+2'd1;
+                end else if (f_go && !f_fault && f_return) ras_sp<=ras_sp-2'd1;
                 // ---- D -> E
-                if (m_flush || e_redirect) e_valid<=0;
-                else if (d_go) begin
-                    e_valid<=1; pc<=d_pc; insn<=d_insn; e_a<=d_a; e_b<=d_b;
-                    e_pred<=d_predict ? d_target : d_pred;
-                    e_bhit<=d_bhit; e_bctr<=d_bctr;
-                    e_fault<=d_fault; e_fcause<=d_fcause;
-                end else if (e_go) e_valid<=0;
-                else if (e_valid) begin e_a<=a; e_b<=b; end  // waiting: keep forwarded values
-                // ---- F -> D
-                if (m_flush || e_redirect || (d_go && d_predict)) d_valid<=0;
-                else if (f_go) begin
-                    d_valid<=1; d_pc<=f_pc; d_insn<=f_word;
-                    d_pred<=f_btaken ? f_btarget : f_pc + 64'd4; d_fpred<=f_btaken;
-                    d_bhit<=f_bhit; d_bctr<=btb_ctr[f_bidx];
-                    d_fault<=f_fault; d_fcause<=f_misaligned ? 2'd0 : 2'd1;
-                end else if (d_go) d_valid<=0;
+                if (e_redirect) e_redirected<=1;
+                if (m_flush_r) e_valid<=0;
+                else if (e_load) begin
+                    if (d_go) begin
+                        e_valid<=1; pc<=d_pc; insn<=d_insn; e_a<=d_a; e_b<=d_b;
+                        e_pred<=d_want; e_ptaken<=d_take_pred; e_alt<=d_take_pred ? d_seq : d_target;
+                        e_bhit<=d_bhit; e_bctr<=d_bctr;
+                        e_fault<=d_fault; e_fcause<=d_fcause; e_redirected<=0;
+                    end else e_valid<=0;
+                end else if (e_valid) begin e_a<=a; e_b<=b; end  // waiting: keep forwarded values
+                // ---- queue or F -> D
+                if (m_flush_r || e_redirect) d_valid<=0;
+                else if (d_fire) begin
+                    d_redirected<=1;
+                    if (d_go) d_valid<=0;
+                end else if (d_take) begin
+                    if (q_pop) begin
+                        d_valid<=1; d_pc<=q_pc[q_head]; d_insn<=q_insn[q_head]; d_pred<=q_pred[q_head];
+                        d_fpred<=q_fpred[q_head]; d_bhit<=q_bhit[q_head]; d_bctr<=q_bctr[q_head];
+                        d_fault<=q_fault[q_head]; d_fcause<=q_fmis[q_head] ? 2'd0 : 2'd1;
+                        d_redirected<=0;
+                    end else if (f_bypass) begin
+                        d_valid<=1; d_pc<=f_pc; d_insn<=f_word; d_pred<=f_pred;
+                        d_fpred<=f_btaken; d_bhit<=f_bhit; d_bctr<=btb_ctr[f_bidx];
+                        d_fault<=f_fault; d_fcause<=f_misaligned ? 2'd0 : 2'd1;
+                        d_redirected<=0;
+                    end else d_valid<=0;
+                end
+                // ---- fetch queue
+                if (front_kill) begin
+                    q_head<=0; q_tail<=0; q_count<=0; q_used<=0;
+                end else begin
+                    if (q_push) begin
+                        q_pc[q_tail]<=f_pc; q_insn[q_tail]<=f_word; q_pred[q_tail]<=f_pred;
+                        q_fpred[q_tail]<=f_btaken; q_bhit[q_tail]<=f_bhit; q_bctr[q_tail]<=btb_ctr[f_bidx];
+                        q_fault[q_tail]<=f_fault; q_fmis[q_tail]<=f_misaligned;
+                        q_tail<=q_tail+2'd1;
+                    end
+                    if (q_pop) q_head<=q_head+2'd1;
+                    q_count<=q_count + {2'b0,q_push} - {2'b0,q_pop};
+                    q_used<=(q_used & ~(q_pop ? 4'b0001 << q_head : 4'b0)) | (q_push ? 4'b0001 << q_tail : 4'b0);
+                end
                 // ---- F
                 if (init_done) f_pc<=fetch_next;
             end

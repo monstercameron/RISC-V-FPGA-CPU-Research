@@ -1,0 +1,774 @@
+{
+  "status": "PASS",
+  "benchmark": "Dhrystone (riscv-tests edition, version string \"C, Version 2.2\")",
+  "label": "Non-compliant run, simulation (rubric evidence class E1)",
+  "timestamp_utc": "2026-11-21T05:43:02.975175+00:00",
+  "scope": {
+    "architecture_version": "0.8.0",
+    "isa": "rv64im_zba_zbb_zbs_zifencei",
+    "abi": "lp64",
+    "environment": "bare metal, laboratory terminal trap",
+    "class": "pipelined",
+    "core": "pipe",
+    "rtl_sha256": {
+      "rtl/cpu/rv64_pipe.sv": "da2caf82aff03ad44c2e59e7bb3c1fe8f559f4e6f080df1de28ce46d705ac022",
+      "rtl/cpu/rv64_bram_soc.sv": "1043cf3322255e6eddc1349d4fe7228ff876afc582b66dd7037fb8bfbe925a4b"
+    },
+    "platform": "rv64_bram_soc, 64 KiB synchronous RAM, no added wait cycles in the timing run",
+    "hardware": "none (Icarus Verilog simulation)",
+    "debug_trace": "retirement trace ports present in the RTL"
+  },
+  "compiler": "clang version 23.1.5 (https://github.com/llvm/llvm-project 392dfff97d29b59d77e5cac6d4b6ef2585fe7117)",
+  "optimization": "O2",
+  "ram_bytes": 65536,
+  "runtime": "fast",
+  "build_commands": [
+    [
+      "C:\\Program Files\\LLVM\\bin\\clang.exe",
+      "--target=riscv64-unknown-elf",
+      "-march=rv64im_zba_zbb_zbs_zifencei",
+      "-mabi=lp64",
+      "-mcmodel=medany",
+      "-msmall-data-limit=0",
+      "-mno-relax",
+      "-O2",
+      "-ffreestanding",
+      "-fno-builtin",
+      "-fno-stack-protector",
+      "-fno-common",
+      "-nostdlibinc",
+      "-I",
+      ".\\sim\\cpu\\bench\\include",
+      "-I",
+      ".\\sim\\cpu\\bench\\vendor\\dhrystone",
+      "-c",
+      ".\\sim\\cpu\\bench\\start.S",
+      "-o",
+      ".\\build\\cpu\\bench\\dhrystone-rv64imb-fastrt-pipe\\start.o"
+    ],
+    [
+      "C:\\Program Files\\LLVM\\bin\\clang.exe",
+      "--target=riscv64-unknown-elf",
+      "-march=rv64im_zba_zbb_zbs_zifencei",
+      "-mabi=lp64",
+      "-mcmodel=medany",
+      "-msmall-data-limit=0",
+      "-mno-relax",
+      "-O2",
+      "-ffreestanding",
+      "-fno-builtin",
+      "-fno-stack-protector",
+      "-fno-common",
+      "-nostdlibinc",
+      "-I",
+      ".\\sim\\cpu\\bench\\include",
+      "-I",
+      ".\\sim\\cpu\\bench\\vendor\\dhrystone",
+      "-std=gnu89",
+      "-fno-inline",
+      "-Wno-unknown-pragmas",
+      "-Wno-implicit-int",
+      "-Wno-implicit-function-declaration",
+      "-Wno-deprecated-non-prototype",
+      "-Wno-return-type",
+      "-c",
+      ".\\sim\\cpu\\bench\\vendor\\dhrystone\\dhrystone_main.c",
+      "-o",
+      ".\\build\\cpu\\bench\\dhrystone-rv64imb-fastrt-pipe\\dhrystone_main.o"
+    ],
+    [
+      "C:\\Program Files\\LLVM\\bin\\clang.exe",
+      "--target=riscv64-unknown-elf",
+      "-march=rv64im_zba_zbb_zbs_zifencei",
+      "-mabi=lp64",
+      "-mcmodel=medany",
+      "-msmall-data-limit=0",
+      "-mno-relax",
+      "-O2",
+      "-ffreestanding",
+      "-fno-builtin",
+      "-fno-stack-protector",
+      "-fno-common",
+      "-nostdlibinc",
+      "-I",
+      ".\\sim\\cpu\\bench\\include",
+      "-I",
+      ".\\sim\\cpu\\bench\\vendor\\dhrystone",
+      "-std=gnu89",
+      "-fno-inline",
+      "-Wno-unknown-pragmas",
+      "-Wno-implicit-int",
+      "-Wno-implicit-function-declaration",
+      "-Wno-deprecated-non-prototype",
+      "-Wno-return-type",
+      "-c",
+      ".\\sim\\cpu\\bench\\vendor\\dhrystone\\dhrystone.c",
+      "-o",
+      ".\\build\\cpu\\bench\\dhrystone-rv64imb-fastrt-pipe\\dhrystone.o"
+    ],
+    [
+      "C:\\Program Files\\LLVM\\bin\\clang.exe",
+      "--target=riscv64-unknown-elf",
+      "-march=rv64im_zba_zbb_zbs_zifencei",
+      "-mabi=lp64",
+      "-mcmodel=medany",
+      "-msmall-data-limit=0",
+      "-mno-relax",
+      "-O2",
+      "-ffreestanding",
+      "-fno-builtin",
+      "-fno-stack-protector",
+      "-fno-common",
+      "-nostdlibinc",
+      "-I",
+      ".\\sim\\cpu\\bench\\include",
+      "-I",
+      ".\\sim\\cpu\\bench\\vendor\\dhrystone",
+      "-std=c11",
+      "-Wall",
+      "-Wextra",
+      "-Werror",
+      "-c",
+      ".\\sim\\cpu\\bench\\dhrystone_port.c",
+      "-o",
+      ".\\build\\cpu\\bench\\dhrystone-rv64imb-fastrt-pipe\\dhrystone_port.o"
+    ],
+    [
+      "C:\\Program Files\\LLVM\\bin\\clang.exe",
+      "--target=riscv64-unknown-elf",
+      "-march=rv64im_zba_zbb_zbs_zifencei",
+      "-mabi=lp64",
+      "-mcmodel=medany",
+      "-msmall-data-limit=0",
+      "-mno-relax",
+      "-O2",
+      "-ffreestanding",
+      "-fno-builtin",
+      "-fno-stack-protector",
+      "-fno-common",
+      "-nostdlibinc",
+      "-I",
+      ".\\sim\\cpu\\bench\\include",
+      "-I",
+      ".\\sim\\cpu\\bench\\vendor\\dhrystone",
+      "-std=c11",
+      "-Wall",
+      "-Wextra",
+      "-Werror",
+      "-DBENCH_FAST_STRINGS",
+      "-c",
+      ".\\sim\\cpu\\bench\\runtime.c",
+      "-o",
+      ".\\build\\cpu\\bench\\dhrystone-rv64imb-fastrt-pipe\\runtime.o"
+    ],
+    [
+      "C:\\Program Files\\LLVM\\bin\\clang.exe",
+      "--target=riscv64-unknown-elf",
+      "-march=rv64im_zba_zbb_zbs_zifencei",
+      "-mabi=lp64",
+      "-nostdlib",
+      "-fuse-ld=lld",
+      "-Wl,--no-relax",
+      "-Wl,-T,.\\build\\cpu\\bench\\dhrystone-rv64imb-fastrt-pipe\\link.ld",
+      ".\\build\\cpu\\bench\\dhrystone-rv64imb-fastrt-pipe\\start.o",
+      ".\\build\\cpu\\bench\\dhrystone-rv64imb-fastrt-pipe\\dhrystone_main.o",
+      ".\\build\\cpu\\bench\\dhrystone-rv64imb-fastrt-pipe\\dhrystone.o",
+      ".\\build\\cpu\\bench\\dhrystone-rv64imb-fastrt-pipe\\dhrystone_port.o",
+      ".\\build\\cpu\\bench\\dhrystone-rv64imb-fastrt-pipe\\runtime.o",
+      "-o",
+      ".\\build\\cpu\\bench\\dhrystone-rv64imb-fastrt-pipe\\bench.elf"
+    ]
+  ],
+  "number_of_runs": 500,
+  "timed_region": {
+    "cycles": 242314,
+    "retired_instructions": 223030,
+    "definition": "from the start-marker store to the instruction before the stop-marker store"
+  },
+  "whole_program": {
+    "cycles_after_reset": 249663,
+    "retired_instructions": 229793
+  },
+  "cycles_per_run": 484.628,
+  "instructions_per_run": 446.06,
+  "clocks_per_instruction": 1.086463704434381,
+  "dmips_per_mhz": 1.1744099878138992,
+  "result_checks": [
+    {
+      "name": "magic",
+      "expected": 5642821575076104260,
+      "actual": 5642821575076104260,
+      "pass": true
+    },
+    {
+      "name": "number_of_runs",
+      "expected": 500,
+      "actual": 500,
+      "pass": true
+    },
+    {
+      "name": "Int_Glob",
+      "expected": 5,
+      "actual": 5,
+      "pass": true
+    },
+    {
+      "name": "Bool_Glob",
+      "expected": 1,
+      "actual": 1,
+      "pass": true
+    },
+    {
+      "name": "Ch_1_Glob",
+      "expected": 65,
+      "actual": 65,
+      "pass": true
+    },
+    {
+      "name": "Ch_2_Glob",
+      "expected": 66,
+      "actual": 66,
+      "pass": true
+    },
+    {
+      "name": "Arr_1_Glob[8]",
+      "expected": 7,
+      "actual": 7,
+      "pass": true
+    },
+    {
+      "name": "Arr_2_Glob[8][7]",
+      "expected": 510,
+      "actual": 510,
+      "pass": true
+    },
+    {
+      "name": "Ptr_Glob->Discr",
+      "expected": 0,
+      "actual": 0,
+      "pass": true
+    },
+    {
+      "name": "Ptr_Glob->Enum_Comp",
+      "expected": 2,
+      "actual": 2,
+      "pass": true
+    },
+    {
+      "name": "Ptr_Glob->Int_Comp",
+      "expected": 17,
+      "actual": 17,
+      "pass": true
+    },
+    {
+      "name": "Ptr_Glob->Str_Comp matches",
+      "expected": 1,
+      "actual": 1,
+      "pass": true
+    },
+    {
+      "name": "Next_Ptr_Glob->Discr",
+      "expected": 0,
+      "actual": 0,
+      "pass": true
+    },
+    {
+      "name": "Next_Ptr_Glob->Enum_Comp",
+      "expected": 1,
+      "actual": 1,
+      "pass": true
+    },
+    {
+      "name": "Next_Ptr_Glob->Int_Comp",
+      "expected": 18,
+      "actual": 18,
+      "pass": true
+    },
+    {
+      "name": "Next_Ptr_Glob->Str_Comp matches",
+      "expected": 1,
+      "actual": 1,
+      "pass": true
+    },
+    {
+      "name": "Ptr_Comp equal in both records",
+      "expected": 1,
+      "actual": 1,
+      "pass": true
+    }
+  ],
+  "differential": [
+    {
+      "max_wait_cycles": 0,
+      "events": 259050,
+      "result": "PASS",
+      "simulator_summary": "DONE retirements=229793 cycles=245278 slot2=0 slot3=0 slot3_branches=0"
+    },
+    {
+      "max_wait_cycles": 7,
+      "events": 259050,
+      "result": "PASS",
+      "simulator_summary": "DONE retirements=229793 cycles=362940 slot2=0 slot3=0 slot3_branches=0"
+    }
+  ],
+  "profile": {
+    "per_instruction_clock_sum": 242314,
+    "state_clocks_per_run": {
+      "fetch": 0.246,
+      "execute": 476.256,
+      "memory": 8.126
+    },
+    "fetch_share_of_clocks": 0.0005076058337528991,
+    "bus_fetches_per_run": 0.22,
+    "classes_per_run": {
+      "jump": {
+        "instructions": 36.014,
+        "clocks": 42.04,
+        "fetch": 0.022,
+        "execute": 42.018,
+        "memory": 0.0,
+        "fetch_misses": 0.022
+      },
+      "alu": {
+        "instructions": 234.028,
+        "clocks": 250.31,
+        "fetch": 0.146,
+        "execute": 250.164,
+        "memory": 0.0,
+        "fetch_misses": 0.126
+      },
+      "load": {
+        "instructions": 73.006,
+        "clocks": 84.176,
+        "fetch": 0.042,
+        "execute": 76.044,
+        "memory": 8.09,
+        "fetch_misses": 0.036
+      },
+      "store": {
+        "instructions": 55.01,
+        "clocks": 57.082,
+        "fetch": 0.026,
+        "execute": 57.02,
+        "memory": 0.036,
+        "fetch_misses": 0.026
+      },
+      "branch": {
+        "instructions": 48.002,
+        "clocks": 51.02,
+        "fetch": 0.01,
+        "execute": 51.01,
+        "memory": 0.0,
+        "fetch_misses": 0.01
+      }
+    },
+    "functions_per_run": {
+      "strcpy": {
+        "calls": 1.0,
+        "instructions": 97.0,
+        "clocks": 103.014,
+        "fetch": 0.0,
+        "execute": 103.004,
+        "memory": 0.01,
+        "fetch_misses": 0.0
+      },
+      "strcmp": {
+        "calls": 1.0,
+        "instructions": 80.0,
+        "clocks": 86.082,
+        "fetch": 0.05,
+        "execute": 86.016,
+        "memory": 0.016,
+        "fetch_misses": 0.048
+      },
+      "main": {
+        "instructions": 66.022,
+        "clocks": 78.108,
+        "fetch": 0.038,
+        "execute": 77.06,
+        "memory": 1.01,
+        "fetch_misses": 0.038
+      },
+      "Proc_1": {
+        "calls": 1.0,
+        "instructions": 53.0,
+        "clocks": 56.11,
+        "fetch": 0.04,
+        "execute": 54.034,
+        "memory": 2.036,
+        "fetch_misses": 0.03
+      },
+      "Proc_8": {
+        "calls": 1.0,
+        "instructions": 29.0,
+        "clocks": 30.04,
+        "fetch": 0.022,
+        "execute": 29.01,
+        "memory": 1.008,
+        "fetch_misses": 0.02
+      },
+      "Func_2": {
+        "calls": 1.0,
+        "instructions": 23.0,
+        "clocks": 27.05,
+        "fetch": 0.018,
+        "execute": 27.016,
+        "memory": 0.016,
+        "fetch_misses": 0.016
+      },
+      "Proc_6": {
+        "calls": 1.0,
+        "instructions": 23.0,
+        "clocks": 25.048,
+        "fetch": 0.022,
+        "execute": 23.016,
+        "memory": 2.01,
+        "fetch_misses": 0.02
+      },
+      "Proc_7": {
+        "calls": 1.0,
+        "instructions": 15.0,
+        "clocks": 15.022,
+        "fetch": 0.008,
+        "execute": 15.012,
+        "memory": 0.002,
+        "fetch_misses": 0.006
+      },
+      "Func_1": {
+        "calls": 3.0,
+        "instructions": 15.0,
+        "clocks": 15.016,
+        "fetch": 0.008,
+        "execute": 15.008,
+        "memory": 0.0,
+        "fetch_misses": 0.006
+      },
+      "Proc_2": {
+        "calls": 1.0,
+        "instructions": 12.0,
+        "clocks": 14.014,
+        "fetch": 0.008,
+        "execute": 13.004,
+        "memory": 1.002,
+        "fetch_misses": 0.008
+      },
+      "Proc_4": {
+        "calls": 1.0,
+        "instructions": 12.0,
+        "clocks": 13.018,
+        "fetch": 0.01,
+        "execute": 12.008,
+        "memory": 1.0,
+        "fetch_misses": 0.008
+      },
+      "Proc_3": {
+        "calls": 1.0,
+        "instructions": 11.0,
+        "clocks": 12.014,
+        "fetch": 0.004,
+        "execute": 12.004,
+        "memory": 0.006,
+        "fetch_misses": 0.004
+      },
+      "Proc_5": {
+        "calls": 1.0,
+        "instructions": 7.0,
+        "clocks": 7.016,
+        "fetch": 0.01,
+        "execute": 7.004,
+        "memory": 0.002,
+        "fetch_misses": 0.008
+      },
+      "Func_3": {
+        "calls": 1.0,
+        "instructions": 3.0,
+        "clocks": 3.004,
+        "fetch": 0.0,
+        "execute": 3.004,
+        "memory": 0.0,
+        "fetch_misses": 0.0
+      },
+      "setStats": {
+        "instructions": 0.018,
+        "clocks": 0.036,
+        "fetch": 0.006,
+        "execute": 0.026,
+        "memory": 0.004,
+        "fetch_misses": 0.006,
+        "calls": 0.002
+      },
+      "bench_timer": {
+        "calls": 0.004,
+        "instructions": 0.02,
+        "clocks": 0.036,
+        "fetch": 0.002,
+        "execute": 0.03,
+        "memory": 0.004,
+        "fetch_misses": 0.002
+      }
+    },
+    "instruction_cache_estimates": [
+      {
+        "beats": 1,
+        "bytes": 8,
+        "misses": 126018,
+        "saved_clocks": 2
+      },
+      {
+        "beats": 2,
+        "bytes": 16,
+        "misses": 124018,
+        "saved_clocks": 2
+      },
+      {
+        "beats": 4,
+        "bytes": 32,
+        "misses": 112017,
+        "saved_clocks": 2
+      },
+      {
+        "beats": 8,
+        "bytes": 64,
+        "misses": 100017,
+        "saved_clocks": 2
+      },
+      {
+        "beats": 16,
+        "bytes": 128,
+        "misses": 97017,
+        "saved_clocks": 2
+      },
+      {
+        "beats": 32,
+        "bytes": 256,
+        "misses": 95517,
+        "saved_clocks": 2
+      },
+      {
+        "beats": 64,
+        "bytes": 512,
+        "misses": 90524,
+        "saved_clocks": 2
+      }
+    ],
+    "estimates": [
+      {
+        "name": "Measured",
+        "instructions_per_run": 446.06,
+        "clocks_per_run": 484.628,
+        "cpi": 1.086463704434381,
+        "dmips_per_mhz": 1.1744099878138992,
+        "speedup": 1.0,
+        "assumption": "Clocks measured on the core and synchronous RAM."
+      },
+      {
+        "name": "Instruction cache, 2 beats (16 bytes)",
+        "instructions_per_run": 446.06,
+        "clocks_per_run": 484.624,
+        "cpi": 1.0864547370308928,
+        "dmips_per_mhz": 1.174419681184329,
+        "speedup": 1.0000082538215194,
+        "assumption": "Direct-mapped, filled on every fetch; a hit costs no fetch clocks. Stores to cached code are ignored by this estimate."
+      },
+      {
+        "name": "Instruction cache, 4 beats (32 bytes)",
+        "instructions_per_run": 446.06,
+        "clocks_per_run": 484.624,
+        "cpi": 1.0864547370308928,
+        "dmips_per_mhz": 1.174419681184329,
+        "speedup": 1.0000082538215194,
+        "assumption": "Direct-mapped, filled on every fetch; a hit costs no fetch clocks. Stores to cached code are ignored by this estimate."
+      },
+      {
+        "name": "Instruction cache, 8 beats (64 bytes)",
+        "instructions_per_run": 446.06,
+        "clocks_per_run": 484.624,
+        "cpi": 1.0864547370308928,
+        "dmips_per_mhz": 1.174419681184329,
+        "speedup": 1.0000082538215194,
+        "assumption": "Direct-mapped, filled on every fetch; a hit costs no fetch clocks. Stores to cached code are ignored by this estimate."
+      },
+      {
+        "name": "Instruction cache, 16 beats (128 bytes)",
+        "instructions_per_run": 446.06,
+        "clocks_per_run": 484.624,
+        "cpi": 1.0864547370308928,
+        "dmips_per_mhz": 1.174419681184329,
+        "speedup": 1.0000082538215194,
+        "assumption": "Direct-mapped, filled on every fetch; a hit costs no fetch clocks. Stores to cached code are ignored by this estimate."
+      },
+      {
+        "name": "Instruction cache, 32 beats (256 bytes)",
+        "instructions_per_run": 446.06,
+        "clocks_per_run": 484.624,
+        "cpi": 1.0864547370308928,
+        "dmips_per_mhz": 1.174419681184329,
+        "speedup": 1.0000082538215194,
+        "assumption": "Direct-mapped, filled on every fetch; a hit costs no fetch clocks. Stores to cached code are ignored by this estimate."
+      },
+      {
+        "name": "Instruction cache, 64 beats (512 bytes)",
+        "instructions_per_run": 446.06,
+        "clocks_per_run": 484.624,
+        "cpi": 1.0864547370308928,
+        "dmips_per_mhz": 1.174419681184329,
+        "speedup": 1.0000082538215194,
+        "assumption": "Direct-mapped, filled on every fetch; a hit costs no fetch clocks. Stores to cached code are ignored by this estimate."
+      },
+      {
+        "name": "Issue loads and stores in EXECUTE",
+        "instructions_per_run": 446.06,
+        "clocks_per_run": 476.528,
+        "cpi": 1.0683047123705331,
+        "dmips_per_mhz": 1.1943725522409476,
+        "speedup": 1.0169979518517276,
+        "assumption": "The data request starts in EXECUTE, so each load or store that waited in MEMORY waits one clock less."
+      },
+      {
+        "name": "Issue the next fetch in EXECUTE",
+        "instructions_per_run": 446.06,
+        "clocks_per_run": 484.408,
+        "cpi": 1.0859704972425235,
+        "dmips_per_mhz": 1.1749433609153324,
+        "speedup": 1.0004541626067283,
+        "assumption": "A fetch that misses starts one clock earlier, during the previous instruction's EXECUTE. Upper bound: not possible after a load or store, which uses the bus."
+      },
+      {
+        "name": "Hardware multiply and divide (M)",
+        "instructions_per_run": 446.06,
+        "clocks_per_run": 484.628,
+        "cpi": 1.086463704434381,
+        "dmips_per_mhz": 1.1744099878138992,
+        "speedup": 1.0,
+        "assumption": "Each helper call becomes one 1-clock instruction. Best case: an iterative divider takes longer."
+      },
+      {
+        "name": "No fetch clocks at all",
+        "instructions_per_run": 446.06,
+        "clocks_per_run": 484.382,
+        "cpi": 1.0859122091198494,
+        "dmips_per_mhz": 1.1750064279314143,
+        "speedup": 1.0005078636282934,
+        "assumption": "Perfect instruction supply: a lower bound for fetch work."
+      },
+      {
+        "name": "One clock per instruction",
+        "instructions_per_run": 446.06,
+        "clocks_per_run": 446.06,
+        "cpi": 1.0,
+        "dmips_per_mhz": 1.2759538258850252,
+        "speedup": 1.086463704434381,
+        "assumption": "The floor for a core that executes one instruction per clock."
+      }
+    ]
+  },
+  "instruction_names_executed": [
+    "add",
+    "addi",
+    "addiw",
+    "andi",
+    "auipc",
+    "beq",
+    "bge",
+    "bgeu",
+    "blt",
+    "bltu",
+    "bne",
+    "bseti",
+    "div",
+    "divw",
+    "ebreak",
+    "jal",
+    "jalr",
+    "lbu",
+    "ld",
+    "lui",
+    "lw",
+    "lwu",
+    "mulw",
+    "or",
+    "orc.b",
+    "orn",
+    "sb",
+    "sd",
+    "sh1add",
+    "sh2add",
+    "sh3add",
+    "sll",
+    "slli",
+    "sltiu",
+    "srl",
+    "srli",
+    "sub",
+    "subw",
+    "sw",
+    "xor"
+  ],
+  "simulator": "Icarus Verilog version 12.0 (stable) ()",
+  "host": {
+    "platform": "Linux-6.18.33.2-microsoft-standard-WSL2-aarch64-with-glibc2.39",
+    "machine": "aarch64",
+    "python": "3.12.3"
+  },
+  "wall_seconds": {
+    "timing_run": 17.593885178000164,
+    "reference_model": 0.3686369930001092
+  },
+  "build_input_sha256": {
+    "sim/cpu/bench/vendor/dhrystone/dhrystone_main.c": "45f1aeb092b50ccbd2f37782e5b054b446c93c49771a45a36c940386f72d338d",
+    "sim/cpu/bench/vendor/dhrystone/dhrystone.c": "11eb8a10d14d4a0b2e087f7d5e9ab67f76b1e9b1fd682457b5ed3ac1e7534e97",
+    "sim/cpu/bench/dhrystone_port.c": "05b03566040c986ea1b2b023f83d8c3c548cd6c6d3e2f4fb77c7b8329b11e9a6",
+    "sim/cpu/bench/runtime.c": "16ed356f34ed76d0bc0b0d4d4f8ee3b504434c677066f8a0cd80d94c908bafcb",
+    "sim/cpu/bench/start.S": "294dae6e615194227a3b7c54437c28c28ecd2cd4fcbae94170d44c9884314a3f",
+    "sim/cpu/bench/build_bench.py": "3bd8b52f6ff81a0ac4c2221cded54e059336db5df5935a670e69e9e78cc57537",
+    "sim/cpu/bench/include/alloca.h": "1a6f4f04b90593824ccdd035fa9d561bc6e733d97449db59c404a431b3ba50cc",
+    "sim/cpu/bench/include/bench.h": "ba4ac3cd1104d831d2c29a7bb43435bc011515ccc05a495035745630d30935dc",
+    "sim/cpu/bench/include/stdio.h": "33deb5d9c0019c9e5cb6d216b9a7bd4fcbea3cef421dfc8fc6c9d3a5e13722de",
+    "sim/cpu/bench/include/string.h": "ccc2de0a57618379f7bd1db3488c47e8334bd1468b73d55113e2901345b8bc4a",
+    "sim/cpu/bench/include/util.h": "784231fb11edcd95e05db0763a866d76556373a2b5bef48dbce93fdca0409b2e"
+  },
+  "build_artifact_sha256": {
+    "link.ld": "3041b5609eba244bb9de5cf920107e614941acd9f970c3eadb262586a3b2d4e4",
+    "bench.elf": "b5f4e124c4727a76471f9d8ae3d7a05fc78735ae44ded600b5cb4740511831a4",
+    "bench.bin": "97f52c42a2fec02bfd7aea56fbe4f40bc927b93adabc60684e2e25da603e26ec",
+    "bench-bytes.hex": "3c6e560ddc4c595d0f4987128714a8fc7d3104451c0909fc41e3d3bef6c8d08a",
+    "bench-words.hex": "7a25937cf7a9ecefa745452c69bf128794a384e4fce4ff798bd6f82ee239a6c8"
+  },
+  "limitations": [
+    "No M extension: multiply and divide use software routines in sim/cpu/bench/runtime.c.",
+    "No cycle counter: timing comes from testbench markers; the program prints no time.",
+    "Dhrystone local variables are not reachable from the port layer and are not checked.",
+    "Per-MHz figures only; no clock frequency has been measured.",
+    "Simulation run; not compliant with the benchmark's own reporting rules."
+  ],
+  "rubric": {
+    "total": 6.1,
+    "band": "foundation",
+    "evidence_assessed": "2026-11-20",
+    "evidence_stale": true,
+    "dimensions": {
+      "R1": 0.0,
+      "R2": 0.0,
+      "R3": 0.0,
+      "R4": 1.25,
+      "R5": 0.0,
+      "R6": 0.0,
+      "R7": 1.67,
+      "R8": 1.31,
+      "R9": 1.88
+    },
+    "gates_not_met": [
+      "HG1",
+      "HG3",
+      "HG6",
+      "HG7",
+      "HG8",
+      "PG1",
+      "PG2",
+      "PG3",
+      "PG5"
+    ],
+    "claims_granted": [],
+    "note": "Automated self-assessment from cpu/rubric-evidence.json; not an independent review."
+  }
+}

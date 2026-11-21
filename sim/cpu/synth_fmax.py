@@ -104,6 +104,7 @@ def main():
         'nextpnr': tool_version(['nextpnr-ecp5', '--version']),
         'device': f'LFE5U-{args.device.upper()}' if args.device[0].isdigit() else args.device,
         'package': args.package, 'speed_grade': args.speed, 'seed': args.seed,
+        'mapper': 'abc (synth_ecp5 default in Yosys 0.33; abc9 is opt-in there)',
         'icache_beats': args.icache_beats, 'dcache_beats': args.dcache_beats,
         'route_status': 'routed' if route.returncode == 0 or 'Routing complete' in log
                         else f'nextpnr exit {route.returncode}',
