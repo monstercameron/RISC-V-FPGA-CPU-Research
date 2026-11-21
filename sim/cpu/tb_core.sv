@@ -1,7 +1,6 @@
 // SPDX-License-Identifier: MIT
 `timescale 1ns/1ps
-module tb_core;
-    localparam MEM_BYTES=16384;
+module tb_core #(parameter integer MEM_BYTES=16384);
     reg clk=0,reset=1;
     always #5 clk=~clk;
     reg [7:0] memory [0:MEM_BYTES-1];
@@ -22,7 +21,7 @@ module tb_core;
 
     string image_path,trace_path;
     integer fd,i,lane,cycles=0,retire_count=0;
-    integer max_stall=0,delay_left=0,seed_arg=1,fault_kind=0;
+    integer max_stall=0,delay_left=0,seed_arg=1,fault_kind=0,max_cycles=200000;
     reg [31:0] rng;
     reg [63:0] fault_addr=64'hffffffffffffffff;
     reg active=0,held=0;
@@ -35,6 +34,7 @@ module tb_core;
         if ($value$plusargs("seed=%d",seed_arg)) begin end
         if ($value$plusargs("fault_kind=%d",fault_kind)) begin end
         if ($value$plusargs("fault_addr=%h",fault_addr)) begin end
+        if ($value$plusargs("max_cycles=%d",max_cycles)) begin end
         rng=seed_arg==0 ? 1 : seed_arg;
         for (i=0;i<MEM_BYTES;i=i+1) memory[i]=0;
         $readmemh(image_path,memory);
@@ -81,7 +81,7 @@ module tb_core;
     always @(posedge clk) begin
         if (!reset) begin
             cycles=cycles+1;
-            if (cycles>200000) $fatal(1,"timeout");
+            if (cycles>max_cycles) $fatal(1,"timeout");
             if (held && (!valid || request!==held_request)) $fatal(1,"unstable stalled request");
             held=valid && !ready;
             held_request=request;

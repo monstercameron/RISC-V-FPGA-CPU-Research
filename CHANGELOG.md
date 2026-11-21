@@ -4,6 +4,9 @@
 
 ### Added
 
+- Development log with timestamped events, commit messages and findings, starting November 20, 2026.
+- Dhrystone benchmark: riscv-tests source pinned with license and provenance, a freestanding runtime with software multiply and divide, marker-based timing, a 64 KiB build, result and differential-trace checks, a CI job and a first recorded simulation result of 0.260 DMIPS/MHz.
+- Trace testbench memory size and cycle limit are now parameters; defaults are unchanged.
 - CPU to-do list with an RV64GC milestone mapped to the C1-C4 gates, benchmark work and later large-software goals.
 - CPU review rubric: scope label, evidence classes, hard gates, 0-4 scoring across nine weighted dimensions, benchmark rules and the claims each result permits, with the current core's gate status.
 

@@ -20,6 +20,12 @@
       "path": "sim/starter/vendor/COPYING",
       "source": "https://github.com/YosysHQ/picorv32/blob/ef203c2b0a3fb793280f5114941416c425c5b461/COPYING",
       "sha256": "041ebc727233e5bf096dd41260cbb81014d3d29ca007a15f3b1807d4e9ff288e"
+    },
+    {
+      "path": "licenses/RISCV-TESTS-BSD-3-Clause.txt",
+      "source": "https://github.com/riscv-software-src/riscv-tests/blob/3df703cd52d5f0d8224e3c50bf03c6cb70efff98/LICENSE",
+      "sha256": "43b7309213293b4323d65301a90e05472579abcd51feb260a850354bcb49ff8f",
+      "retrieved": "2026-11-20"
     }
   ]
 }

@@ -23,7 +23,7 @@ MAINTAINED_DOCS = (
     'fpga/README.md', 'llm-accelerator/planning-evidence/README.md',
     'llm-rva23-mapping.md', 'isa/README.md',
     'cpu/README.md', 'cpu/architecture.md', 'cpu/c-demo.md', 'cpu/visualizer.md', 'cpu/addition.md', 'cpu/programs.md', 'cpu/inputs.md',
-    'cpu/review-rubric.md', 'TODO.md',
+    'cpu/review-rubric.md', 'TODO.md', 'cpu/dhrystone.md', 'DEVLOG.md',
 )
 REQUIRED = MAINTAINED_DOCS + (
     'LICENSE', '.gitignore', '.gitattributes', '.editorconfig',
@@ -46,6 +46,11 @@ REQUIRED = MAINTAINED_DOCS + (
     'sim/cpu/program_catalog.py', 'sim/cpu/program_inputs.py', 'sim/cpu/test_program_inputs.py', 'sim/cpu/build_programs.py', 'cpu/programs-verification.json',
     'sim/cpu/programs/decisions.c', 'sim/cpu/programs/counting.c', 'sim/cpu/programs/arrays.c',
     'sim/cpu/programs/calls.c', 'sim/cpu/programs/sorting.c',
+    'sim/cpu/bench/build_bench.py', 'sim/cpu/bench/run_bench.py', 'sim/cpu/bench/tb_bench.sv',
+    'sim/cpu/bench/run_dhrystone.ps1', 'sim/cpu/bench/start.S', 'sim/cpu/bench/runtime.c',
+    'sim/cpu/bench/dhrystone_port.c', 'sim/cpu/bench/include/bench.h', 'sim/cpu/bench/include/util.h',
+    'sim/cpu/bench/include/stdio.h', 'sim/cpu/bench/include/string.h', 'sim/cpu/bench/include/alloca.h',
+    'sim/cpu/bench/vendor/dhrystone/SOURCE.txt', 'cpu/dhrystone-results.json',
 )
 PLANNING_INPUTS = (
     'memory_model.py', 'plan_audit_checks.py', 'refinement_checks.py', 'abi_v1.py',

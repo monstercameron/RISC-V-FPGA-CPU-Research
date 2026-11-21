@@ -20,10 +20,10 @@ Targets: **CoreMark** (primary, the number people compare cores by) and **Dhryst
 
 Shared groundwork:
 
-- [ ] **Benchmark markers.** The program writes start and stop markers to a reserved address; the testbench counts clocks and retired instructions between them. Replaces hardware counters until Zicntr arrives in C1. Rubric section 9.
-- [ ] **Larger memory everywhere.** `RAM_WORDS` already scales the RAM wrapper, but [tb_core.sv](sim/cpu/tb_core.sv), [test_cpu.py](sim/cpu/test_cpu.py) and the reference model assume exactly 16 KiB. Make the size a parameter in all of them and record it with each result.
-- [ ] **Small runtime.** Startup code, a stack sized for the benchmark, `memcpy`/`memset`/`strcpy`/`strcmp`, and the compiler's software multiply and divide routines for `rv64i`.
-- [ ] **Licensing.** Add each benchmark's upstream license, provenance and source revision to [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md) and `licenses/` before committing its source.
+- [x] **Benchmark markers.** The program writes start and stop markers to a mailbox word; [tb_bench.sv](sim/cpu/bench/tb_bench.sv) counts clocks and retired instructions between them. Replaces hardware counters until Zicntr arrives in C1. Done November 20, 2026.
+- [x] **Larger memory for benchmarks.** The RAM wrapper's `RAM_WORDS`, a new `MEM_BYTES` parameter in [tb_core.sv](sim/cpu/tb_core.sv) and a generated linker script set the size; the reference model already follows the image size. The main regression in [test_cpu.py](sim/cpu/test_cpu.py) stays at 16 KiB on purpose, because its unmapped-address tests rely on that boundary. Done November 20, 2026.
+- [x] **Small runtime.** [start.S](sim/cpu/bench/start.S) with `.bss` clearing, and [runtime.c](sim/cpu/bench/runtime.c) with `memcpy`/`memset`/`strcpy`/`strcmp` and software multiply and divide. Done November 20, 2026.
+- [ ] **Licensing.** Add each benchmark's upstream license, provenance and source revision to [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md) and `licenses/` before committing its source. Done for Dhrystone; CoreMark still needs it.
 
 CoreMark:
 
@@ -35,10 +35,14 @@ CoreMark:
 
 Dhrystone:
 
-- [ ] **Port Dhrystone 2.1.** Bare-metal, using the markers for timing. A RISC-V bare-metal harness already exists in riscv-tests and can be the starting point.
-- [ ] **Guard against compiler distortion.** Compile each file separately with fixed flags, no link-time optimization and no inlining across files; record the flags. A result built differently is not comparable.
-- [ ] **Validate.** Done when the program's final variable values match the published expected values and the retirement trace matches the reference model.
-- [ ] **Report.** DMIPS per MHz (1,000,000 / (clocks per iteration x 1,757)), always next to the CoreMark result and never alone. Rubric section 9.
+First result: **0.260 DMIPS/MHz**, non-compliant simulation run, November 20, 2026. See [cpu/dhrystone.md](cpu/dhrystone.md).
+
+- [x] **Port Dhrystone.** The riscv-tests edition (version string 2.2, the same benchmark loop as 2.1), unmodified, with a port layer for timing and result capture. Done November 20, 2026.
+- [x] **Guard against compiler distortion.** Each file compiled separately at `-O2`, no link-time optimization, `-fno-inline` on the upstream files; every command recorded. Done November 20, 2026.
+- [x] **Validate.** All 17 reachable final values match Dhrystone's expected values, and the retirement trace matches the reference model with 0 and 7 wait cycles. The benchmark's local variables are not reachable and are not checked. Done November 20, 2026.
+- [x] **Runs in CI.** A CI job builds with Ubuntu's clang and runs the checks on every push.
+- [ ] **Report beside CoreMark.** DMIPS per MHz (runs x 1,000,000 / (clocks x 1,757)) is recorded in [cpu/dhrystone-results.json](cpu/dhrystone-results.json). Done when it is published next to a CoreMark result, never on its own. Rubric section 9.
+- [ ] **Hardware multiply and divide.** Rerun after the M extension (C2); today the software routines are part of the score.
 
 Then:
 

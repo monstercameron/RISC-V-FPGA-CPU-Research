@@ -18,6 +18,7 @@ qualification-fixtures.json -text
 abi-lifecycle-example.json -text
 licenses/** -text
 sim/starter/vendor/** -text
+sim/cpu/bench/vendor/** -text
 llm-accelerator/planning-evidence/** -text
 notes/**/modeling_qwen3_5.py -text
 notes/**/qwen-config.json -text

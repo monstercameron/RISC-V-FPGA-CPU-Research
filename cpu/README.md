@@ -57,6 +57,8 @@ The compiler target is `rv64i_zifencei`, ABI `lp64`. Do not compile software for
 
 Add contained machine-mode traps, the selected privileged CSR set, `mret`, timer/external interrupts and a trap-handler firmware test. Preserve the retirement boundary and single-request memory contract. Then compare against an external established ISA model and run relevant architectural tests before broadening ISA support.
 
+The first benchmark, [Dhrystone](dhrystone.md), runs unmodified on the core in simulation at 0.260 DMIPS/MHz with software multiply and divide. Run `.\sim\cpu\bench\run_dhrystone.ps1`.
+
 Reviews use the [CPU review rubric](review-rubric.md) to decide whether the core may be called good or performant. Neither claim is available yet.
 
 Synthesis, place-and-route timing, exact LUT/BRAM/DSP counts, board constraints and physical FPGA operation remain unverified. The next hardware decision follows a small exact-part synthesis experiment; no purchase is required to continue simulation.

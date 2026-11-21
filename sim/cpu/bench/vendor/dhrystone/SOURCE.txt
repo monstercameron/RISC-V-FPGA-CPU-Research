@@ -1,0 +1,15 @@
+Dhrystone benchmark, RISC-V bare-metal edition from riscv-tests
+Repository: https://github.com/riscv-software-src/riscv-tests
+Commit: 3df703cd52d5f0d8224e3c50bf03c6cb70efff98 (committed 2026-10-19)
+Path: benchmarks/dhrystone/
+Files: dhrystone.c, dhrystone.h, dhrystone_main.c (byte-identical to upstream)
+SHA-256:
+  dhrystone.c       11eb8a10d14d4a0b2e087f7d5e9ab67f76b1e9b1fd682457b5ed3ac1e7534e97
+  dhrystone.h       a66aa6e73b38afb85021b2ac751402c8b27d47e48beffed852afb36aa94a2af5
+  dhrystone_main.c  45f1aeb092b50ccbd2f37782e5b054b446c93c49771a45a36c940386f72d338d
+License: BSD-3-Clause, The Regents of the University of California
+  (see ../../../../../licenses/RISCV-TESTS-BSD-3-Clause.txt)
+Original benchmark: Reinhold P. Weicker; C version 2.2 by Steven Pemberton.
+Downloaded: 2026-11-20
+Local changes: none. The port layer in sim/cpu/bench/ supplies util.h,
+stdio.h, string.h and alloca.h replacements, timing markers and the runtime.
