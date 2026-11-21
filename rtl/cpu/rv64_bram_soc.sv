@@ -5,7 +5,8 @@ module rv64_bram_soc #(
     parameter integer RAM_WORDS = 2048, // 16 KiB at 64 bits/word; power of two
     parameter INIT_HEX = "",
     parameter [63:0] RESET_PC = 0,
-    parameter integer ICACHE_BEATS = 512 // core instruction cache, 8-byte beats
+    parameter integer ICACHE_BEATS = 512, // core instruction cache, 8-byte beats
+    parameter integer DCACHE_BEATS = 512  // core data cache, 8-byte beats
 ) (
     input wire clk,
     input wire reset, // already synchronized to clk; resets core AND adapter
@@ -49,7 +50,7 @@ module rv64_bram_soc #(
                     if (wstrb[lane]) ram[index][8*lane+:8]<=wdata[8*lane+:8];
         end
     end
-    rv64_core #(.RESET_PC(RESET_PC),.ICACHE_BEATS(ICACHE_BEATS)) cpu (
+    rv64_core #(.RESET_PC(RESET_PC),.ICACHE_BEATS(ICACHE_BEATS),.DCACHE_BEATS(DCACHE_BEATS)) cpu (
         .clk(clk),.reset(reset),.mem_valid(valid),.mem_instr(instr),
         .mem_addr(addr),.mem_wdata(wdata),.mem_wstrb(wstrb),
         .mem_ready(ready),.mem_rdata(rdata),.mem_error(error),

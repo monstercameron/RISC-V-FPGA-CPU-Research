@@ -106,6 +106,9 @@ Times are US Eastern (UTC-05:00). Each timestamp names its source:
 | 21:37:44 | Commit `f18223e`, loads and stores issue from EXECUTE (0.2.1); tagged `cpu-v0.2.1`, local only | git |
 | 21:38:42 | 0.2.1 run: 794.7 clocks per run, 0.7162 DMIPS/MHz, 2.75x over 0.1.0, as estimated; [devlog-f18223e.md](devlog/devlog-f18223e.md). Every load and store still spends 1 clock in MEMORY because the RAM wrapper acknowledges a clock late | record |
 | after 21:39 | 0.2.2 same-clock write acknowledge in the RAM wrapper written. Main regression 96/96 pass with 512-beat and 2-beat caches | output |
+| 21:39:58 | Commit `0573f1a`, same-clock write acknowledge (0.2.2); tagged `cpu-v0.2.2`, local only | git |
+| 21:40:59 | 0.2.2 run: 718.7 clocks per run, CPI 1.198, 0.7919 DMIPS/MHz, 3.04x over 0.1.0, as estimated; [devlog-0573f1a.md](devlog/devlog-0573f1a.md). Remaining waits: 118 loads per run, 1 MEMORY clock each | record |
+| after 21:41 | 0.3.0 data cache written. Main regression 96/96 pass with default 512-beat caches and with 2-beat instruction and data caches | output |
 
 ### Optimization loop
 
@@ -117,6 +120,7 @@ Each step changes the core, passes the main regression, is committed and tagged 
 | 0.1.1 | One-entry fetch buffer | 1,706.2 | 2.843 | 0.3336 | 1.28x | 1.28x |
 | 0.2.0 | 4 KiB direct-mapped instruction cache | 988.7 | 1.648 | 0.5756 | 2.21x | 1.73x |
 | 0.2.1 | Loads and stores issue from EXECUTE | 794.7 | 1.324 | 0.7162 | 2.75x | 1.24x |
+| 0.2.2 | RAM wrapper acknowledges writes in the same clock | 718.7 | 1.198 | 0.7919 | 3.04x | 1.11x |
 
 ### Commits
 
@@ -329,3 +333,4 @@ One row per benchmark run, oldest first. Each run's full record (result, rubric 
 | 2026-11-20 21:32:24 -0500 | `df7f489` | yes | 0.1.1 | clang version 23.1.5 `-O2` | 1,706.2 | 0.3336 | 37.1 | [devlog-df7f489.md](devlog/devlog-df7f489.md) |
 | 2026-11-20 21:35:53 -0500 | `7197bd1` | yes | 0.2.0 | clang version 23.1.5 `-O2` | 988.7 | 0.5756 | 37.1 | [devlog-7197bd1.md](devlog/devlog-7197bd1.md) |
 | 2026-11-20 21:38:42 -0500 | `f18223e` | yes | 0.2.1 | clang version 23.1.5 `-O2` | 794.7 | 0.7162 | 37.1 | [devlog-f18223e.md](devlog/devlog-f18223e.md) |
+| 2026-11-20 21:40:59 -0500 | `0573f1a` | yes | 0.2.2 | clang version 23.1.5 `-O2` | 718.7 | 0.7919 | 37.1 | [devlog-0573f1a.md](devlog/devlog-0573f1a.md) |

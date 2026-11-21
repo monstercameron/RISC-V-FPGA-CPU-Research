@@ -2,18 +2,18 @@
   "rubric": "cpu/review-rubric.md",
   "rubric_revision": 1,
   "assessed": "2026-11-20",
-  "assessed_at_commit": "cpu-v0.2.2",
+  "assessed_at_commit": "cpu-v0.3.0",
   "assessed_by": "Author self-assessment, not an independent review (rubric HG8 and R9.4).",
-  "architecture_version": "0.2.2",
+  "architecture_version": "0.3.0",
   "rtl_sha256": {
-    "rtl/cpu/rv64_bram_soc.sv": "5d0323d3916c64fd81ab80dc217f731dbaf3198bc22ad8840de7dcd73c270bec",
-    "rtl/cpu/rv64_core.sv": "019ba2dc2dc53ed301be89d225290af16769d6d5f065dd6253fb89119c806e41"
+    "rtl/cpu/rv64_bram_soc.sv": "385b91fe9a8a9d768e7deadd976b718d1668c389da4cb74fed3634758769ae72",
+    "rtl/cpu/rv64_core.sv": "d8359ad08ebe12c2cf00dbec6dcd60ab4a716e7e0a8709e2f913e9522d8d0ca4"
   },
   "scope": {
     "isa": "rv64i_zifencei",
     "environment": "machine-level laboratory terminal trap; no privilege modes",
     "class": "multicycle",
-    "configuration": "RESET_PC 0; ICACHE_BEATS 512; retirement trace ports always present",
+    "configuration": "RESET_PC 0; ICACHE_BEATS 512; DCACHE_BEATS 512; retirement trace ports always present",
     "platform": "rv64_bram_soc synchronous RAM: reads answer the next clock, writes in the same clock; 64 KiB for benchmarks, 16 KiB for the regression",
     "hardware": "none (simulation only)",
     "target": null
@@ -224,11 +224,11 @@
     },
     "R6.4": {
       "score": 1,
-      "evidence": "Reads carry no access size; fetch reads a full 8-byte beat. Documented limitation."
+      "evidence": "Reads carry no access size; fetch reads a full 8-byte beat; since 0.3.0 all addresses are cached, so a peripheral region would need a PMA marking it uncacheable. Documented limitation."
     },
     "R6.5": {
       "score": 2,
-      "evidence": "RAM_WORDS tested at 2048 and 8192; ICACHE_BEATS at 2 and 512 with illegal sizes rejected at elaboration; RESET_PC only at its default."
+      "evidence": "RAM_WORDS tested at 2048 and 8192; ICACHE_BEATS and DCACHE_BEATS at 2 and 512, with illegal sizes rejected at elaboration; RESET_PC only at its default."
     },
     "R6.6": {
       "score": 2,
