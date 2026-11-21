@@ -37,7 +37,10 @@ module tb_bench #(parameter integer RAM_WORDS = 8192);
     // so each region includes the start-marker store and excludes the stop one.
     // The out-of-order core (WIDE_TRACE) retires a store on the edge its write
     // completes, so there the region and the profile exclude the start-marker store
-    // and include the stop one; the count is the same (found by the Codex review).
+    // and include the stop one (found by the Codex review). With paired stores the
+    // retirement group of a marker can move one instruction across the boundary:
+    // 0.11.0 regions count 275,031 and 223,031 instructions where the trace has
+    // 275,030 and 223,030 (second Codex review); clock counts are unaffected.
     always @(negedge clk) if (!reset) begin
         cycles=cycles+1;
 `ifdef WIDE_TRACE

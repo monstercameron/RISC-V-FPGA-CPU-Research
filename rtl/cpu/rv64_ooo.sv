@@ -115,7 +115,7 @@ module rv64_core #(
     localparam integer BTB_TAG = 10;
     localparam integer BTB_ENTRIES = 1 << BTB_BITS;
     localparam integer RAS_N = 16;
-    localparam integer LP_BITS = 8;      // loop predictor (0.10.2): 256 entries
+    localparam integer LP_BITS = 8;      // loop predictor (0.11.0): 256 entries
     localparam integer LP_N = 1 << LP_BITS;
     localparam integer LP_TAG = 10;
     localparam integer TAKEN_MAX = 2;    // predicted-taken transfers followed per fetch group (0.10.1)
@@ -490,7 +490,7 @@ module rv64_core #(
     reg [Q_N-1:0] q_fpred, q_bhit, q_fault, q_fmis;
     reg [1:0] q_bctr [0:Q_N-1];
     reg [3:0] q_rsp [0:Q_N-1];
-    // Loop predictor (0.10.2): for each conditional branch, the run length of its usual
+    // Loop predictor (0.11.0): for each conditional branch, the run length of its usual
     // direction before one opposite outcome. An instance's iteration number comes from
     // the youngest earlier instance still in flight, else from the retired count, so
     // a discarded path leaves nothing to repair.
@@ -502,11 +502,27 @@ module rv64_core #(
     reg [Q_N-1:0] q_lp, q_ld;                  // loop predictor decided; predicted direction
     reg [7:0] q_li [0:Q_N-1];                  // iteration number of this instance
     reg [ROB_N-1:0] rb_lp, rb_ld;
-    reg [ROB_N-1:0] rb_fence;                  // FENCE (not FENCE.I), 0.10.2
+    reg [ROB_N-1:0] rb_fence;                  // FENCE (not FENCE.I), 0.11.0
+    // Value prediction: a load, multiply or divide whose last VP_CONF results were the
+    // same gives that value to its consumers at rename; its own result is compared when
+    // it executes, and a wrong guess refetches after it retires.
+    localparam integer VP_BITS = 8;
+    localparam integer VP_N = 1 << VP_BITS;
+    localparam integer VP_TAG = 10;
+    localparam [2:0] VP_CONF = 3'd7;
+    reg [VP_N-1:0] vp_valid;
+    reg [VP_TAG-1:0] vp_tag [0:VP_N-1];
+    reg [63:0] vp_val [0:VP_N-1];
+    reg [2:0] vp_conf [0:VP_N-1];
+    reg [ROB_N-1:0] rb_vp, rb_vpbad;
+    reg [63:0] rb_vpv [0:ROB_N-1];
+    reg [VP_BITS-1:0] vpi;
     reg [7:0] rb_li [0:ROB_N-1];
     reg [7:0] g_li [0:7];
     reg [7:0] g_lpi, lp_it;
     reg [3:0] d_redirect_sp;
+    reg [3:0] g_ras_pop_sp;
+    reg f_stale;                    // the held fetch was issued before a redirect
     reg [7:0] g_lpmask;
     reg g_lpu, g_lpd, lp_found, lp_d;
     reg [Q_N-1:0] q_lp_c;                      // queue entry is a conditional branch
@@ -534,7 +550,7 @@ module rv64_core #(
     reg fb_lock;                // fb_owner has not yet taken the buffered beat
     reg mu_owner_v;             // the load that asked for the miss is still in flight
     reg [63:0] mu_err_beat;
-    reg [ROB_B-1:0] mu_err_owner;   // the load the failed fill belongs to (0.10.2)
+    reg [ROB_B-1:0] mu_err_owner;   // the load the failed fill belongs to (0.11.0)
 
     // ---------------- bus request (combinational) -------------------------------
     // The retiring store: the first store in the retirement window, when everything
@@ -543,6 +559,8 @@ module rv64_core #(
     reg [ROB_B-1:0] st_idx;
     reg st2_cand;               // a second store that can share the write
     reg [ROB_B-1:0] st2_idx;
+    reg [ROB_N-1:0] rb_viol;    // a finished load read bytes an older store then wrote
+    reg [255:0] mdp_wait;       // load-wait table, by PC bits 9:2
     reg h_exc;
     always @* begin
         st_cand = 0; st_idx = 0; st2_cand = 0; st2_idx = 0;
@@ -558,6 +576,7 @@ module rv64_core #(
                     // After the first store the scan looks for a second one; an instruction
                     // between them (or the second store) in the first store's beat ends it,
                     // since the first write would make it stale.
+                    else if (rb_viol[e]) stop = 1;
                     else if (st_cand && rb_pc[e][63:3] == rb_addr[st_idx][63:3]) stop = 1;
                     else if (rb_store[e]) begin
                         if (!st_cand) begin st_cand = 1; st_idx = e; if (!PAIR_WRITES) stop = 1; end
@@ -595,13 +614,15 @@ module rv64_core #(
     reg [ROB_B-1:0] e, b_rob, x_rob, o_age, a_age, ou_age, h_after;
     reg [ROB_B:0] n_ret;
     reg st1_seen, smc;
+    reg st_last, wb2v;          // this clock's write is used up; a second beat written
+    reg [60:0] wb1, wb2;        // beats written this clock
     reg [63:0] r_wd;
     reg ou_valid, mp_any, rflush, trap_now, stop, fired, fdone, ok, hit, full, dok;
     reg [7:0] fwd_mask, fwd_byte_w;
     reg fwd_wait, dc_hit_, fb_hit_;
     reg [63:0] fwd_data;
     integer b2;
-    reg fo_valid;                   // an older FENCE has not retired (0.10.2)
+    reg fo_valid;                   // an older FENCE has not retired (0.11.0)
     reg [ROB_B-1:0] fo_age;
     reg [63:0] mp_fix, rflush_pc, d_want, v, ea, tgt, npc, lw;
     reg [197:0] ef;
@@ -682,16 +703,16 @@ module rv64_core #(
 
     always @(posedge clk) begin
         if (reset) begin
-            halted = 0; started = 0; f_pc = RESET_PC; f_err = 0; f_hold = 0;
+            halted = 0; started = 0; f_pc = RESET_PC; f_err = 0; f_hold = 0; f_stale = 0;
             bus_hold = 0; hold_addr = 0; hold_pair = 0; mu_valid = 0; mu_beat = 0; mu_errv = 0; mu_err_beat = 0;
             fb_valid = 0; fb_beat = 0; fb_data = 0; mu_owner = 0; fb_owner = 0; fb_lock = 0; mu_owner_v = 0;
             for (i = 0; i < PRF_N; i = i + 1) prf[i] = 0;
             prf_ready = {PRF_N{1'b1}}; prf_written = {PRF_N{1'b1}};
             free_mask = {PRF_N{1'b1}}; for (i = 0; i < 32; i = i + 1) free_mask[i] = 0;
             for (i = 0; i < 32; i = i + 1) begin rat[i] = i; rrat[i] = i; end
-            rb_live = 0; rb_done = 0; rb_head = 0; rb_tail = 0; rb_count = 0;
+            rb_viol = 0; mdp_wait = 0; rb_live = 0; rb_done = 0; rb_head = 0; rb_tail = 0; rb_count = 0;
             iq_valid = 0; iq_issued = 0; ex_valid = 0; mq_valid = 0; dv_busy = 0;
-            ic_valid = 0; dc_valid = 0; btb_valid = 0; btb_ret = 0; ras_sp = 0; lp_valid = 0; lp_dir = 0;
+            ic_valid = 0; dc_valid = 0; btb_valid = 0; btb_ret = 0; ras_sp = 0; vp_valid = 0; lp_valid = 0; lp_dir = 0;
             for (i = 0; i < RAS_N; i = i + 1) ras[i] = 0;
             q_head = 0; q_tail = 0; q_count = 0;
             trap_valid <= 0; trap_pc <= 0; trap_cause <= 0; trap_tval <= 0;
@@ -707,11 +728,14 @@ module rv64_core #(
                 if (mem_ready) begin
                     bus_hold = 0;
                     if (bus_kind == 1) begin
-                        if (mem_error) begin if (mem_addr[63:3] == f_pc[63:3]) f_err = 1; end
+                        // A fetch held across a redirect belongs to the discarded path: its
+                        // error is not the redirected fetch's (0.11.1).
+                        if (mem_error) begin if (!f_stale && mem_addr[63:3] == f_pc[63:3]) f_err = 1; end
                         else begin
                             fi = mem_addr[3 +: IC_INDEX];
                             ic_valid[fi] = 1; ic_tag[fi] = mem_addr[63 -: IC_TAG]; ic_data[fi] = mem_rdata;
                         end
+                        f_stale = 0;
                     end else if (bus_kind == 2) begin
                         mu_valid = 0;
                         if (mem_error) begin mu_errv = mu_owner_v; mu_err_beat = mu_beat; mu_err_owner = mu_owner; end
@@ -763,7 +787,7 @@ module rv64_core #(
                         ok = ok && prf_ready[iq_ps2[k]] &&
                              (iq_cls[k] == C_ALU || (p < N_BR && iq_cls[k] == C_FULL &&
                               !(iq_mdu[k] && iq_insn[k][14] && (dv_busy || dv_pend || divtaken))));
-                    end else if (p < N_ALU + N_LD) ok = ok && iq_cls[k] == C_LD && (!ou_valid || a_age < ou_age) && (!fo_valid || a_age < fo_age);
+                    end else if (p < N_ALU + N_LD) ok = ok && iq_cls[k] == C_LD && (!ou_valid || a_age < ou_age || !mdp_wait[iq_pc[k][9:2]]) && (!fo_valid || a_age < fo_age);
                     else ok = ok && iq_cls[k] == C_ST;
                     if (ok && (!bestv || a_age < best_age)) begin bestv = 1; best = k[IQ_B-1:0]; best_age = a_age; end
                 end
@@ -774,7 +798,7 @@ module rv64_core #(
             end
 
             // ---- retirement window
-            n_ret = 0; rflush = 0; trap_now = 0; stop = 0; rflush_pc = 0; st1_seen = 0; smc = 0;
+            n_ret = 0; rflush = 0; trap_now = 0; stop = 0; rflush_pc = 0; st1_seen = 0; smc = 0; st_last = 0; wb2v = 0; wb1 = 0; wb2 = 0;
             for (s = 0; s < RW; s = s + 1) begin
                 e = rb_head + s[ROB_B-1:0];
                 if (!stop) begin
@@ -787,23 +811,29 @@ module rv64_core #(
                         stop = 1;
                     end else if (rb_store[e]) begin
                         // The first store retires with its write; a paired second store
-                        // retires with the same write unless its half failed.
-                        if (!st1_seen) begin
+                        // retires with the same write unless its half failed. A store after
+                        // those waits for next clock's write.
+                        if (st_last) stop = 1;
+                        else if (!st1_seen) begin
                             st1_seen = 1;
                             if (bus_kind == 3 && mem_ready) begin
                                 if (mem_error) begin
                                     trap_now = 1; trap_pc <= rb_pc[e]; trap_cause <= 7; trap_tval <= rb_addr[e]; stop = 1;
-                                end else begin n_ret = s + 1; if (!pair_now) stop = 1; end
+                                end else begin n_ret = s + 1; st_last = !pair_now; wb1 = rb_addr[e][63:3]; end
                             end else stop = 1;
                         end else begin
                             if (mem_error2) begin
-                                trap_now = 1; trap_pc <= rb_pc[e]; trap_cause <= 7; trap_tval <= rb_addr[e];
-                            end else n_ret = s + 1;
-                            stop = 1;
+                                trap_now = 1; trap_pc <= rb_pc[e]; trap_cause <= 7; trap_tval <= rb_addr[e]; stop = 1;
+                            end else begin n_ret = s + 1; st_last = 1; wb2 = rb_addr[e][63:3]; wb2v = 1; end
                         end
+                    end else if (st1_seen && (rb_pc[e][63:3] == wb1 || (wb2v && rb_pc[e][63:3] == wb2))) begin
+                        stop = 1;   // fetched from a beat written this clock: refetched after
+                    end else if (rb_viol[e]) begin
+                        // Read stale bytes: refetch from this load; it waits for older stores from now on.
+                        rflush = 1; rflush_pc = rb_pc[e]; stop = 1; mdp_wait[rb_pc[e][9:2]] = 1;
                     end else begin
                         n_ret = s + 1;
-                        if (rb_fencei[e]) begin rflush = 1; rflush_pc = rb_next[e]; stop = 1; end
+                        if (rb_fencei[e] || rb_vpbad[e]) begin rflush = 1; rflush_pc = rb_next[e]; stop = 1; end
                     end
                 end
             end
@@ -829,6 +859,14 @@ module rv64_core #(
                     retire3_rd <= rb_writes[e] ? rb_rd[e] : 5'd0; retire3_data <= v; retire3_next_pc <= rb_next[e];
                 end
                 if (rb_writes[e]) begin rrat[rb_rd[e]] = rb_pdst[e]; free_mask[rb_opdst[e]] = 1; end
+                if (rb_writes[e] && (rb_load[e] || ((rb_insn[e][6:0] == 7'h33 || rb_insn[e][6:0] == 7'h3b) && rb_insn[e][31:25] == 7'h01))) begin
+                    vpi = rb_pc[e][2 +: VP_BITS];
+                    if (vp_valid[vpi] && vp_tag[vpi] == rb_pc[e][2+VP_BITS +: VP_TAG] && vp_val[vpi] == rb_value[e]) begin
+                        if (vp_conf[vpi] != VP_CONF) vp_conf[vpi] = vp_conf[vpi] + 1;
+                    end else begin
+                        vp_valid[vpi] = 1; vp_tag[vpi] = rb_pc[e][2+VP_BITS +: VP_TAG]; vp_val[vpi] = rb_value[e]; vp_conf[vpi] = 0;
+                    end
+                end
                 if (rb_ctl[e] && rb_insn[e][6:0] == 7'h63) begin
                     li_ = rb_pc[e][2 +: LP_BITS];
                     if (!lp_valid[li_] || lp_tag[li_] != rb_pc[e][2+LP_BITS +: LP_TAG]) begin
@@ -936,11 +974,16 @@ module rv64_core #(
                         end
                     end
                 end else if (p < N_ALU + N_LD) begin
+                    // A load woke its consumers when it issued; until it answers below, its
+                    // register is not ready, which cancels consumers selected this clock
+                    // (a value-predicted load's register stays ready with its prediction).
+                    if (ex_writes[p] && !rb_vp[x_rob]) prf_ready[ex_pdst[p]] = 0;
                     // Load: forward from the youngest older store to its beat, else the cache;
                     // if neither can answer now, the load stays queued and replays.
                     f3_ = ex_insn[p][14:12];
                     ea = prf[ex_ps1[p]] + {{52{ex_insn[p][31]}}, ex_insn[p][31:20]};
                     bytes_ = size_bytes(f3_[1:0]) << ea[2:0];
+                    rb_addr[x_rob] = ea; rb_wstrb[x_rob] = bytes_;   // checked by older stores' addresses
                     fdone = 0;
                     if (f3_ == 3'd7 || (ea[2:0] & (f3_[1:0] == 0 ? 3'd0 : f3_[1:0] == 1 ? 3'd1 : f3_[1:0] == 2 ? 3'd3 : 3'd7)) != 0) begin
                         rb_done[x_rob] = 1; rb_exc[x_rob] = 1;
@@ -952,7 +995,7 @@ module rv64_core #(
                         iq_valid[ex_iq[p]] = 0;
                     end else begin
                         // Each byte comes from the youngest older store that writes it, the
-                        // rest from the cache or fill buffer (0.10.2). The beat must have been
+                        // rest from the cache or fill buffer (0.11.0). The beat must have been
                         // read successfully (a cache or fill-buffer hit) even when stores cover
                         // every byte, so forwarding cannot hide a read access fault; a byte
                         // whose store data is not yet written makes the load replay.
@@ -991,6 +1034,7 @@ module rv64_core #(
                         if (fdone) begin
                             if (ex_writes[p]) begin prf[ex_pdst[p]] = v; prf_written[ex_pdst[p]] = 1; prf_ready[ex_pdst[p]] = 1; end
                             rb_value[x_rob] = v; rb_done[x_rob] = 1; rb_exc[x_rob] = 0;
+                            if (rb_vp[x_rob] && v != rb_vpv[x_rob]) rb_vpbad[x_rob] = 1;
                             iq_valid[ex_iq[p]] = 0;
                         end else iq_issued[ex_iq[p]] = 0;
                     end
@@ -1002,6 +1046,14 @@ module rv64_core #(
                     rb_done[x_rob] = 1; rb_sta[x_rob] = 1; rb_exc[x_rob] = !ok;
                     rb_cause[x_rob] = f3_[2] ? 64'd2 : 64'd6; rb_tval[x_rob] = f3_[2] ? {32'b0, ex_insn[p]} : ea;
                     rb_addr[x_rob] = ea; rb_wstrb[x_rob] = size_bytes(f3_[1:0]) << ea[2:0]; rb_sps2[x_rob] = ex_ps2[p];
+                    // A younger load that already gave its value (finished, or forwarded to its
+                    // consumers early) and read bytes this store writes is stale.
+                    if (ok) for (k = 0; k < ROB_N; k = k + 1) begin
+                        e = k[ROB_B-1:0];
+                        if (rb_live[e] && rb_load[e] && !rb_exc[e] &&
+                            (rb_done[e] || (rb_writes[e] && prf_written[rb_pdst[e]])) && (e - rb_head) > (x_rob - rb_head) &&
+                            rb_addr[e][63:3] == ea[63:3] && (rb_wstrb[e] & rb_wstrb[x_rob]) != 0) rb_viol[e] = 1;
+                    end
                 end
             end
             if (miss_v && !mu_valid && !fb_lock) begin
@@ -1014,6 +1066,7 @@ module rv64_core #(
                     mq_valid[k] = 0;
                     if (mq_writes[k]) begin prf[mq_pdst[k]] = mq_val[k]; prf_written[mq_pdst[k]] = 1; prf_ready[mq_pdst[k]] = 1; end
                     rb_value[mq_rob[k]] = mq_val[k]; rb_done[mq_rob[k]] = 1; rb_exc[mq_rob[k]] = 0;
+                    if (rb_vp[mq_rob[k]] && mq_val[k] != rb_vpv[mq_rob[k]]) rb_vpbad[mq_rob[k]] = 1;
                 end else mq_cnt[k] = mq_cnt[k] - 1;
             end
             if (dv_busy) begin
@@ -1022,6 +1075,7 @@ module rv64_core #(
                     dv_busy = 0;
                     if (dv_writes) begin prf[dv_pdst] = dv_val; prf_written[dv_pdst] = 1; prf_ready[dv_pdst] = 1; end
                     rb_value[dv_rob] = dv_val; rb_done[dv_rob] = 1; rb_exc[dv_rob] = 0;
+                    if (rb_vp[dv_rob] && dv_val != rb_vpv[dv_rob]) rb_vpbad[dv_rob] = 1;
                 end else dv_cnt = dv_cnt - 1;
             end
 
@@ -1029,14 +1083,19 @@ module rv64_core #(
             ex_valid = 0;
             for (p = 0; p < NP; p = p + 1) if (pick_v[p]) begin
                 k = pick[p];
-                if (iq_valid[k] && !rflush && !(mp_any && (iq_rob[k] - rb_head) > o_age)) begin
+                // Sources are checked again: a load that did not answer this clock takes
+                // back the wakeup it gave when it issued.
+                if (iq_valid[k] && !rflush && !(mp_any && (iq_rob[k] - rb_head) > o_age) && prf_ready[iq_ps1[k]] &&
+                    (iq_cls[k] == C_LD || iq_cls[k] == C_ST || prf_ready[iq_ps2[k]])) begin
                     ex_valid[p] = 1; ex_iq[p] = k; ex_cls[p] = iq_cls[k]; ex_rob[p] = iq_rob[k]; ex_pc[p] = iq_pc[k];
                     ex_insn[p] = iq_insn[k]; ex_ps1[p] = iq_ps1[k]; ex_ps2[p] = iq_ps2[k]; ex_pdst[p] = iq_pdst[k];
                     ex_writes[p] = iq_writes[k]; ex_pred[p] = iq_pred[k]; ex_alt[p] = iq_alt[k]; ex_ptaken[p] = iq_ptaken[k];
                     if (iq_cls[k] == C_LD) iq_issued[k] = 1;
                     else iq_valid[k] = 0;
                     // A result one clock away wakes its consumers now.
-                    if ((iq_cls[k] == C_ALU || (iq_cls[k] == C_FULL && !iq_mdu[k])) && iq_writes[k]) prf_ready[iq_pdst[k]] = 1;
+                    // A load assumes it will answer (taken back above if not).
+                    if ((iq_cls[k] == C_ALU || iq_cls[k] == C_LD || (iq_cls[k] == C_FULL && !iq_mdu[k])) && iq_writes[k])
+                        prf_ready[iq_pdst[k]] = 1;
                 end
             end
 
@@ -1052,7 +1111,7 @@ module rv64_core #(
                 ex_valid = 0; iq_valid = 0; iq_issued = 0; fb_lock = 0; mu_owner_v = 0; mu_errv = 0;
                 rb_live = 0; rb_tail = h_after; rb_count_new = 0;
                 q_head = 0; q_tail = 0; q_count = 0;
-                f_pc = rflush_pc; f_err = 0; f_hold = 0;
+                f_pc = rflush_pc; f_err = 0; f_hold = 0; if (bus_hold == 1) f_stale = 1;
                 ras_sp = rb_rsp[rb_head + n_ret[ROB_B-1:0] - 1'b1];
             end else if (mp_any) begin
                 squash_after(o_age);
@@ -1061,7 +1120,7 @@ module rv64_core #(
                 rb_tail = b_rob + 1;
                 rb_count_new = {1'b0, o_age} + 1 - n_ret;
                 q_head = 0; q_tail = 0; q_count = 0;
-                f_pc = mp_fix; f_err = 0; f_hold = 0;
+                f_pc = mp_fix; f_err = 0; f_hold = 0; if (bus_hold == 1) f_stale = 1;
             end
             rb_head = h_after;
 
@@ -1090,7 +1149,7 @@ module rv64_core #(
                             // Prediction check (what D did in the earlier cores).
                             tgt = wpc + (op == 7'h6f ? {{43{wi[31]}},wi[31],wi[19:12],wi[20],wi[30:21],1'b0}
                                                      : {{51{wi[31]}},wi[31],wi[7],wi[30:25],wi[11:8],1'b0});
-                            tkp = (op == 7'h6f || (op == 7'h63 && (q_lp[j] ? q_ld[j] : (q_fpred[j] || wi[31])))) && tgt[1:0] == 0 && !isfault;
+                            tkp = (op == 7'h6f || (op == 7'h63 && q_fpred[j])) && tgt[1:0] == 0 && !isfault;
                             npc = wpc + 64'd4;
                             d_want = isfault ? q_pred[j] : op == 7'h67 ? q_pred[j] : tkp ? tgt : npc;
                             ps1_ = (uses1_ && rs1_ != 0) ? rat[rs1_] : 0;
@@ -1102,13 +1161,20 @@ module rv64_core #(
                             rb_cause[e] = q_fmis[j] ? 64'd0 : 64'd1; rb_tval[e] = wpc;
                             rb_pc[e] = wpc; rb_insn[e] = wi; rb_next[e] = d_want; rb_rd[e] = rd_; rb_writes[e] = writes_;
                             rb_store[e] = op == 7'h23 && !isfault; rb_load[e] = op == 7'h03 && !isfault;
-                            rb_fencei[e] = 0; rb_ctl[e] = 0; rb_sta[e] = 0; rb_taken[e] = 0; rb_ret[e] = 0;
+                            rb_fencei[e] = 0; rb_ctl[e] = 0; rb_sta[e] = 0; rb_viol[e] = 0; rb_wstrb[e] = 0; rb_taken[e] = 0; rb_ret[e] = 0;
                             rb_bhit[e] = q_bhit[j]; rb_bctr[e] = q_bctr[j]; rb_rsp[e] = q_rsp[j];
                             rb_li[e] = q_li[j]; rb_lp[e] = op == 7'h63 && !isfault; rb_ld[e] = tkp;
                             rb_fence[e] = op == 7'h0f && f3_ == 3'd0 && !isfault;
                             rb_opdst[e] = rat[rd_]; rb_pdst[e] = writes_ ? fp : 0;
                             if (writes_) begin
                                 rat[rd_] = fp; free_mask[fp] = 0; prf_ready[fp] = 0; prf_written[fp] = 0;
+                            end
+                            vpi = wpc[2 +: VP_BITS];
+                            rb_vp[e] = 0; rb_vpbad[e] = 0;
+                            if (writes_ && (op == 7'h03 || ((op == 7'h33 || op == 7'h3b) && wi[31:25] == 7'h01)) &&
+                                vp_valid[vpi] && vp_tag[vpi] == wpc[2+VP_BITS +: VP_TAG] && vp_conf[vpi] == VP_CONF) begin
+                                rb_vp[e] = 1; rb_vpv[e] = vp_val[vpi];
+                                prf[fp] = vp_val[vpi]; prf_written[fp] = 1; prf_ready[fp] = 1;
                             end
                             if (op == 7'h63 || op == 7'h67) for (i = 0; i < 32; i = i + 1) snap[e][i] = rat[i];
                             if (!isfault) begin
@@ -1128,7 +1194,7 @@ module rv64_core #(
                 q_head = q_head + n_ren; q_count = q_count - n_ren;
                 if (d_redirect) begin
                     q_head = 0; q_tail = 0; q_count = 0;
-                    f_pc = d_redirect_pc; f_err = 0; f_hold = 0; ras_sp = d_redirect_sp;
+                    f_pc = d_redirect_pc; f_err = 0; f_hold = 0; ras_sp = d_redirect_sp; if (bus_hold == 1) f_stale = 1;
                 end
             end
             rb_count = rb_count_new;
@@ -1159,6 +1225,7 @@ module rv64_core #(
                         fdone = btb_valid[bi] && btb_tag[bi] == npc[2+BTB_BITS +: BTB_TAG];
                         tkp = fdone && (btb_ret[bi] || btb_ctr[bi][1]);
                         tgt = btb_ret[bi] ? ras[cur_sp] : {npc[63:32], btb_target[bi], 2'b00};
+                        g_ras_pop_sp = cur_sp;
                         g_lpu = 0; g_li[s] = 0;
                         if (op == 7'h63) begin
                             g_lpi = npc[2 +: LP_BITS];
@@ -1181,7 +1248,7 @@ module rv64_core #(
                                     if (k < s && g_pc[k] == npc && g_insn[k][6:0] == 7'h63)
                                         lp_it = g_fp[k] == lp_dir[g_lpi] ? (g_li[k] == 255 ? 8'd255 : g_li[k] + 8'd1) : 8'd0;
                                 g_li[s] = lp_it;
-                                if (lp_conf[g_lpi] >= 2 && lp_trip[g_lpi] != 0) begin
+                                if (lp_conf[g_lpi] >= 2 && lp_trip[g_lpi] != 0 && lp_trip[g_lpi] != 255) begin
                                     g_lpu = 1;
                                     g_lpd = lp_it < lp_trip[g_lpi] ? lp_dir[g_lpi] : !lp_dir[g_lpi];
                                     tkp = g_lpd;
@@ -1190,6 +1257,16 @@ module rv64_core #(
                             end
                         end
                         g_lpmask[s] = g_lpu;
+                        // Predecode: fetch holds the instruction, so a direct jump or call
+                        // goes to its target, a return to the return stack, and a
+                        // conditional branch missing in the BTB is taken when backward.
+                        if (op == 7'h6f) begin
+                            tkp = 1; tgt = npc + {{43{wi[31]}},wi[31],wi[19:12],wi[20],wi[30:21],1'b0};
+                        end else if (hit) begin
+                            tkp = 1; tgt = ras[g_ras_pop_sp];
+                        end else if (op == 7'h63 && !g_lpu && !fdone) begin
+                            tkp = wi[31]; tgt = npc + {{51{wi[31]}},wi[31],wi[7],wi[30:25],wi[11:8],1'b0};
+                        end
                         g_pc[s] = npc; g_insn[s] = wi; g_pred[s] = tkp ? tgt : npc + 64'd4;
                         g_fp[s] = tkp; g_bh[s] = fdone; g_bc[s] = btb_ctr[bi]; g_fault[s] = 0; g_fmis[s] = 0;
                         g_n = s + 1;
@@ -1222,7 +1299,7 @@ module rv64_core #(
             end
 
         end else begin
-            // Halted (0.10.2): the retirements of the halting clock pulse once.
+            // Halted (0.11.0): the retirements of the halting clock pulse once.
             retire_valid <= 0; retire2_valid <= 0; retire3_valid <= 0; rt_valid <= 0;
         end
     end

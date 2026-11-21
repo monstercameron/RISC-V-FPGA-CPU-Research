@@ -266,6 +266,41 @@ def cases():
     p = prefix() + [r_type(op, 0, f3, 3, 4, 1) for op, f3 in muls] + [i_type(0x13, 5, 0, 0, 1), 0x100073]
     yield 'mul_into_x0', p, 0, MASK
 
+    # Value prediction (out-of-order core): a load, a multiply and a divide repeat one
+    # result 40 times, so a predictor becomes confident, then a store changes the
+    # loaded value; the consumers must see the new results.
+    body = [i_type(3, 10, 3, 30, 0x380),                 # ld x10
+            r_type(0x33, 11, 0, 10, 7, 1),               # mul x11 = x10 * x7
+            r_type(0x33, 14, 4, 11, 4, 1),               # div x14 = x11 / x4
+            r_type(0x33, 12, 0, 11, 14),                 # add x12 = x11 + x14
+            r_type(0x33, 13, 0, 13, 12),                 # add x13 += x12
+            i_type(0x13, 20, 0, 20, -1),                 # x20 -= 1
+            branch(1, 20, 21, 8),                        # bne x20, x21: skip the store
+            store(3, 30, 13, 0x380),                     # the loaded value changes once
+            branch(1, 20, 0, -32)]                       # bne x20, x0: loop
+    p = prefix() + [store(3, 30, 3, 0x380), i_type(0x13, 20, 0, 0, 44), i_type(0x13, 21, 0, 0, 3)] + body
+    yield 'value_change_after_repeats', p + [0x100073], 0, MASK
+
+    # 0.11.1 memory-dependence speculation (memory agent): a store's address arrives
+    # late (a fill and two divides), so a younger load to its bytes can issue first
+    # and must be flushed and replayed; disjoint bytes and other beats must not be.
+    def late(rd, warm=0x1f8):
+        return [i_type(0x13, 27, 0, 0, 1), i_type(3, 26, 3, 30, warm), r_type(0x33, rd, 0, 30, 26),
+                r_type(0x33, rd, 4, rd, 27, 1), r_type(0x33, rd, 4, rd, 27, 1)]
+    add_ = lambda rd, a, b: r_type(0x33, rd, 0, a, b)
+    yield 'mdp_full', prefix() + late(21, 0x100) + [store(3, 21, 7, 0x100), i_type(3, 22, 3, 30, 0x100),
+                                                     add_(23, 22, 22), store(3, 30, 23, 0x108), 0x100073], 0, MASK
+    yield 'mdp_partial', prefix() + late(21, 0x110) + [store(2, 21, 7, 0x114), i_type(3, 22, 3, 30, 0x110),
+                                                        add_(23, 22, 22), store(3, 30, 23, 0x118), 0x100073], 0, MASK
+    yield 'mdp_same_beat_disjoint', prefix() + late(21, 0x120) + [store(2, 21, 7, 0x124), i_type(3, 22, 2, 30, 0x120),
+                                                                   add_(23, 22, 22), store(3, 30, 23, 0x128), 0x100073], 0, MASK
+    body = late(21, 0x130) + [add_(25, 25, 8), store(3, 21, 25, 0x130), i_type(3, 22, 3, 30, 0x130), add_(23, 23, 22)]
+    yield 'mdp_loop', prefix() + [i_type(0x13, 24, 0, 0, 4), i_type(0x13, 25, 0, 0, 0), i_type(0x13, 23, 0, 0, 0)] + body +         [i_type(0x13, 24, 0, 24, -1), branch(1, 24, 0, -4 * (len(body) + 1)), store(3, 30, 23, 0x138), 0x100073], 0, MASK
+    yield 'mdp_early_forward', prefix() + [store(3, 30, 8, 0x140)] + late(21) + [store(3, 21, 9, 0x140), i_type(3, 22, 3, 30, 0x140),
+                                                                              add_(23, 22, 22), store(3, 30, 23, 0x148), 0x100073], 0, MASK
+    yield 'mdp_other_beat', prefix() + late(21, 0x158) + [store(3, 21, 7, 0x150), i_type(3, 22, 3, 30, 0x158),
+                                                           add_(23, 22, 22), store(3, 30, 23, 0x160), 0x100073], 0, MASK
+
     # Regression for a 0.5.5 bug found by the visualizer: while 0x2c is fetched after
     # the jump at 0x40, that stale jump's target (0x2c - 0x14 = 0x18) is cached; the
     # instruction captured for the second slot must be the one at 0x30, not 0x18.
@@ -377,6 +412,19 @@ def cases():
     # 0.5.4: a second-slot store that faults; the first slot retires, the store traps.
     yield 'store2_bus_fault', [(2 << 12) | (1 << 7) | 0x37, i_type(0x13, 9, 0, 0, 1),
                                i_type(0x13, 2, 0, 0, 7), store(3, 1, 2, 0), 0x100073], 3, 8192
+    # 0.11.1 (from the second Codex review): two stores held behind a divide chain, so
+    # the out-of-order core pairs them on the bus; a fault on the first half retires
+    # neither, a fault on the second retires the first and the ALU between them.
+    held = [(2 << 12) | (1 << 7) | 0x37, i_type(0x13, 5, 0, 0, 7),
+            r_type(0x33, 6, 4, 5, 5, 1), r_type(0x33, 6, 4, 6, 5, 1), r_type(0x33, 6, 4, 6, 5, 1)]
+    pair = [i_type(0x13, 2, 0, 0, 0x55), store(3, 1, 2, 0), i_type(0x13, 3, 0, 0, 0x66), store(3, 1, 3, 8)]
+    yield 'paired_store_fault_first', held + pair + [0x100073], 3, 8192
+    yield 'paired_store_fault_second', held + pair + [0x100073], 3, 8200
+    yield 'paired_store_overlap', held + [i_type(0x13, 2, 0, 0, 0x55), store(2, 1, 2, 16), i_type(0x13, 3, 0, 0, 0x66),
+                                          store(0, 1, 3, 17), i_type(3, 4, 3, 1, 16), 0x100073], 0, MASK
+    # A load fully covered by an older store still needs its beat to be readable.
+    yield 'forwarded_load_read_fault', held + [i_type(0x13, 2, 0, 0, 0x55), store(3, 1, 2, 0),
+                                               i_type(3, 4, 3, 1, 0), 0x100073], 2, 8192
 
 
 def command(args):
@@ -463,10 +511,11 @@ def main():
             if branch_name+':'+outcome not in coverage: raise AssertionError('Missing branch outcome')
     report={'status':'PASS','cases':len(workloads),'runs':len(records),'instruction_names_covered':len(required),
             'core':args.core,'core_source':str(args.core_source) if args.core_source else CORES[args.core],
-            'icache_beats':args.icache_beats or 'RTL default','dcache_beats':args.dcache_beats or 'RTL default',
+            'icache_beats':args.icache_beats or 'tb_core default (512)','dcache_beats':args.dcache_beats or 'tb_core default (512)',
             'reset_test':reset_result,'bram_soc_tests':soc_results,
             'coverage':sorted(coverage),'validation_scope':'local directed/random differential simulation; no official ISA certification or synthesis',
             'rtl_sha256':{str(p.relative_to(ROOT)):hashlib.sha256(p.read_bytes()).hexdigest() for p in sorted((ROOT/'rtl/cpu').glob('*.sv'))},
+            'simulated_core_sha256':hashlib.sha256(core_src.read_bytes()).hexdigest(),
             'simulator':command(['iverilog','-V']).splitlines()[0],'results':records}
     (OUT/'verification.json').write_text(json.dumps(report,indent=2)+'\n',encoding='utf-8')
     print(f'PASS ({args.core} core): {len(workloads)} programs x 3 wait patterns = {len(records)} runs; {len(required)} instruction names covered.')
