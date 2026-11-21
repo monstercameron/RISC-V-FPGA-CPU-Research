@@ -1,0 +1,68 @@
+# Local Python tooling
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+*.egg-info/
+
+# Simulation and FPGA build products; preserve source fixtures and constraints
+build/
+# Rebuilt from the viewer template and a checked simulator clock capture
+/cpu/cpu-visualizer.html
+dist/
+obj_dir/
+.Xil/
+.cache/
+*.vvp
+*.vcd
+*.fst
+*.ghw
+*.wlf
+*.bit
+*.pdi
+*.dcp
+*.jou
+*.str
+*.log
+*.runs/
+*.sim/
+*.gen/
+*.ip_user_files/
+*.hw/
+*.cache/
+!llm-accelerator/planning-evidence/mac-probes.log
+
+# Large model payloads; metadata/index JSON and tiny source fixtures stay trackable
+weights/
+checkpoints/
+*.safetensors
+*.gguf
+*.ckpt
+pytorch_model*.bin
+.huggingface/
+
+# Machine-specific records and local credentials
+host-development-inventory.json
+llm-accelerator/planning-evidence/environment.txt
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*.lic
+local.*
+
+# Editor and OS files
+.idea/
+.vscode/
+.DS_Store
+Thumbs.db
+Desktop.ini
+*.swp
+*.swo
+*~

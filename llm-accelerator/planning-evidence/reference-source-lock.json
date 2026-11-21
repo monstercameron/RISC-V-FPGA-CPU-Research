@@ -1,0 +1,106 @@
+{
+  "schema_version": 1,
+  "model_revision": "1d4bf0f2ff6012fd82039f2fa52739d0dd7c60c0",
+  "transformers_revision": "1a55addd658aaa95b52871f5b72e91a6b91449b6",
+  "mutable_documentation": [
+    "README.md"
+  ],
+  "files": {
+    "chat_template.jinja": {
+      "origin": "https://huggingface.co/Qwen/Qwen3.8-27B/resolve/1d4bf0f2ff6012fd82039f2fa52739d0dd7c60c0/chat_template.jinja",
+      "revision": "1d4bf0f2ff6012fd82039f2fa52739d0dd7c60c0",
+      "sha256": "c3cf9e34abf4f9e36c2d72165aa9c132d3e2a725b6c2586aaa3a8af9d7a81041",
+      "bytes": 8952
+    },
+    "config.json": {
+      "origin": "https://huggingface.co/Qwen/Qwen3.8-27B/resolve/1d4bf0f2ff6012fd82039f2fa52739d0dd7c60c0/config.json",
+      "revision": "1d4bf0f2ff6012fd82039f2fa52739d0dd7c60c0",
+      "sha256": "191e0af232104ed8b65258cf3fb2b842e288008baca7633c11b82a1ac7203aab",
+      "bytes": 4312
+    },
+    "configuration_qwen3_5.py": {
+      "origin": "https://raw.githubusercontent.com/huggingface/transformers/1a55addd658aaa95b52871f5b72e91a6b91449b6/src/transformers/models/qwen3_5/configuration_qwen3_5.py",
+      "revision": "1a55addd658aaa95b52871f5b72e91a6b91449b6",
+      "sha256": "e5316490555c2d3590682f1d84ca656bdf3d2aff7475b95b682c03afbb69e748",
+      "bytes": 7933
+    },
+    "configuration_utils.py": {
+      "origin": "https://raw.githubusercontent.com/huggingface/transformers/1a55addd658aaa95b52871f5b72e91a6b91449b6/src/transformers/configuration_utils.py",
+      "revision": "1a55addd658aaa95b52871f5b72e91a6b91449b6",
+      "sha256": "3823d28a448091ce0825e24e86977f1a72950519cca0c93adb3afc6dac67b203",
+      "bytes": 81595
+    },
+    "generation_config.json": {
+      "origin": "https://huggingface.co/Qwen/Qwen3.8-27B/resolve/1d4bf0f2ff6012fd82039f2fa52739d0dd7c60c0/generation_config.json",
+      "revision": "1d4bf0f2ff6012fd82039f2fa52739d0dd7c60c0",
+      "sha256": "e70c136c1b78ddc1fb0905bac8e733a4dc448d4f852a5dd75143fffc70be550e",
+      "bytes": 202
+    },
+    "image_processing_qwen2_vl.py": {
+      "origin": "https://raw.githubusercontent.com/huggingface/transformers/1a55addd658aaa95b52871f5b72e91a6b91449b6/src/transformers/models/qwen2_vl/image_processing_qwen2_vl.py",
+      "revision": "1a55addd658aaa95b52871f5b72e91a6b91449b6",
+      "sha256": "ebdb484798a6aefebc5dbe5431d3e4af8f460404d95d4cb67165fdff624ed333",
+      "bytes": 12023
+    },
+    "model.safetensors.index.json": {
+      "origin": "https://huggingface.co/Qwen/Qwen3.8-27B/resolve/1d4bf0f2ff6012fd82039f2fa52739d0dd7c60c0/model.safetensors.index.json",
+      "revision": "1d4bf0f2ff6012fd82039f2fa52739d0dd7c60c0",
+      "sha256": "77042094076611b69791a610065f28b7013b8c621795fa86ddccc8bac7d1b9df",
+      "bytes": 112216
+    },
+    "modeling_qwen3_5.py": {
+      "origin": "https://raw.githubusercontent.com/huggingface/transformers/1a55addd658aaa95b52871f5b72e91a6b91449b6/src/transformers/models/qwen3_5/modeling_qwen3_5.py",
+      "revision": "1a55addd658aaa95b52871f5b72e91a6b91449b6",
+      "sha256": "af05d0acfe79fff8aea1c75f93516a6a72bc80f6f901329a73e66a3866fe1e7c",
+      "bytes": 87748
+    },
+    "modeling_rope_utils.py": {
+      "origin": "https://raw.githubusercontent.com/huggingface/transformers/1a55addd658aaa95b52871f5b72e91a6b91449b6/src/transformers/modeling_rope_utils.py",
+      "revision": "1a55addd658aaa95b52871f5b72e91a6b91449b6",
+      "sha256": "8b08f3f372207816eae420e7d33b982e44858dc9e4be7728d95f606b07c23fd0",
+      "bytes": 62667
+    },
+    "preprocessor_config.json": {
+      "origin": "https://huggingface.co/Qwen/Qwen3.8-27B/resolve/1d4bf0f2ff6012fd82039f2fa52739d0dd7c60c0/preprocessor_config.json",
+      "revision": "1d4bf0f2ff6012fd82039f2fa52739d0dd7c60c0",
+      "sha256": "27225450ac9c6529872ee1924fcb0962ff5634834f817040f444118116f4e516",
+      "bytes": 390
+    },
+    "processing_qwen3_vl.py": {
+      "origin": "https://raw.githubusercontent.com/huggingface/transformers/1a55addd658aaa95b52871f5b72e91a6b91449b6/src/transformers/models/qwen3_vl/processing_qwen3_vl.py",
+      "revision": "1a55addd658aaa95b52871f5b72e91a6b91449b6",
+      "sha256": "02d50224d9dc9ce38690cfa6a0106be897f619444ebe3ff7ba38cbcdda9e3ef2",
+      "bytes": 9573
+    },
+    "tokenizer_config.json": {
+      "origin": "https://huggingface.co/Qwen/Qwen3.8-27B/resolve/1d4bf0f2ff6012fd82039f2fa52739d0dd7c60c0/tokenizer_config.json",
+      "revision": "1d4bf0f2ff6012fd82039f2fa52739d0dd7c60c0",
+      "sha256": "b11349aafa7cdc6a320767cf7ceb29ed82f7eda5d65e8e0819e76f0ce947bf27",
+      "bytes": 17928
+    },
+    "transformers-revision.txt": {
+      "origin": "local record of GitHub commit API response",
+      "revision": "1a55addd658aaa95b52871f5b72e91a6b91449b6",
+      "sha256": "80b3fbcf08b32d9059c1624b280f2ad0305d81372c7ecf41b0e5321c7065022d",
+      "bytes": 42
+    },
+    "video_preprocessor_config.json": {
+      "origin": "https://huggingface.co/Qwen/Qwen3.8-27B/resolve/1d4bf0f2ff6012fd82039f2fa52739d0dd7c60c0/video_preprocessor_config.json",
+      "revision": "1d4bf0f2ff6012fd82039f2fa52739d0dd7c60c0",
+      "sha256": "7768af27c1fafa9cc9011c1dc20067e03f8915e03b63504550e11d5066986d13",
+      "bytes": 385
+    },
+    "video_processing_qwen3_vl.py": {
+      "origin": "https://raw.githubusercontent.com/huggingface/transformers/1a55addd658aaa95b52871f5b72e91a6b91449b6/src/transformers/models/qwen3_vl/video_processing_qwen3_vl.py",
+      "revision": "1a55addd658aaa95b52871f5b72e91a6b91449b6",
+      "sha256": "1d7be665171c8441108b43f179759fa39a35a5a132c14a142a296fc295299b7a",
+      "bytes": 16865
+    },
+    "vision_utils.py": {
+      "origin": "https://raw.githubusercontent.com/huggingface/transformers/1a55addd658aaa95b52871f5b72e91a6b91449b6/src/transformers/vision_utils.py",
+      "revision": "1a55addd658aaa95b52871f5b72e91a6b91449b6",
+      "sha256": "bcecd5a92b3266b9926272a549d2b1a0f1fe7646c698c0fa19bd96f976085356",
+      "bytes": 19192
+    }
+  }
+}

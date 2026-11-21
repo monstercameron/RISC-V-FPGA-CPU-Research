@@ -1,0 +1,13 @@
+{
+  "plan.md": "7776d52e3643110aeb415efd9432e8e34a2beac4ef1223310c15103c673b8ce5",
+  "memory-plan.md": "a69b2ad251d641bcffbcc953bcd73198ac32d6fe803f224d5fdd2db43ded0386",
+  "plan-gap-audit.md": "89c57ddae572ee6dc5bbc5ca9d651a8291449079db818bba68176a752b1aa0b1",
+  "fpga-resource-and-board-analysis.md": "3201b8dd4050a5a83734067058829686df5939d71bcccc58637db61518eb5de3",
+  "implementation-contract.md": "9fcfadf78c8def6af40bb2d353060bb0351791c0739b625d4b6b900b76076320",
+  "abi-v1.md": "ea3b02d364ebb9e6f4dde73233e60d1bf1e32796fbfd7dbd5b25c306926b195d",
+  "adapter-v1.md": "eda4190edf1c20af22994ff5252180757fed6300f43cf4b79547836fe4db1bb1",
+  "abi_v1.py": "1dfc2bf36dd4e432fa5e68777428aba265707ae073e9f190c2bdb4b0d55a359c",
+  "qualification-fixtures.json": "1246dcac859fa2fa3f6d05c0b91bc3595e2185a022c6694d6d1b25fe67f5b9a2",
+  "reference-source-lock.json": "627b2548f9c1c2a839aec66671331b75c7cf2c360681f602824f100260e418eb",
+  "refinement_checks.py": "af9a6b01e8ee08b1e43f763e3f7df91f88ee616693c5d6ef61c17e41730fc5d0"
+}

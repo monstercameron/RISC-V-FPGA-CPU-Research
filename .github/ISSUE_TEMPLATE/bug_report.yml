@@ -1,0 +1,28 @@
+name: Bug report
+description: Report a reproducible issue in checks, protocols, simulations or documentation.
+title: "[Bug]: "
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem and expected behavior
+      description: Identify the affected file/component and what should happen.
+    validations:
+      required: true
+  - type: textarea
+    id: reproduce
+    attributes:
+      label: Reproduction
+      description: Include the revision, exact commands, minimal input and relevant output.
+    validations:
+      required: true
+  - type: textarea
+    id: environment
+    attributes:
+      label: Environment
+      description: OS/architecture, Python/simulator/tool versions and board revision when applicable. Omit private paths and credentials.
+  - type: textarea
+    id: impact
+    attributes:
+      label: Evidence and impact
+      description: Explain whether this affects planning, numerical behavior, protocol safety, simulation or physical hardware.

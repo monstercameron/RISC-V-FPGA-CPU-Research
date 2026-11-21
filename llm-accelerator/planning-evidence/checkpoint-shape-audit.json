@@ -1,0 +1,20 @@
+{
+  "shards": 18,
+  "tensors_total": 1199,
+  "active_tensors": 1184,
+  "auxiliary_mtp_tensors": 15,
+  "active_elements": 27356728560,
+  "auxiliary_mtp_elements": 424699392,
+  "total_elements": 27781427952,
+  "active_bytes": 54713457120,
+  "auxiliary_mtp_bytes": 849398784,
+  "total_bytes": 55562855904,
+  "dtypes": [
+    "BF16"
+  ],
+  "missing": [],
+  "unexpected": [],
+  "shape_mismatches": {},
+  "checkpoint_weights_downloaded": false,
+  "method": "Bounded HTTP range reads of JSON headers only; every tensor key, shape, dtype and byte span checked."
+}

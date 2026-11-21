@@ -1,0 +1,162 @@
+{
+  "status": "PASS",
+  "timestamp_utc": "2026-10-23T12:30:22.890067+00:00",
+  "host": {
+    "platform": "Linux-6.19.0-microsoft-standard-WSL2-aarch64-with-glibc2.39",
+    "machine": "aarch64",
+    "python": "3.12.3"
+  },
+  "simulator": "Icarus Verilog version 12.0 (stable) ()",
+  "build": {
+    "compiler": "clang version 23.1.3 (https://github.com/llvm/llvm-project 0d261d1ca552c95a8f007e061c787ac7132fbcbc)",
+    "command": [
+      "C:\\Program Files\\LLVM\\bin\\clang.exe",
+      "--target=riscv64-unknown-elf",
+      "-march=rv64i_zifencei",
+      "-mabi=lp64",
+      "-mcmodel=medany",
+      "-msmall-data-limit=0",
+      "-mno-relax",
+      "-O1",
+      "-ffreestanding",
+      "-fno-builtin",
+      "-fno-stack-protector",
+      "-nostdlib",
+      "-Wl,--no-relax",
+      "-Wl,-T,C:\\Users\\mreca\\Documents\\Codex\\2026-10-23\\i-x20\\outputs\\sim\\cpu\\link.ld",
+      "C:\\Users\\mreca\\Documents\\Codex\\2026-10-23\\i-x20\\outputs\\sim\\cpu\\start.S",
+      "C:\\Users\\mreca\\Documents\\Codex\\2026-10-23\\i-x20\\outputs\\sim\\cpu\\c_demo.c",
+      "-o",
+      "C:\\Users\\mreca\\Documents\\Codex\\2026-10-23\\i-x20\\outputs\\build\\cpu\\c-demo\\firmware.elf"
+    ],
+    "isa": "rv64i_zifencei",
+    "abi": "lp64",
+    "payload_bytes": 768,
+    "build_wall_seconds": 1.4786892000120133,
+    "input_sha256": {
+      "sim/cpu/c_demo.c": "d185eb336ed3ac54312cbc396bbbfebd1d1f1a55e4815587f63cd697f92e60ef",
+      "sim/cpu/start.S": "343ee45afbff29e1022bafb150b50494f2d0391faa93b6b97bd16540e894160c",
+      "sim/cpu/link.ld": "ccda181dde4ffd33cfedefa153a55441205868875a55c5dbbec566f1bb2168c4"
+    },
+    "artifact_sha256": {
+      "firmware.elf": "2c1b508930324a54cc21dd7d86a09916aab3e103d41bc5180cd6067fd300b34e",
+      "firmware.bin": "4e06833aab68084a71ed28b83e7fa040fac22d8cfb060a5c97ea3fad9a8e20af",
+      "firmware-bram.hex": "594f54674e4451e03a3a5d1b72adf55c8faebcc8aa29d50bf8cf7a8ddbca3789"
+    }
+  },
+  "rtl_compile_wall_seconds": 0.372894615000007,
+  "expected": {
+    "completion_magic": "43505544454d4f31",
+    "status": "0000000000000000",
+    "sum": "00000000000004da",
+    "minimum_twos_complement": "fffffffffffffed4",
+    "maximum": "0000000000000400",
+    "fibonacci_40": "0000000006197ecb",
+    "crc32_344_bytes": "0000000097f65c54",
+    "sorted_fingerprint": "87101f1288184441"
+  },
+  "actual": {
+    "completion_magic": "43505544454d4f31",
+    "status": "0000000000000000",
+    "sum": "00000000000004da",
+    "minimum_twos_complement": "fffffffffffffed4",
+    "maximum": "0000000000000400",
+    "fibonacci_40": "0000000006197ecb",
+    "crc32_344_bytes": "0000000097f65c54",
+    "sorted_fingerprint": "87101f1288184441"
+  },
+  "soc_cycles_after_reset": 69157,
+  "retired_instructions": 22674,
+  "measurements": [
+    {
+      "wall_seconds_including_time_wrapper": 1.3604925830000099,
+      "vvp_wall_seconds_gnu_time": 1.2,
+      "vvp_user_seconds": 1.04,
+      "vvp_system_seconds": 0.0,
+      "vvp_peak_rss_kib": 7400
+    },
+    {
+      "wall_seconds_including_time_wrapper": 1.4483280990000083,
+      "vvp_wall_seconds_gnu_time": 1.39,
+      "vvp_user_seconds": 1.02,
+      "vvp_system_seconds": 0.0,
+      "vvp_peak_rss_kib": 7416
+    },
+    {
+      "wall_seconds_including_time_wrapper": 1.3653225839999976,
+      "vvp_wall_seconds_gnu_time": 1.21,
+      "vvp_user_seconds": 1.06,
+      "vvp_system_seconds": 0.0,
+      "vvp_peak_rss_kib": 7412
+    },
+    {
+      "wall_seconds_including_time_wrapper": 1.2668178410000053,
+      "vvp_wall_seconds_gnu_time": 1.2,
+      "vvp_user_seconds": 1.0,
+      "vvp_system_seconds": 0.01,
+      "vvp_peak_rss_kib": 7416
+    },
+    {
+      "wall_seconds_including_time_wrapper": 1.0684950139999927,
+      "vvp_wall_seconds_gnu_time": 0.97,
+      "vvp_user_seconds": 0.99,
+      "vvp_system_seconds": 0.0,
+      "vvp_peak_rss_kib": 7416
+    }
+  ],
+  "median_simulation_wall_seconds": 1.3604925830000099,
+  "maximum_vvp_peak_rss_mib": 7.2421875,
+  "simulated_cycles_per_wall_second": 50832.32416269593,
+  "differential": {
+    "status": "PASS",
+    "events": 22765,
+    "max_wait_cycles": 0,
+    "summary": "DONE retirements=22674 cycles=45917\n/mnt/c/Users/mreca/Documents/Codex/2026-10-23/i-x20/outputs/sim/cpu/tb_core.sv:60: $finish called at 459210000 (1ps)",
+    "trace_bytes": 1477373,
+    "instruction_names": [
+      "add",
+      "addi",
+      "addiw",
+      "and",
+      "auipc",
+      "beq",
+      "beq:not_taken",
+      "beq:taken",
+      "bge",
+      "bge:not_taken",
+      "bge:taken",
+      "bne",
+      "bne:not_taken",
+      "bne:taken",
+      "ebreak",
+      "jal",
+      "jalr",
+      "lbu",
+      "ld",
+      "lui",
+      "lw",
+      "or",
+      "sd",
+      "slli",
+      "sltu",
+      "srai",
+      "srli",
+      "srliw",
+      "xor",
+      "xori"
+    ]
+  },
+  "source_sha256": {
+    "rtl/cpu/rv64_core.sv": "831101d3f376ed35f96e4549eb0e9cf67fd59ef79bdf025b3ddbf432aebd75d1",
+    "rtl/cpu/rv64_bram_soc.sv": "a38d2ca4a05142f1982635fb9824a29b80abc94e31635415d3b341df0c06ae57",
+    "sim/cpu/c_demo.c": "d185eb336ed3ac54312cbc396bbbfebd1d1f1a55e4815587f63cd697f92e60ef",
+    "sim/cpu/start.S": "343ee45afbff29e1022bafb150b50494f2d0391faa93b6b97bd16540e894160c",
+    "sim/cpu/link.ld": "ccda181dde4ffd33cfedefa153a55441205868875a55c5dbbec566f1bb2168c4",
+    "sim/cpu/build_firmware.py": "693e6572bac357ef58d54bbfc58598590cfb6c8195e5d0d60176e7564245015a",
+    "sim/cpu/tb_c_demo.sv": "25ff3d4baca02ac750a65aea5331604456188a415779930b76266d7cddcd4b9b",
+    "sim/cpu/run_c_demo.py": "d9d858883addff753a5ba0569a4523974b717413370d583b052843b881df7e32",
+    "sim/cpu/reference.py": "91c892984a72105acc005a0a9a0133093eaa83ad0700cc26e470ec405ef49cb0",
+    "sim/cpu/tb_core.sv": "cd78af7cced90dac92eae531ce5f3b77768eeff27a8db1c07bf81acbfb67cfff"
+  },
+  "scope": "One small RV64I/FENCE.I core with 16 KiB RAM; no waveform dump in timing runs. Wall time includes GNU time/process launch and image loading, excludes WSL startup, C compilation, RTL compilation and the separate differential check. Peak RSS is the vvp process, not the whole WSL VM or editor. Local sequential reference is not official ISA certification. Not a full RVA23 core, physical FPGA measurement or LLM simulation."
+}

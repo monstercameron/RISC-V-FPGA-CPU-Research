@@ -1,0 +1,47 @@
+{
+  "seed": 23010,
+  "numpy": "2.4.6",
+  "python": "3.11.9",
+  "H": 128,
+  "I": 384,
+  "calibration_vectors": 32,
+  "holdout_vectors": 32,
+  "synthetic_only": true,
+  "metrics": [
+    {
+      "bits": 8,
+      "nrmse": 0.04208110584564668,
+      "cosine": 0.9991169153994985,
+      "max_abs_error": 0.021264712565110408,
+      "input_exponent": -6,
+      "hidden_exponent": -6,
+      "output_saturated": 0,
+      "hidden_saturated": 1,
+      "initial_quality_gate_pass": true
+    },
+    {
+      "bits": 4,
+      "nrmse": 0.337158469011113,
+      "cosine": 0.9489833738799716,
+      "max_abs_error": 0.17987934899153615,
+      "input_exponent": -6,
+      "hidden_exponent": -6,
+      "output_saturated": 0,
+      "hidden_saturated": 0,
+      "initial_quality_gate_pass": false
+    }
+  ],
+  "silu_max_absolute_error_over_all_int16_inputs": 0.0026736501436155015,
+  "demo_macs": 147456,
+  "demo_w4_bytes": 73728,
+  "qwen_ffn_macs": 267386880,
+  "qwen_ffn_w4_bytes": 133693440,
+  "demo_ideal_mac_cycles": 18432,
+  "qwen_ideal_mac_cycles": 33423360,
+  "mac_bound_w4_k17408": 17825792,
+  "mac_bound_w8_k17408": 285212672,
+  "nominal_clock_mhz": 100,
+  "nominal_w8_weight_bytes_per_cycle": 8,
+  "nominal_w4_weight_bytes_per_cycle": 4,
+  "elapsed_seconds": 0.21220069999981206
+}

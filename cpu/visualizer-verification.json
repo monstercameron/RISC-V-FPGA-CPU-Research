@@ -1,0 +1,74 @@
+{
+  "status": "PASS",
+  "timestamp_utc": "2026-10-23T15:59:49.722354+00:00",
+  "program": "add",
+  "source": "sim/cpu/add_one.c",
+  "observed_output": [
+    2
+  ],
+  "inputs": {
+    "left": 1,
+    "right": 1
+  },
+  "custom_inputs": false,
+  "generated_source_sha256": "e59671757574c00d013a2bdca7f8e0d21f30a276d8b99a5b71aaf524449591ab",
+  "unavailable_stops": [],
+  "study_events": {
+    "load": {
+      "clock": 20,
+      "pc": 28,
+      "next_pc": 32,
+      "assembly": "ld a1, 0x0(a0)"
+    },
+    "output": {
+      "clock": 41,
+      "pc": 52,
+      "next_pc": 52,
+      "assembly": "sd a1, 0x0(a2)"
+    }
+  },
+  "calls": 0,
+  "stack_writes": 0,
+  "cycles": 48,
+  "retired_instructions": 13,
+  "ram_writes": 1,
+  "differential_events": 15,
+  "all_outputs_match": true,
+  "debug_binary_identical": true,
+  "source_sha256": {
+    "rtl/cpu/rv64_core.sv": "831101d3f376ed35f96e4549eb0e9cf67fd59ef79bdf025b3ddbf432aebd75d1",
+    "rtl/cpu/rv64_bram_soc.sv": "a38d2ca4a05142f1982635fb9824a29b80abc94e31635415d3b341df0c06ae57",
+    "sim/cpu/start.S": "343ee45afbff29e1022bafb150b50494f2d0391faa93b6b97bd16540e894160c",
+    "sim/cpu/link.ld": "ccda181dde4ffd33cfedefa153a55441205868875a55c5dbbec566f1bb2168c4",
+    "sim/cpu/tb_visualizer.sv": "7c75dbfcad0acb90562feab166acba5470408890704827a6b7977703e95010d8",
+    "sim/cpu/build_firmware.py": "4db0300777f12ec2232f8835ca4e41117ba6c1ab033002e22bfdc6b8454774a5",
+    "sim/cpu/reference.py": "91c892984a72105acc005a0a9a0133093eaa83ad0700cc26e470ec405ef49cb0",
+    "sim/cpu/run_c_demo.py": "d9d858883addff753a5ba0569a4523974b717413370d583b052843b881df7e32",
+    "sim/cpu/build_visualizer.py": "7afa72bb4249796144cf31eba6cca19282a187309f70ff1bc12c0af05e3c300d",
+    "sim/cpu/program_catalog.py": "2a663e9cd23b511cece2431cd51f59de4cb90830c3fe25c8db90821cbac3e2fd",
+    "sim/cpu/program_inputs.py": "a7ea47a39fbccc7b40901d58ad2eae9f9ac500b0e95fd02e159d49af9d65ef22",
+    "sim/cpu/add_one.c": "e59671757574c00d013a2bdca7f8e0d21f30a276d8b99a5b71aaf524449591ab"
+  },
+  "firmware_sha256": "5e07782a25ea1dae7c2cc6eb726d3ad76521ccf68ecc7691c5b0bb0fdb03bc47",
+  "clock_trace_sha256": "20f95b651d4544d4dd9c424be25b2c26faffa66cf407fa63840ae555c3b0ea67",
+  "scope": "Replay of sampled RTL simulation clocks with synchronous RAM. Not a live FPGA or in-browser RTL simulator.",
+  "sampling": "Circuit state, operands and bus before rising edge; RAM and register effects after that edge. RAM writes on adapter acceptance, one cycle before CPU acknowledgement. C lines are optimized compiler debug attribution, not exact source-level stepping.",
+  "addition": {
+    "clock": 28,
+    "pc": 36,
+    "instruction_hex": "00b505b3",
+    "bits": "00000000101101010000010110110011",
+    "assembly": "add a1, a0, a1",
+    "rs1": 10,
+    "rs2": 11,
+    "rd": 11,
+    "operands": [
+      1,
+      1
+    ],
+    "result": 2
+  },
+  "viewer_sha256": "a5e144956841414b8811737586c3c9ab39b6384f799ccbd418b1272af855b4ad",
+  "template_sha256": "de9de7ddf0fc49fedc82e20095b9daa1c4d074a1149cb8abffdcf1ae18f6f4e4",
+  "html_bytes": 63316
+}

@@ -1,0 +1,383 @@
+{
+  "status": "planning arithmetic and source-identity checks only; all checks passed",
+  "model_revision": "1d4bf0f2ff6012fd82039f2fa52739d0dd7c60c0",
+  "transformers_revision": "1a55addd658aaa95b52871f5b72e91a6b91449b6",
+  "source_sha256": {
+    "chat_template.jinja": "c3cf9e34abf4f9e36c2d72165aa9c132d3e2a725b6c2586aaa3a8af9d7a81041",
+    "config.json": "191e0af232104ed8b65258cf3fb2b842e288008baca7633c11b82a1ac7203aab",
+    "configuration_qwen3_5.py": "e5316490555c2d3590682f1d84ca656bdf3d2aff7475b95b682c03afbb69e748",
+    "configuration_utils.py": "3823d28a448091ce0825e24e86977f1a72950519cca0c93adb3afc6dac67b203",
+    "generation_config.json": "e70c136c1b78ddc1fb0905bac8e733a4dc448d4f852a5dd75143fffc70be550e",
+    "image_processing_qwen2_vl.py": "ebdb484798a6aefebc5dbe5431d3e4af8f460404d95d4cb67165fdff624ed333",
+    "model.safetensors.index.json": "77042094076611b69791a610065f28b7013b8c621795fa86ddccc8bac7d1b9df",
+    "modeling_qwen3_5.py": "af05d0acfe79fff8aea1c75f93516a6a72bc80f6f901329a73e66a3866fe1e7c",
+    "modeling_rope_utils.py": "8b08f3f372207816eae420e7d33b982e44858dc9e4be7728d95f606b07c23fd0",
+    "preprocessor_config.json": "27225450ac9c6529872ee1924fcb0962ff5634834f817040f444118116f4e516",
+    "processing_qwen3_vl.py": "02d50224d9dc9ce38690cfa6a0106be897f619444ebe3ff7ba38cbcdda9e3ef2",
+    "README.md": "a504eb504612f822cf78c7ff57fad8f9593562a1113e2c74db36d4c71d938f4b",
+    "tokenizer_config.json": "b11349aafa7cdc6a320767cf7ceb29ed82f7eda5d65e8e0819e76f0ce947bf27",
+    "transformers-revision.txt": "80b3fbcf08b32d9059c1624b280f2ad0305d81372c7ecf41b0e5321c7065022d",
+    "video_preprocessor_config.json": "7768af27c1fafa9cc9011c1dc20067e03f8915e03b63504550e11d5066986d13",
+    "video_processing_qwen3_vl.py": "1d7be665171c8441108b43f179759fa39a35a5a132c14a142a296fc295299b7a",
+    "vision_utils.py": "bcecd5a92b3266b9926272a549d2b1a0f1fe7646c698c0fa19bd96f976085356"
+  },
+  "immutable_sources_verified": 16,
+  "mutable_documentation_not_identity_checked": [
+    "README.md"
+  ],
+  "source_lock_sha256": "627b2548f9c1c2a839aec66671331b75c7cf2c360681f602824f100260e418eb",
+  "generation": {
+    "eos_ids": [
+      248046,
+      248044
+    ],
+    "default_is_sampling": true,
+    "proposed_bringup_mode": "greedy, separate from model sampling defaults"
+  },
+  "allocation": {
+    "regions": [
+      {
+        "name": "platform_reserve",
+        "offset_bytes": 0,
+        "length_bytes": 33554432,
+        "end_exclusive": 33554432
+      },
+      {
+        "name": "delta_state",
+        "offset_bytes": 33554432,
+        "length_bytes": 150994944,
+        "end_exclusive": 184549376
+      },
+      {
+        "name": "conv_state_and_alignment",
+        "offset_bytes": 184549376,
+        "length_bytes": 4194304,
+        "end_exclusive": 188743680
+      },
+      {
+        "name": "kv_at_4096",
+        "offset_bytes": 188743680,
+        "length_bytes": 268435456,
+        "end_exclusive": 457179136
+      },
+      {
+        "name": "external_workspace",
+        "offset_bytes": 457179136,
+        "length_bytes": 134217728,
+        "end_exclusive": 591396864
+      },
+      {
+        "name": "weight_stage_a",
+        "offset_bytes": 591396864,
+        "length_bytes": 134217728,
+        "end_exclusive": 725614592
+      },
+      {
+        "name": "weight_stage_b",
+        "offset_bytes": 725614592,
+        "length_bytes": 134217728,
+        "end_exclusive": 859832320
+      },
+      {
+        "name": "constants_and_descriptors",
+        "offset_bytes": 859832320,
+        "length_bytes": 16777216,
+        "end_exclusive": 876609536
+      }
+    ],
+    "total_reserved_bytes": 876609536,
+    "free_bytes_at_1GiB": 197132288,
+    "free_bytes_at_2GiB": 1270874112,
+    "context_cap": 4096,
+    "note": "Illustrative reservation, requires validated physical DDR map"
+  },
+  "layout": {
+    "lanes": 8,
+    "accumulator_contexts": 16,
+    "reduction_tile": 32,
+    "weight_tile_bytes": 8192,
+    "accumulator_bytes": 512,
+    "packed_matrices": [
+      {
+        "name": "head",
+        "shape": [
+          248320,
+          5120
+        ],
+        "count": 1,
+        "padded_shape": [
+          248320,
+          5120
+        ],
+        "extra_bytes": 0
+      },
+      {
+        "name": "gate",
+        "shape": [
+          17408,
+          5120
+        ],
+        "count": 64,
+        "padded_shape": [
+          17408,
+          5120
+        ],
+        "extra_bytes": 0
+      },
+      {
+        "name": "up",
+        "shape": [
+          17408,
+          5120
+        ],
+        "count": 64,
+        "padded_shape": [
+          17408,
+          5120
+        ],
+        "extra_bytes": 0
+      },
+      {
+        "name": "down",
+        "shape": [
+          5120,
+          17408
+        ],
+        "count": 64,
+        "padded_shape": [
+          5120,
+          17408
+        ],
+        "extra_bytes": 0
+      },
+      {
+        "name": "qgate",
+        "shape": [
+          12288,
+          5120
+        ],
+        "count": 16,
+        "padded_shape": [
+          12288,
+          5120
+        ],
+        "extra_bytes": 0
+      },
+      {
+        "name": "k",
+        "shape": [
+          1024,
+          5120
+        ],
+        "count": 16,
+        "padded_shape": [
+          1024,
+          5120
+        ],
+        "extra_bytes": 0
+      },
+      {
+        "name": "v",
+        "shape": [
+          1024,
+          5120
+        ],
+        "count": 16,
+        "padded_shape": [
+          1024,
+          5120
+        ],
+        "extra_bytes": 0
+      },
+      {
+        "name": "att_out",
+        "shape": [
+          5120,
+          6144
+        ],
+        "count": 16,
+        "padded_shape": [
+          5120,
+          6144
+        ],
+        "extra_bytes": 0
+      },
+      {
+        "name": "dqkv",
+        "shape": [
+          10240,
+          5120
+        ],
+        "count": 48,
+        "padded_shape": [
+          10240,
+          5120
+        ],
+        "extra_bytes": 0
+      },
+      {
+        "name": "dz",
+        "shape": [
+          6144,
+          5120
+        ],
+        "count": 48,
+        "padded_shape": [
+          6144,
+          5120
+        ],
+        "extra_bytes": 0
+      },
+      {
+        "name": "da",
+        "shape": [
+          48,
+          5120
+        ],
+        "count": 48,
+        "padded_shape": [
+          128,
+          5120
+        ],
+        "extra_bytes": 39321600
+      },
+      {
+        "name": "db",
+        "shape": [
+          48,
+          5120
+        ],
+        "count": 48,
+        "padded_shape": [
+          128,
+          5120
+        ],
+        "extra_bytes": 39321600
+      },
+      {
+        "name": "dout",
+        "shape": [
+          5120,
+          6144
+        ],
+        "count": 48,
+        "padded_shape": [
+          5120,
+          6144
+        ],
+        "extra_bytes": 0
+      }
+    ],
+    "extra_text_decode_bytes": 78643200,
+    "packed_text_decode_weight_bytes": 51327853568,
+    "note": "Padding only; excludes per-tensor alignment, metadata, retries and spills"
+  },
+  "logits_fp32_bytes": {
+    "1": 993280,
+    "32": 31784960,
+    "512": 508559360
+  },
+  "performance_scenarios": [
+    {
+      "mhz": 100,
+      "host_effective_GBps": 3,
+      "ddr_effective_shared_GBps": 2,
+      "dense_seconds": 32.0274432,
+      "host_seconds": 17.109284522666666,
+      "ddr_staging_seconds": 51.751745536,
+      "core_shared_128bit_port_seconds": 32.60977344,
+      "optimistic_overlap_floor_seconds": 51.751745536,
+      "sum_of_modeled_service_times_seconds": 133.49824669866666
+    },
+    {
+      "mhz": 100,
+      "host_effective_GBps": 3,
+      "ddr_effective_shared_GBps": 4,
+      "dense_seconds": 32.0274432,
+      "host_seconds": 17.109284522666666,
+      "ddr_staging_seconds": 25.875872768,
+      "core_shared_128bit_port_seconds": 32.60977344,
+      "optimistic_overlap_floor_seconds": 32.60977344,
+      "sum_of_modeled_service_times_seconds": 107.62237393066667
+    },
+    {
+      "mhz": 100,
+      "host_effective_GBps": 3,
+      "ddr_effective_shared_GBps": 6,
+      "dense_seconds": 32.0274432,
+      "host_seconds": 17.109284522666666,
+      "ddr_staging_seconds": 17.250581845333333,
+      "core_shared_128bit_port_seconds": 32.60977344,
+      "optimistic_overlap_floor_seconds": 32.60977344,
+      "sum_of_modeled_service_times_seconds": 98.99708300799999
+    },
+    {
+      "mhz": 100,
+      "host_effective_GBps": 3,
+      "ddr_effective_shared_GBps": 8,
+      "dense_seconds": 32.0274432,
+      "host_seconds": 17.109284522666666,
+      "ddr_staging_seconds": 12.937936384,
+      "core_shared_128bit_port_seconds": 32.60977344,
+      "optimistic_overlap_floor_seconds": 32.60977344,
+      "sum_of_modeled_service_times_seconds": 94.68443754666666
+    },
+    {
+      "mhz": 200,
+      "host_effective_GBps": 3,
+      "ddr_effective_shared_GBps": 2,
+      "dense_seconds": 16.0137216,
+      "host_seconds": 17.109284522666666,
+      "ddr_staging_seconds": 51.751745536,
+      "core_shared_128bit_port_seconds": 16.30488672,
+      "optimistic_overlap_floor_seconds": 51.751745536,
+      "sum_of_modeled_service_times_seconds": 101.17963837866667
+    },
+    {
+      "mhz": 200,
+      "host_effective_GBps": 3,
+      "ddr_effective_shared_GBps": 4,
+      "dense_seconds": 16.0137216,
+      "host_seconds": 17.109284522666666,
+      "ddr_staging_seconds": 25.875872768,
+      "core_shared_128bit_port_seconds": 16.30488672,
+      "optimistic_overlap_floor_seconds": 25.875872768,
+      "sum_of_modeled_service_times_seconds": 75.30376561066666
+    },
+    {
+      "mhz": 200,
+      "host_effective_GBps": 3,
+      "ddr_effective_shared_GBps": 6,
+      "dense_seconds": 16.0137216,
+      "host_seconds": 17.109284522666666,
+      "ddr_staging_seconds": 17.250581845333333,
+      "core_shared_128bit_port_seconds": 16.30488672,
+      "optimistic_overlap_floor_seconds": 17.250581845333333,
+      "sum_of_modeled_service_times_seconds": 66.678474688
+    },
+    {
+      "mhz": 200,
+      "host_effective_GBps": 3,
+      "ddr_effective_shared_GBps": 8,
+      "dense_seconds": 16.0137216,
+      "host_seconds": 17.109284522666666,
+      "ddr_staging_seconds": 12.937936384,
+      "core_shared_128bit_port_seconds": 16.30488672,
+      "optimistic_overlap_floor_seconds": 17.109284522666666,
+      "sum_of_modeled_service_times_seconds": 62.36582922666666
+    }
+  ],
+  "dense_only_simulator_wall_seconds_at_cycles_per_second": {
+    "10000.0": 320274.432,
+    "100000.0": 32027.4432,
+    "1000000.0": 3202.74432
+  },
+  "open_evidence": [
+    "arithmetic accuracy and dtype traces",
+    "FMA feedback latency and DSP mapping",
+    "complete RTL simulation",
+    "DDR and PCIe DMA bandwidth",
+    "post-route timing/CDC",
+    "checkpoint payload content and complete model logits"
+  ]
+}

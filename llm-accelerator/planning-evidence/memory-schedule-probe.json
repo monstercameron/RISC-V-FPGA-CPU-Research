@@ -1,0 +1,134 @@
+{
+  "status": "synthetic software scheduling probe only",
+  "seed": 3812702,
+  "delta_cases": [
+    {
+      "width": 1,
+      "chunk": 1,
+      "output_max_abs": 8.940696716308594e-08,
+      "state_max_abs": 0.0,
+      "read_bytes": 589824,
+      "write_bytes": 589824
+    },
+    {
+      "width": 1,
+      "chunk": 4,
+      "output_max_abs": 8.940696716308594e-08,
+      "state_max_abs": 0.0,
+      "read_bytes": 196608,
+      "write_bytes": 196608
+    },
+    {
+      "width": 1,
+      "chunk": 9,
+      "output_max_abs": 8.940696716308594e-08,
+      "state_max_abs": 0.0,
+      "read_bytes": 65536,
+      "write_bytes": 65536
+    },
+    {
+      "width": 8,
+      "chunk": 1,
+      "output_max_abs": 8.940696716308594e-08,
+      "state_max_abs": 0.0,
+      "read_bytes": 589824,
+      "write_bytes": 589824
+    },
+    {
+      "width": 8,
+      "chunk": 4,
+      "output_max_abs": 8.940696716308594e-08,
+      "state_max_abs": 0.0,
+      "read_bytes": 196608,
+      "write_bytes": 196608
+    },
+    {
+      "width": 8,
+      "chunk": 9,
+      "output_max_abs": 8.940696716308594e-08,
+      "state_max_abs": 0.0,
+      "read_bytes": 65536,
+      "write_bytes": 65536
+    },
+    {
+      "width": 16,
+      "chunk": 1,
+      "output_max_abs": 8.940696716308594e-08,
+      "state_max_abs": 0.0,
+      "read_bytes": 589824,
+      "write_bytes": 589824
+    },
+    {
+      "width": 16,
+      "chunk": 4,
+      "output_max_abs": 8.940696716308594e-08,
+      "state_max_abs": 0.0,
+      "read_bytes": 196608,
+      "write_bytes": 196608
+    },
+    {
+      "width": 16,
+      "chunk": 9,
+      "output_max_abs": 8.940696716308594e-08,
+      "state_max_abs": 0.0,
+      "read_bytes": 65536,
+      "write_bytes": 65536
+    },
+    {
+      "width": 31,
+      "chunk": 1,
+      "output_max_abs": 8.940696716308594e-08,
+      "state_max_abs": 0.0,
+      "read_bytes": 589824,
+      "write_bytes": 589824
+    },
+    {
+      "width": 31,
+      "chunk": 4,
+      "output_max_abs": 8.940696716308594e-08,
+      "state_max_abs": 0.0,
+      "read_bytes": 196608,
+      "write_bytes": 196608
+    },
+    {
+      "width": 31,
+      "chunk": 9,
+      "output_max_abs": 8.940696716308594e-08,
+      "state_max_abs": 0.0,
+      "read_bytes": 65536,
+      "write_bytes": 65536
+    },
+    {
+      "width": 128,
+      "chunk": 1,
+      "output_max_abs": 8.940696716308594e-08,
+      "state_max_abs": 0.0,
+      "read_bytes": 589824,
+      "write_bytes": 589824
+    },
+    {
+      "width": 128,
+      "chunk": 4,
+      "output_max_abs": 8.940696716308594e-08,
+      "state_max_abs": 0.0,
+      "read_bytes": 196608,
+      "write_bytes": 196608
+    },
+    {
+      "width": 128,
+      "chunk": 9,
+      "output_max_abs": 8.940696716308594e-08,
+      "state_max_abs": 0.0,
+      "read_bytes": 65536,
+      "write_bytes": 65536
+    }
+  ],
+  "gqa": {
+    "context": 37,
+    "group": 6,
+    "output_max_abs": 0.0,
+    "ungrouped_bytes": 454656,
+    "grouped_bytes": 75776,
+    "traffic_ratio": 6.0
+  }
+}

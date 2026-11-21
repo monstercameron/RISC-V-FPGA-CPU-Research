@@ -1,0 +1,31 @@
+{
+  "seed": 38127,
+  "profile": {
+    "H": 32,
+    "I": 64,
+    "V": 64,
+    "layers": 4,
+    "tokens": 8,
+    "delta_layers": 3,
+    "full_attention_layers": 1,
+    "query_heads": 6,
+    "kv_heads": 1,
+    "head_dim": 8,
+    "query_width": 48,
+    "delta_qk_heads": 1,
+    "delta_value_heads": 3
+  },
+  "checks": {
+    "schedule": 0.0,
+    "resume": 0.0,
+    "causality": 0.0,
+    "reset": 0.0,
+    "final_state": 0.0
+  },
+  "finite_logits": true,
+  "shape": [
+    8,
+    64
+  ],
+  "warning": "Tiny synthetic NumPy text graph only; shared block implementation, no RTL or pretrained accuracy proof."
+}

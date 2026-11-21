@@ -1,0 +1,4 @@
+PASS: W4A8 signed extrema, valid stalls, and reset
+mac_probe.sv:34: $finish called at 100000 (1ps)
+PASS: W8A8 signed extrema, valid stalls, and reset
+mac_probe.sv:34: $finish called at 100000 (1ps)

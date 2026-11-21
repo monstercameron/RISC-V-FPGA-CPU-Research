@@ -1,0 +1,472 @@
+{
+  "config_sha256": "191e0af232104ed8b65258cf3fb2b842e288008baca7633c11b82a1ac7203aab",
+  "implementation_sha256": "af05d0acfe79fff8aea1c75f93516a6a72bc80f6f901329a73e66a3866fe1e7c",
+  "dimensions": {
+    "H": 5120,
+    "I": 17408,
+    "V": 248320,
+    "L": 64,
+    "delta_layers": 48,
+    "attention_layers": 16,
+    "query_width": 6144,
+    "kv_width": 1024,
+    "q_gate_width": 12288,
+    "delta_qkv_width": 10240,
+    "delta_value_width": 6144,
+    "gqa_group": 6,
+    "delta_repeat": 3,
+    "rotary_dim": 64,
+    "vision_width": 1152,
+    "vision_heads": 16,
+    "vision_head_dim": 72,
+    "vision_patch_flat": 1536,
+    "vision_ffn": 4304,
+    "vision_layers": 27,
+    "vision_merged_width": 4608
+  },
+  "parameter_elements": {
+    "text": 26895998464,
+    "vision": 460730096,
+    "total": 27356728560
+  },
+  "bf16_bytes": {
+    "text": 53791996928,
+    "vision": 921460192,
+    "total": 54713457120
+  },
+  "state_bytes": {
+    "delta_fp32": 150994944,
+    "conv_bf16": 3932160,
+    "kv_bf16_per_token": 65536
+  },
+  "tensors": [
+    {
+      "name": "text.embedding",
+      "shape": [
+        248320,
+        5120
+      ],
+      "count": 1,
+      "elements_each": 1271398400,
+      "elements_total": 1271398400
+    },
+    {
+      "name": "text.lm_head",
+      "shape": [
+        248320,
+        5120
+      ],
+      "count": 1,
+      "elements_each": 1271398400,
+      "elements_total": 1271398400
+    },
+    {
+      "name": "text.final_norm.weight",
+      "shape": [
+        5120
+      ],
+      "count": 1,
+      "elements_each": 5120,
+      "elements_total": 5120
+    },
+    {
+      "name": "decoder.input_norm.weight",
+      "shape": [
+        5120
+      ],
+      "count": 64,
+      "elements_each": 5120,
+      "elements_total": 327680
+    },
+    {
+      "name": "decoder.post_mixer_norm.weight",
+      "shape": [
+        5120
+      ],
+      "count": 64,
+      "elements_each": 5120,
+      "elements_total": 327680
+    },
+    {
+      "name": "ffn.gate",
+      "shape": [
+        17408,
+        5120
+      ],
+      "count": 64,
+      "elements_each": 89128960,
+      "elements_total": 5704253440
+    },
+    {
+      "name": "ffn.up",
+      "shape": [
+        17408,
+        5120
+      ],
+      "count": 64,
+      "elements_each": 89128960,
+      "elements_total": 5704253440
+    },
+    {
+      "name": "ffn.down",
+      "shape": [
+        5120,
+        17408
+      ],
+      "count": 64,
+      "elements_each": 89128960,
+      "elements_total": 5704253440
+    },
+    {
+      "name": "full_attention.q_and_gate",
+      "shape": [
+        12288,
+        5120
+      ],
+      "count": 16,
+      "elements_each": 62914560,
+      "elements_total": 1006632960
+    },
+    {
+      "name": "full_attention.k",
+      "shape": [
+        1024,
+        5120
+      ],
+      "count": 16,
+      "elements_each": 5242880,
+      "elements_total": 83886080
+    },
+    {
+      "name": "full_attention.v",
+      "shape": [
+        1024,
+        5120
+      ],
+      "count": 16,
+      "elements_each": 5242880,
+      "elements_total": 83886080
+    },
+    {
+      "name": "full_attention.out",
+      "shape": [
+        5120,
+        6144
+      ],
+      "count": 16,
+      "elements_each": 31457280,
+      "elements_total": 503316480
+    },
+    {
+      "name": "full_attention.q_norm",
+      "shape": [
+        256
+      ],
+      "count": 16,
+      "elements_each": 256,
+      "elements_total": 4096
+    },
+    {
+      "name": "full_attention.k_norm",
+      "shape": [
+        256
+      ],
+      "count": 16,
+      "elements_each": 256,
+      "elements_total": 4096
+    },
+    {
+      "name": "delta.qkv",
+      "shape": [
+        10240,
+        5120
+      ],
+      "count": 48,
+      "elements_each": 52428800,
+      "elements_total": 2516582400
+    },
+    {
+      "name": "delta.z",
+      "shape": [
+        6144,
+        5120
+      ],
+      "count": 48,
+      "elements_each": 31457280,
+      "elements_total": 1509949440
+    },
+    {
+      "name": "delta.a",
+      "shape": [
+        48,
+        5120
+      ],
+      "count": 48,
+      "elements_each": 245760,
+      "elements_total": 11796480
+    },
+    {
+      "name": "delta.b",
+      "shape": [
+        48,
+        5120
+      ],
+      "count": 48,
+      "elements_each": 245760,
+      "elements_total": 11796480
+    },
+    {
+      "name": "delta.out",
+      "shape": [
+        5120,
+        6144
+      ],
+      "count": 48,
+      "elements_each": 31457280,
+      "elements_total": 1509949440
+    },
+    {
+      "name": "delta.conv.weight",
+      "shape": [
+        10240,
+        1,
+        4
+      ],
+      "count": 48,
+      "elements_each": 40960,
+      "elements_total": 1966080
+    },
+    {
+      "name": "delta.dt_bias",
+      "shape": [
+        48
+      ],
+      "count": 48,
+      "elements_each": 48,
+      "elements_total": 2304
+    },
+    {
+      "name": "delta.A_log",
+      "shape": [
+        48
+      ],
+      "count": 48,
+      "elements_each": 48,
+      "elements_total": 2304
+    },
+    {
+      "name": "delta.gated_norm.weight",
+      "shape": [
+        128
+      ],
+      "count": 48,
+      "elements_each": 128,
+      "elements_total": 6144
+    },
+    {
+      "name": "vision.patch.weight",
+      "shape": [
+        1152,
+        3,
+        2,
+        16,
+        16
+      ],
+      "count": 1,
+      "elements_each": 1769472,
+      "elements_total": 1769472
+    },
+    {
+      "name": "vision.patch.bias",
+      "shape": [
+        1152
+      ],
+      "count": 1,
+      "elements_each": 1152,
+      "elements_total": 1152
+    },
+    {
+      "name": "vision.position_table",
+      "shape": [
+        2304,
+        1152
+      ],
+      "count": 1,
+      "elements_each": 2654208,
+      "elements_total": 2654208
+    },
+    {
+      "name": "vision.block.norm1.weight",
+      "shape": [
+        1152
+      ],
+      "count": 27,
+      "elements_each": 1152,
+      "elements_total": 31104
+    },
+    {
+      "name": "vision.block.norm1.bias",
+      "shape": [
+        1152
+      ],
+      "count": 27,
+      "elements_each": 1152,
+      "elements_total": 31104
+    },
+    {
+      "name": "vision.block.norm2.weight",
+      "shape": [
+        1152
+      ],
+      "count": 27,
+      "elements_each": 1152,
+      "elements_total": 31104
+    },
+    {
+      "name": "vision.block.norm2.bias",
+      "shape": [
+        1152
+      ],
+      "count": 27,
+      "elements_each": 1152,
+      "elements_total": 31104
+    },
+    {
+      "name": "vision.block.qkv.weight",
+      "shape": [
+        3456,
+        1152
+      ],
+      "count": 27,
+      "elements_each": 3981312,
+      "elements_total": 107495424
+    },
+    {
+      "name": "vision.block.qkv.bias",
+      "shape": [
+        3456
+      ],
+      "count": 27,
+      "elements_each": 3456,
+      "elements_total": 93312
+    },
+    {
+      "name": "vision.block.out.weight",
+      "shape": [
+        1152,
+        1152
+      ],
+      "count": 27,
+      "elements_each": 1327104,
+      "elements_total": 35831808
+    },
+    {
+      "name": "vision.block.out.bias",
+      "shape": [
+        1152
+      ],
+      "count": 27,
+      "elements_each": 1152,
+      "elements_total": 31104
+    },
+    {
+      "name": "vision.block.fc1.weight",
+      "shape": [
+        4304,
+        1152
+      ],
+      "count": 27,
+      "elements_each": 4958208,
+      "elements_total": 133871616
+    },
+    {
+      "name": "vision.block.fc1.bias",
+      "shape": [
+        4304
+      ],
+      "count": 27,
+      "elements_each": 4304,
+      "elements_total": 116208
+    },
+    {
+      "name": "vision.block.fc2.weight",
+      "shape": [
+        1152,
+        4304
+      ],
+      "count": 27,
+      "elements_each": 4958208,
+      "elements_total": 133871616
+    },
+    {
+      "name": "vision.block.fc2.bias",
+      "shape": [
+        1152
+      ],
+      "count": 27,
+      "elements_each": 1152,
+      "elements_total": 31104
+    },
+    {
+      "name": "vision.merger.norm.weight",
+      "shape": [
+        1152
+      ],
+      "count": 1,
+      "elements_each": 1152,
+      "elements_total": 1152
+    },
+    {
+      "name": "vision.merger.norm.bias",
+      "shape": [
+        1152
+      ],
+      "count": 1,
+      "elements_each": 1152,
+      "elements_total": 1152
+    },
+    {
+      "name": "vision.merger.fc1.weight",
+      "shape": [
+        4608,
+        4608
+      ],
+      "count": 1,
+      "elements_each": 21233664,
+      "elements_total": 21233664
+    },
+    {
+      "name": "vision.merger.fc1.bias",
+      "shape": [
+        4608
+      ],
+      "count": 1,
+      "elements_each": 4608,
+      "elements_total": 4608
+    },
+    {
+      "name": "vision.merger.fc2.weight",
+      "shape": [
+        5120,
+        4608
+      ],
+      "count": 1,
+      "elements_each": 23592960,
+      "elements_total": 23592960
+    },
+    {
+      "name": "vision.merger.fc2.bias",
+      "shape": [
+        5120
+      ],
+      "count": 1,
+      "elements_each": 5120,
+      "elements_total": 5120
+    }
+  ],
+  "exclusions": [
+    "MTP training/speculation auxiliary weights",
+    "optimizer/training state",
+    "nonpersistent analytic buffers"
+  ]
+}

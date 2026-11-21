@@ -1,0 +1,5 @@
+PicoRV32 reference RTL
+Repository: https://github.com/YosysHQ/picorv32
+Commit: ef203c2b0a3fb793280f5114941416c425c5b461
+License: ISC (see vendor/COPYING)
+Downloaded: 2026-10-23

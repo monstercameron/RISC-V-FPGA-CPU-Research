@@ -1,0 +1,25 @@
+{
+  "retrieved": "2026-10-23",
+  "files": [
+    {
+      "path": "licenses/TRANSFORMERS-APACHE-2.0.txt",
+      "source": "https://raw.githubusercontent.com/huggingface/transformers/1a55addd658aaa95b52871f5b72e91a6b91449b6/LICENSE",
+      "sha256": "77fd4710def9ec3c0f6225800e0235f15a425abd4a8b03559127fcd782612049"
+    },
+    {
+      "path": "licenses/QWEN-APACHE-2.0.txt",
+      "source": "https://huggingface.co/Qwen/Qwen3.8-27B/raw/1d4bf0f2ff6012fd82039f2fa52739d0dd7c60c0/LICENSE",
+      "sha256": "bbedc3fda3305820b977265f01b8619d87570a6739de3a5582c3464840f1e57a"
+    },
+    {
+      "path": "licenses/RISCV-CC-BY-4.0.txt",
+      "source": "https://api.github.com/repos/riscv/riscv-profiles/git/blobs/2f244ac814036ecd9ba9f69782e89ce6b1dca9eb",
+      "sha256": "7e7170e3cebf88a9f60c7b8421418323c09304da1af4d5e90f4da1dc1c8a2661"
+    },
+    {
+      "path": "sim/starter/vendor/COPYING",
+      "source": "https://github.com/YosysHQ/picorv32/blob/ef203c2b0a3fb793280f5114941416c425c5b461/COPYING",
+      "sha256": "041ebc727233e5bf096dd41260cbb81014d3d29ca007a15f3b1807d4e9ff288e"
+    }
+  ]
+}

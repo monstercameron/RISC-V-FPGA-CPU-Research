@@ -1,0 +1,46 @@
+# Predictable cross-platform text for maintained files
+* text=auto eol=lf
+*.sh text eol=lf
+*.ps1 text eol=lf
+*.py text eol=lf
+*.md text eol=lf
+*.yml text eol=lf
+*.yaml text eol=lf
+*.sv text eol=lf
+*.v text eol=lf
+*.xdc text eol=lf
+*.tcl text eol=lf
+
+# Preserve exact bytes in identity-locked snapshots, fixtures and licenses
+reference-sources/** -text
+reference-source-lock.json -text
+qualification-fixtures.json -text
+abi-lifecycle-example.json -text
+licenses/** -text
+sim/starter/vendor/** -text
+llm-accelerator/planning-evidence/** -text
+notes/**/modeling_qwen3_5.py -text
+notes/**/qwen-config.json -text
+
+# Preserve the byte identities recorded by the completed adversarial review.
+# These remain editable; an intentional revision needs new review evidence.
+plan.md -text
+memory-plan.md -text
+plan-gap-audit.md -text
+fpga-resource-and-board-analysis.md -text
+implementation-contract.md -text
+abi-v1.md -text
+adapter-v1.md -text
+abi_v1.py -text
+refinement_checks.py -text
+
+# Binary documents and hardware images
+*.pdf binary
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.zip binary
+*.bit binary
+*.pdi binary
+*.safetensors binary
+*.gguf binary

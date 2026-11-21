@@ -1,0 +1,25 @@
+name: Research or implementation proposal
+description: Propose a design improvement, experiment or missing piece of evidence.
+title: "[Proposal]: "
+body:
+  - type: textarea
+    id: objective
+    attributes:
+      label: Objective
+      description: State the problem, desired outcome and relevant D/M gate if known.
+    validations:
+      required: true
+  - type: textarea
+    id: approach
+    attributes:
+      label: Approach and alternatives
+      description: Include tradeoffs, primary sources and immutable revisions when available.
+    validations:
+      required: true
+  - type: textarea
+    id: acceptance
+    attributes:
+      label: Acceptance evidence and resource budget
+      description: What would pass or fail? Estimate runtime, memory/storage, hardware/tool requirements and any cost.
+    validations:
+      required: true

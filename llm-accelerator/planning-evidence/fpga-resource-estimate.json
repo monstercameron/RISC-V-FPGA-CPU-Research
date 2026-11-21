@@ -1,0 +1,278 @@
+{
+  "status": "analytical envelope, no RTL synthesis or routing performed",
+  "shared_lut_assumptions": {
+    "sequencer_descriptors_64bit_addressing": [
+      3000,
+      6000
+    ],
+    "attention_delta_ffn_vision_controllers": [
+      3000,
+      6000
+    ],
+    "vector_norm_reduction_control": [
+      2000,
+      5000
+    ],
+    "shared_div_sqrt_conversions": [
+      1000,
+      3000
+    ],
+    "shared_nonlinear_engine": [
+      2000,
+      6000
+    ],
+    "tensor_dma_scratch_routing_credits": [
+      5000,
+      10000
+    ],
+    "debug_counters": [
+      1000,
+      3000
+    ],
+    "reset_clock_control": [
+      1000,
+      1000
+    ]
+  },
+  "shared_lut_total": [
+    18000,
+    40000
+  ],
+  "per_lane_lut": [
+    1000,
+    2000
+  ],
+  "ddr_lut": [
+    8000,
+    16000
+  ],
+  "pcie_dma_lut": [
+    7000,
+    16000
+  ],
+  "wide_note": "Additional 25% of core LUT allowance at 32/64 lanes for fanout/routing/control growth.",
+  "profiles": [
+    {
+      "lanes": 1,
+      "core_lut6": [
+        19000,
+        42000
+      ],
+      "wide_routing_allowance": [
+        0,
+        0
+      ],
+      "with_one_ddr_and_one_pcie_dma_lut6": [
+        34000,
+        74000
+      ],
+      "dsp_envelope": [
+        13,
+        44
+      ],
+      "dense_only_seconds_at_200MHz": 128.1097728
+    },
+    {
+      "lanes": 8,
+      "core_lut6": [
+        26000,
+        56000
+      ],
+      "wide_routing_allowance": [
+        0,
+        0
+      ],
+      "with_one_ddr_and_one_pcie_dma_lut6": [
+        41000,
+        88000
+      ],
+      "dsp_envelope": [
+        27,
+        72
+      ],
+      "dense_only_seconds_at_200MHz": 16.0137216
+    },
+    {
+      "lanes": 32,
+      "core_lut6": [
+        50000,
+        104000
+      ],
+      "wide_routing_allowance": [
+        12500,
+        26000
+      ],
+      "with_one_ddr_and_one_pcie_dma_lut6": [
+        77500,
+        162000
+      ],
+      "dsp_envelope": [
+        75,
+        168
+      ],
+      "dense_only_seconds_at_200MHz": 4.0034304
+    },
+    {
+      "lanes": 64,
+      "core_lut6": [
+        82000,
+        168000
+      ],
+      "wide_routing_allowance": [
+        20500,
+        42000
+      ],
+      "with_one_ddr_and_one_pcie_dma_lut6": [
+        117500,
+        242000
+      ],
+      "dsp_envelope": [
+        139,
+        296
+      ],
+      "dense_only_seconds_at_200MHz": 2.0017152
+    }
+  ],
+  "bram36_assumptions_for_8lane": {
+    "scratch_64_to_128KiB": [
+      24,
+      48
+    ],
+    "nonlinear_rom": [
+      4,
+      12
+    ],
+    "extra_transport_cdc": [
+      8,
+      20
+    ],
+    "ddr_controller": [
+      24,
+      32
+    ],
+    "pcie_dma": [
+      8,
+      40
+    ],
+    "debug": [
+      4,
+      16
+    ]
+  },
+  "bram36_total": [
+    72,
+    168
+  ],
+  "devices": {
+    "XC7A100T": {
+      "lut6": 63400,
+      "ff": 126800,
+      "dsp": 240,
+      "bram36": 135,
+      "uram288": 0
+    },
+    "XC7A200T": {
+      "lut6": 134600,
+      "ff": 269200,
+      "dsp": 740,
+      "bram36": 365,
+      "uram288": 0
+    },
+    "XC7K325T": {
+      "lut6": 203800,
+      "ff": 407600,
+      "dsp": 840,
+      "bram36": 445,
+      "uram288": 0
+    },
+    "XCKU3P": {
+      "lut6": 162720,
+      "ff": 325440,
+      "dsp": 1368,
+      "bram36": 360,
+      "uram288": 48
+    },
+    "XCKU5P": {
+      "lut6": 216960,
+      "ff": 433920,
+      "dsp": 1824,
+      "bram36": 480,
+      "uram288": 64
+    }
+  },
+  "eight_lane_fit": {
+    "XC7A100T": {
+      "lut_use_percent": [
+        64.66876971608833,
+        138.801261829653
+      ],
+      "high_fits_65percent_design_target": false,
+      "bram_use_percent": [
+        53.333333333333336,
+        124.44444444444444
+      ]
+    },
+    "XC7A200T": {
+      "lut_use_percent": [
+        30.460624071322435,
+        65.37890044576523
+      ],
+      "high_fits_65percent_design_target": false,
+      "bram_use_percent": [
+        19.726027397260275,
+        46.02739726027397
+      ]
+    },
+    "XC7K325T": {
+      "lut_use_percent": [
+        20.11776251226693,
+        43.179587831207066
+      ],
+      "high_fits_65percent_design_target": true,
+      "bram_use_percent": [
+        16.179775280898877,
+        37.752808988764045
+      ]
+    },
+    "XCKU3P": {
+      "lut_use_percent": [
+        25.196656833824974,
+        54.08062930186824
+      ],
+      "high_fits_65percent_design_target": true,
+      "bram_use_percent": [
+        20.0,
+        46.666666666666664
+      ]
+    },
+    "XCKU5P": {
+      "lut_use_percent": [
+        18.89749262536873,
+        40.56047197640118
+      ],
+      "high_fits_65percent_design_target": true,
+      "bram_use_percent": [
+        15.0,
+        35.0
+      ]
+    }
+  },
+  "pcie_encoding_upper_GBps": {
+    "gen3x4": 3.9384615384615387,
+    "gen3x8": 7.876923076923077,
+    "gen2x4": 2.0
+  },
+  "sources": {
+    "fp": "https://download.amd.com/docnav/documents/ip_attachments/floating-point.html",
+    "ddr": "https://download.amd.com/docnav/documents/ip_attachments/ddr4.html",
+    "dma": "https://download.amd.com/docnav/documents/ip_attachments/xdma.html",
+    "kintexplus": "https://docs.amd.com/v/u/en-US/ds890-ultrascale-overview",
+    "series7": "https://docs.amd.com/v/u/en-US/7-series-product-selection-guide"
+  },
+  "warnings": [
+    "AMD IP counts are anchors, not HardFloat measurements.",
+    "Device resource sufficiency does not establish board DDR/PCIe availability or timing.",
+    "No 27B weights are stored in LUTs; complete graph shares hardware over time.",
+    "The 65% utilization threshold is a conservative project target, not a device rule."
+  ]
+}

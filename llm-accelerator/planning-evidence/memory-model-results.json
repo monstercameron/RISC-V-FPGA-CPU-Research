@@ -1,0 +1,1072 @@
+{
+  "status": "analytical planning; no actual checkpoint execution or measured hardware rate",
+  "assumptions": {
+    "group_size": 128,
+    "scale_bytes": 2,
+    "quantized": "all text 2D matrices including embedding/head",
+    "retained_bf16": "text 1D/conv weights and all vision weights",
+    "state_dtype": "FP32",
+    "kv_dtype": "BF16",
+    "dataflow": "one sequence, one token; each weight read once; grouped six-head attention"
+  },
+  "config_sha256": "191e0af232104ed8b65258cf3fb2b842e288008baca7633c11b82a1ac7203aab",
+  "constants": {
+    "small_text_elements": 2645504,
+    "dense_macs_per_token": 25621954560,
+    "delta_state_bytes": 150994944,
+    "conv_ring_bytes": 3932160,
+    "kv_bytes_per_context_token": 65536
+  },
+  "weights": [
+    {
+      "bits": 16,
+      "text_resident_bytes": 53791996928,
+      "active_text_vision_resident_bytes": 54713457120,
+      "decode_weight_read_bytes": 51249210368
+    },
+    {
+      "bits": 8,
+      "text_resident_bytes": 27318852608,
+      "active_text_vision_resident_bytes": 28240312800,
+      "decode_weight_read_bytes": 26027593808
+    },
+    {
+      "bits": 4,
+      "text_resident_bytes": 13872176128,
+      "active_text_vision_resident_bytes": 14793636320,
+      "decode_weight_read_bytes": 13216613968
+    }
+  ],
+  "decode": [
+    {
+      "bits": 16,
+      "context": 32,
+      "attention": "grouped_three_pass",
+      "parts": {
+        "weights": 51249210368,
+        "delta_state_read_write": 301989888,
+        "conv_ring_read_write": 7864320,
+        "kv_scan": 4194304,
+        "kv_append": 65536,
+        "logits_write": 993280
+      },
+      "modeled_bytes": 51564317696,
+      "excluded": "activation spills, DMA padding/metadata, refresh/turnaround, retries, cold load",
+      "memory_only_seconds_at_effective_GBps": {
+        "2": 25.782158848,
+        "8": 6.445539712,
+        "16": 3.222769856,
+        "32": 1.611384928
+      }
+    },
+    {
+      "bits": 16,
+      "context": 32,
+      "attention": "grouped_online",
+      "parts": {
+        "weights": 51249210368,
+        "delta_state_read_write": 301989888,
+        "conv_ring_read_write": 7864320,
+        "kv_scan": 2097152,
+        "kv_append": 65536,
+        "logits_write": 993280
+      },
+      "modeled_bytes": 51562220544,
+      "excluded": "activation spills, DMA padding/metadata, refresh/turnaround, retries, cold load",
+      "memory_only_seconds_at_effective_GBps": {
+        "2": 25.781110272,
+        "8": 6.445277568,
+        "16": 3.222638784,
+        "32": 1.611319392
+      }
+    },
+    {
+      "bits": 16,
+      "context": 4096,
+      "attention": "grouped_three_pass",
+      "parts": {
+        "weights": 51249210368,
+        "delta_state_read_write": 301989888,
+        "conv_ring_read_write": 7864320,
+        "kv_scan": 536870912,
+        "kv_append": 65536,
+        "logits_write": 993280
+      },
+      "modeled_bytes": 52096994304,
+      "excluded": "activation spills, DMA padding/metadata, refresh/turnaround, retries, cold load",
+      "memory_only_seconds_at_effective_GBps": {
+        "2": 26.048497152,
+        "8": 6.512124288,
+        "16": 3.256062144,
+        "32": 1.628031072
+      }
+    },
+    {
+      "bits": 16,
+      "context": 4096,
+      "attention": "grouped_online",
+      "parts": {
+        "weights": 51249210368,
+        "delta_state_read_write": 301989888,
+        "conv_ring_read_write": 7864320,
+        "kv_scan": 268435456,
+        "kv_append": 65536,
+        "logits_write": 993280
+      },
+      "modeled_bytes": 51828558848,
+      "excluded": "activation spills, DMA padding/metadata, refresh/turnaround, retries, cold load",
+      "memory_only_seconds_at_effective_GBps": {
+        "2": 25.914279424,
+        "8": 6.478569856,
+        "16": 3.239284928,
+        "32": 1.619642464
+      }
+    },
+    {
+      "bits": 16,
+      "context": 32768,
+      "attention": "grouped_three_pass",
+      "parts": {
+        "weights": 51249210368,
+        "delta_state_read_write": 301989888,
+        "conv_ring_read_write": 7864320,
+        "kv_scan": 4294967296,
+        "kv_append": 65536,
+        "logits_write": 993280
+      },
+      "modeled_bytes": 55855090688,
+      "excluded": "activation spills, DMA padding/metadata, refresh/turnaround, retries, cold load",
+      "memory_only_seconds_at_effective_GBps": {
+        "2": 27.927545344,
+        "8": 6.981886336,
+        "16": 3.490943168,
+        "32": 1.745471584
+      }
+    },
+    {
+      "bits": 16,
+      "context": 32768,
+      "attention": "grouped_online",
+      "parts": {
+        "weights": 51249210368,
+        "delta_state_read_write": 301989888,
+        "conv_ring_read_write": 7864320,
+        "kv_scan": 2147483648,
+        "kv_append": 65536,
+        "logits_write": 993280
+      },
+      "modeled_bytes": 53707607040,
+      "excluded": "activation spills, DMA padding/metadata, refresh/turnaround, retries, cold load",
+      "memory_only_seconds_at_effective_GBps": {
+        "2": 26.85380352,
+        "8": 6.71345088,
+        "16": 3.35672544,
+        "32": 1.67836272
+      }
+    },
+    {
+      "bits": 16,
+      "context": 262144,
+      "attention": "grouped_three_pass",
+      "parts": {
+        "weights": 51249210368,
+        "delta_state_read_write": 301989888,
+        "conv_ring_read_write": 7864320,
+        "kv_scan": 34359738368,
+        "kv_append": 65536,
+        "logits_write": 993280
+      },
+      "modeled_bytes": 85919861760,
+      "excluded": "activation spills, DMA padding/metadata, refresh/turnaround, retries, cold load",
+      "memory_only_seconds_at_effective_GBps": {
+        "2": 42.95993088,
+        "8": 10.73998272,
+        "16": 5.36999136,
+        "32": 2.68499568
+      }
+    },
+    {
+      "bits": 16,
+      "context": 262144,
+      "attention": "grouped_online",
+      "parts": {
+        "weights": 51249210368,
+        "delta_state_read_write": 301989888,
+        "conv_ring_read_write": 7864320,
+        "kv_scan": 17179869184,
+        "kv_append": 65536,
+        "logits_write": 993280
+      },
+      "modeled_bytes": 68739992576,
+      "excluded": "activation spills, DMA padding/metadata, refresh/turnaround, retries, cold load",
+      "memory_only_seconds_at_effective_GBps": {
+        "2": 34.369996288,
+        "8": 8.592499072,
+        "16": 4.296249536,
+        "32": 2.148124768
+      }
+    },
+    {
+      "bits": 8,
+      "context": 32,
+      "attention": "grouped_three_pass",
+      "parts": {
+        "weights": 26027593808,
+        "delta_state_read_write": 301989888,
+        "conv_ring_read_write": 7864320,
+        "kv_scan": 4194304,
+        "kv_append": 65536,
+        "logits_write": 993280
+      },
+      "modeled_bytes": 26342701136,
+      "excluded": "activation spills, DMA padding/metadata, refresh/turnaround, retries, cold load",
+      "memory_only_seconds_at_effective_GBps": {
+        "2": 13.171350568,
+        "8": 3.292837642,
+        "16": 1.646418821,
+        "32": 0.8232094105
+      }
+    },
+    {
+      "bits": 8,
+      "context": 32,
+      "attention": "grouped_online",
+      "parts": {
+        "weights": 26027593808,
+        "delta_state_read_write": 301989888,
+        "conv_ring_read_write": 7864320,
+        "kv_scan": 2097152,
+        "kv_append": 65536,
+        "logits_write": 993280
+      },
+      "modeled_bytes": 26340603984,
+      "excluded": "activation spills, DMA padding/metadata, refresh/turnaround, retries, cold load",
+      "memory_only_seconds_at_effective_GBps": {
+        "2": 13.170301992,
+        "8": 3.292575498,
+        "16": 1.646287749,
+        "32": 0.8231438745
+      }
+    },
+    {
+      "bits": 8,
+      "context": 4096,
+      "attention": "grouped_three_pass",
+      "parts": {
+        "weights": 26027593808,
+        "delta_state_read_write": 301989888,
+        "conv_ring_read_write": 7864320,
+        "kv_scan": 536870912,
+        "kv_append": 65536,
+        "logits_write": 993280
+      },
+      "modeled_bytes": 26875377744,
+      "excluded": "activation spills, DMA padding/metadata, refresh/turnaround, retries, cold load",
+      "memory_only_seconds_at_effective_GBps": {
+        "2": 13.437688872,
+        "8": 3.359422218,
+        "16": 1.679711109,
+        "32": 0.8398555545
+      }
+    },
+    {
+      "bits": 8,
+      "context": 4096,
+      "attention": "grouped_online",
+      "parts": {
+        "weights": 26027593808,
+        "delta_state_read_write": 301989888,
+        "conv_ring_read_write": 7864320,
+        "kv_scan": 268435456,
+        "kv_append": 65536,
+        "logits_write": 993280
+      },
+      "modeled_bytes": 26606942288,
+      "excluded": "activation spills, DMA padding/metadata, refresh/turnaround, retries, cold load",
+      "memory_only_seconds_at_effective_GBps": {
+        "2": 13.303471144,
+        "8": 3.325867786,
+        "16": 1.662933893,
+        "32": 0.8314669465
+      }
+    },
+    {
+      "bits": 8,
+      "context": 32768,
+      "attention": "grouped_three_pass",
+      "parts": {
+        "weights": 26027593808,
+        "delta_state_read_write": 301989888,
+        "conv_ring_read_write": 7864320,
+        "kv_scan": 4294967296,
+        "kv_append": 65536,
+        "logits_write": 993280
+      },
+      "modeled_bytes": 30633474128,
+      "excluded": "activation spills, DMA padding/metadata, refresh/turnaround, retries, cold load",
+      "memory_only_seconds_at_effective_GBps": {
+        "2": 15.316737064,
+        "8": 3.829184266,
+        "16": 1.914592133,
+        "32": 0.9572960665
+      }
+    },
+    {
+      "bits": 8,
+      "context": 32768,
+      "attention": "grouped_online",
+      "parts": {
+        "weights": 26027593808,
+        "delta_state_read_write": 301989888,
+        "conv_ring_read_write": 7864320,
+        "kv_scan": 2147483648,
+        "kv_append": 65536,
+        "logits_write": 993280
+      },
+      "modeled_bytes": 28485990480,
+      "excluded": "activation spills, DMA padding/metadata, refresh/turnaround, retries, cold load",
+      "memory_only_seconds_at_effective_GBps": {
+        "2": 14.24299524,
+        "8": 3.56074881,
+        "16": 1.780374405,
+        "32": 0.8901872025
+      }
+    },
+    {
+      "bits": 8,
+      "context": 262144,
+      "attention": "grouped_three_pass",
+      "parts": {
+        "weights": 26027593808,
+        "delta_state_read_write": 301989888,
+        "conv_ring_read_write": 7864320,
+        "kv_scan": 34359738368,
+        "kv_append": 65536,
+        "logits_write": 993280
+      },
+      "modeled_bytes": 60698245200,
+      "excluded": "activation spills, DMA padding/metadata, refresh/turnaround, retries, cold load",
+      "memory_only_seconds_at_effective_GBps": {
+        "2": 30.3491226,
+        "8": 7.58728065,
+        "16": 3.793640325,
+        "32": 1.8968201625
+      }
+    },
+    {
+      "bits": 8,
+      "context": 262144,
+      "attention": "grouped_online",
+      "parts": {
+        "weights": 26027593808,
+        "delta_state_read_write": 301989888,
+        "conv_ring_read_write": 7864320,
+        "kv_scan": 17179869184,
+        "kv_append": 65536,
+        "logits_write": 993280
+      },
+      "modeled_bytes": 43518376016,
+      "excluded": "activation spills, DMA padding/metadata, refresh/turnaround, retries, cold load",
+      "memory_only_seconds_at_effective_GBps": {
+        "2": 21.759188008,
+        "8": 5.439797002,
+        "16": 2.719898501,
+        "32": 1.3599492505
+      }
+    },
+    {
+      "bits": 4,
+      "context": 32,
+      "attention": "grouped_three_pass",
+      "parts": {
+        "weights": 13216613968,
+        "delta_state_read_write": 301989888,
+        "conv_ring_read_write": 7864320,
+        "kv_scan": 4194304,
+        "kv_append": 65536,
+        "logits_write": 993280
+      },
+      "modeled_bytes": 13531721296,
+      "excluded": "activation spills, DMA padding/metadata, refresh/turnaround, retries, cold load",
+      "memory_only_seconds_at_effective_GBps": {
+        "2": 6.765860648,
+        "8": 1.691465162,
+        "16": 0.845732581,
+        "32": 0.4228662905
+      }
+    },
+    {
+      "bits": 4,
+      "context": 32,
+      "attention": "grouped_online",
+      "parts": {
+        "weights": 13216613968,
+        "delta_state_read_write": 301989888,
+        "conv_ring_read_write": 7864320,
+        "kv_scan": 2097152,
+        "kv_append": 65536,
+        "logits_write": 993280
+      },
+      "modeled_bytes": 13529624144,
+      "excluded": "activation spills, DMA padding/metadata, refresh/turnaround, retries, cold load",
+      "memory_only_seconds_at_effective_GBps": {
+        "2": 6.764812072,
+        "8": 1.691203018,
+        "16": 0.845601509,
+        "32": 0.4228007545
+      }
+    },
+    {
+      "bits": 4,
+      "context": 4096,
+      "attention": "grouped_three_pass",
+      "parts": {
+        "weights": 13216613968,
+        "delta_state_read_write": 301989888,
+        "conv_ring_read_write": 7864320,
+        "kv_scan": 536870912,
+        "kv_append": 65536,
+        "logits_write": 993280
+      },
+      "modeled_bytes": 14064397904,
+      "excluded": "activation spills, DMA padding/metadata, refresh/turnaround, retries, cold load",
+      "memory_only_seconds_at_effective_GBps": {
+        "2": 7.032198952,
+        "8": 1.758049738,
+        "16": 0.879024869,
+        "32": 0.4395124345
+      }
+    },
+    {
+      "bits": 4,
+      "context": 4096,
+      "attention": "grouped_online",
+      "parts": {
+        "weights": 13216613968,
+        "delta_state_read_write": 301989888,
+        "conv_ring_read_write": 7864320,
+        "kv_scan": 268435456,
+        "kv_append": 65536,
+        "logits_write": 993280
+      },
+      "modeled_bytes": 13795962448,
+      "excluded": "activation spills, DMA padding/metadata, refresh/turnaround, retries, cold load",
+      "memory_only_seconds_at_effective_GBps": {
+        "2": 6.897981224,
+        "8": 1.724495306,
+        "16": 0.862247653,
+        "32": 0.4311238265
+      }
+    },
+    {
+      "bits": 4,
+      "context": 32768,
+      "attention": "grouped_three_pass",
+      "parts": {
+        "weights": 13216613968,
+        "delta_state_read_write": 301989888,
+        "conv_ring_read_write": 7864320,
+        "kv_scan": 4294967296,
+        "kv_append": 65536,
+        "logits_write": 993280
+      },
+      "modeled_bytes": 17822494288,
+      "excluded": "activation spills, DMA padding/metadata, refresh/turnaround, retries, cold load",
+      "memory_only_seconds_at_effective_GBps": {
+        "2": 8.911247144,
+        "8": 2.227811786,
+        "16": 1.113905893,
+        "32": 0.5569529465
+      }
+    },
+    {
+      "bits": 4,
+      "context": 32768,
+      "attention": "grouped_online",
+      "parts": {
+        "weights": 13216613968,
+        "delta_state_read_write": 301989888,
+        "conv_ring_read_write": 7864320,
+        "kv_scan": 2147483648,
+        "kv_append": 65536,
+        "logits_write": 993280
+      },
+      "modeled_bytes": 15675010640,
+      "excluded": "activation spills, DMA padding/metadata, refresh/turnaround, retries, cold load",
+      "memory_only_seconds_at_effective_GBps": {
+        "2": 7.83750532,
+        "8": 1.95937633,
+        "16": 0.979688165,
+        "32": 0.4898440825
+      }
+    },
+    {
+      "bits": 4,
+      "context": 262144,
+      "attention": "grouped_three_pass",
+      "parts": {
+        "weights": 13216613968,
+        "delta_state_read_write": 301989888,
+        "conv_ring_read_write": 7864320,
+        "kv_scan": 34359738368,
+        "kv_append": 65536,
+        "logits_write": 993280
+      },
+      "modeled_bytes": 47887265360,
+      "excluded": "activation spills, DMA padding/metadata, refresh/turnaround, retries, cold load",
+      "memory_only_seconds_at_effective_GBps": {
+        "2": 23.94363268,
+        "8": 5.98590817,
+        "16": 2.992954085,
+        "32": 1.4964770425
+      }
+    },
+    {
+      "bits": 4,
+      "context": 262144,
+      "attention": "grouped_online",
+      "parts": {
+        "weights": 13216613968,
+        "delta_state_read_write": 301989888,
+        "conv_ring_read_write": 7864320,
+        "kv_scan": 17179869184,
+        "kv_append": 65536,
+        "logits_write": 993280
+      },
+      "modeled_bytes": 30707396176,
+      "excluded": "activation spills, DMA padding/metadata, refresh/turnaround, retries, cold load",
+      "memory_only_seconds_at_effective_GBps": {
+        "2": 15.353698088,
+        "8": 3.838424522,
+        "16": 1.919212261,
+        "32": 0.9596061305
+      }
+    }
+  ],
+  "capacity": [
+    {
+      "bits": 16,
+      "context": 4096,
+      "minimum_known_bytes": 55136819680,
+      "excluded": "working scratch, padding, allocator/driver reserve, extra sequences"
+    },
+    {
+      "bits": 16,
+      "context": 32768,
+      "minimum_known_bytes": 57015867872,
+      "excluded": "working scratch, padding, allocator/driver reserve, extra sequences"
+    },
+    {
+      "bits": 16,
+      "context": 262144,
+      "minimum_known_bytes": 72048253408,
+      "excluded": "working scratch, padding, allocator/driver reserve, extra sequences"
+    },
+    {
+      "bits": 8,
+      "context": 4096,
+      "minimum_known_bytes": 28663675360,
+      "excluded": "working scratch, padding, allocator/driver reserve, extra sequences"
+    },
+    {
+      "bits": 8,
+      "context": 32768,
+      "minimum_known_bytes": 30542723552,
+      "excluded": "working scratch, padding, allocator/driver reserve, extra sequences"
+    },
+    {
+      "bits": 8,
+      "context": 262144,
+      "minimum_known_bytes": 45575109088,
+      "excluded": "working scratch, padding, allocator/driver reserve, extra sequences"
+    },
+    {
+      "bits": 4,
+      "context": 4096,
+      "minimum_known_bytes": 15216998880,
+      "excluded": "working scratch, padding, allocator/driver reserve, extra sequences"
+    },
+    {
+      "bits": 4,
+      "context": 32768,
+      "minimum_known_bytes": 17096047072,
+      "excluded": "working scratch, padding, allocator/driver reserve, extra sequences"
+    },
+    {
+      "bits": 4,
+      "context": 262144,
+      "minimum_known_bytes": 32128432608,
+      "excluded": "working scratch, padding, allocator/driver reserve, extra sequences"
+    }
+  ],
+  "latency": [
+    {
+      "burst_bytes": 64,
+      "outstanding": 1,
+      "latency_ns": 100,
+      "bus_gbps": 8,
+      "stream_gbps": 0.5925925925925496,
+      "serial_gbps": 0.5925925925925924,
+      "slots_for_full_rate_ideal": 14,
+      "response_reservation_bytes": 64
+    },
+    {
+      "burst_bytes": 64,
+      "outstanding": 2,
+      "latency_ns": 100,
+      "bus_gbps": 8,
+      "stream_gbps": 1.1851423197945836,
+      "serial_gbps": 0.5925925925925924,
+      "slots_for_full_rate_ideal": 14,
+      "response_reservation_bytes": 128
+    },
+    {
+      "burst_bytes": 64,
+      "outstanding": 4,
+      "latency_ns": 100,
+      "bus_gbps": 8,
+      "stream_gbps": 2.3698560786865657,
+      "serial_gbps": 0.5925925925925924,
+      "slots_for_full_rate_ideal": 14,
+      "response_reservation_bytes": 256
+    },
+    {
+      "burst_bytes": 64,
+      "outstanding": 8,
+      "latency_ns": 100,
+      "bus_gbps": 8,
+      "stream_gbps": 4.735944500650387,
+      "serial_gbps": 0.5925925925925924,
+      "slots_for_full_rate_ideal": 14,
+      "response_reservation_bytes": 512
+    },
+    {
+      "burst_bytes": 64,
+      "outstanding": 16,
+      "latency_ns": 100,
+      "bus_gbps": 8,
+      "stream_gbps": 7.975660216623874,
+      "serial_gbps": 0.5925925925925924,
+      "slots_for_full_rate_ideal": 14,
+      "response_reservation_bytes": 1024
+    },
+    {
+      "burst_bytes": 512,
+      "outstanding": 1,
+      "latency_ns": 100,
+      "bus_gbps": 8,
+      "stream_gbps": 3.1219512195123973,
+      "serial_gbps": 3.1219512195121952,
+      "slots_for_full_rate_ideal": 3,
+      "response_reservation_bytes": 512
+    },
+    {
+      "burst_bytes": 512,
+      "outstanding": 2,
+      "latency_ns": 100,
+      "bus_gbps": 8,
+      "stream_gbps": 6.242712897694854,
+      "serial_gbps": 3.1219512195121952,
+      "slots_for_full_rate_ideal": 3,
+      "response_reservation_bytes": 1024
+    },
+    {
+      "burst_bytes": 512,
+      "outstanding": 4,
+      "latency_ns": 100,
+      "bus_gbps": 8,
+      "stream_gbps": 7.996949405896591,
+      "serial_gbps": 3.1219512195121952,
+      "slots_for_full_rate_ideal": 3,
+      "response_reservation_bytes": 2048
+    },
+    {
+      "burst_bytes": 512,
+      "outstanding": 8,
+      "latency_ns": 100,
+      "bus_gbps": 8,
+      "stream_gbps": 7.996949405896591,
+      "serial_gbps": 3.1219512195121952,
+      "slots_for_full_rate_ideal": 3,
+      "response_reservation_bytes": 4096
+    },
+    {
+      "burst_bytes": 512,
+      "outstanding": 16,
+      "latency_ns": 100,
+      "bus_gbps": 8,
+      "stream_gbps": 7.996949405896591,
+      "serial_gbps": 3.1219512195121952,
+      "slots_for_full_rate_ideal": 3,
+      "response_reservation_bytes": 8192
+    },
+    {
+      "burst_bytes": 4096,
+      "outstanding": 1,
+      "latency_ns": 100,
+      "bus_gbps": 8,
+      "stream_gbps": 6.692810457516788,
+      "serial_gbps": 6.692810457516339,
+      "slots_for_full_rate_ideal": 2,
+      "response_reservation_bytes": 4096
+    },
+    {
+      "burst_bytes": 4096,
+      "outstanding": 2,
+      "latency_ns": 100,
+      "bus_gbps": 8,
+      "stream_gbps": 7.999618548462255,
+      "serial_gbps": 6.692810457516339,
+      "slots_for_full_rate_ideal": 2,
+      "response_reservation_bytes": 8192
+    },
+    {
+      "burst_bytes": 4096,
+      "outstanding": 4,
+      "latency_ns": 100,
+      "bus_gbps": 8,
+      "stream_gbps": 7.999618548462255,
+      "serial_gbps": 6.692810457516339,
+      "slots_for_full_rate_ideal": 2,
+      "response_reservation_bytes": 16384
+    },
+    {
+      "burst_bytes": 4096,
+      "outstanding": 8,
+      "latency_ns": 100,
+      "bus_gbps": 8,
+      "stream_gbps": 7.999618548462255,
+      "serial_gbps": 6.692810457516339,
+      "slots_for_full_rate_ideal": 2,
+      "response_reservation_bytes": 32768
+    },
+    {
+      "burst_bytes": 4096,
+      "outstanding": 16,
+      "latency_ns": 100,
+      "bus_gbps": 8,
+      "stream_gbps": 7.999618548462255,
+      "serial_gbps": 6.692810457516339,
+      "slots_for_full_rate_ideal": 2,
+      "response_reservation_bytes": 65536
+    },
+    {
+      "burst_bytes": 64,
+      "outstanding": 1,
+      "latency_ns": 500,
+      "bus_gbps": 8,
+      "stream_gbps": 0.1259842519685044,
+      "serial_gbps": 0.12598425196850394,
+      "slots_for_full_rate_ideal": 64,
+      "response_reservation_bytes": 64
+    },
+    {
+      "burst_bytes": 64,
+      "outstanding": 2,
+      "latency_ns": 500,
+      "bus_gbps": 8,
+      "stream_gbps": 0.25196656644803395,
+      "serial_gbps": 0.12598425196850394,
+      "slots_for_full_rate_ideal": 64,
+      "response_reservation_bytes": 128
+    },
+    {
+      "burst_bytes": 64,
+      "outstanding": 4,
+      "latency_ns": 500,
+      "bus_gbps": 8,
+      "stream_gbps": 0.5039137589001361,
+      "serial_gbps": 0.12598425196850394,
+      "slots_for_full_rate_ideal": 64,
+      "response_reservation_bytes": 256
+    },
+    {
+      "burst_bytes": 64,
+      "outstanding": 8,
+      "latency_ns": 500,
+      "bus_gbps": 8,
+      "stream_gbps": 1.0076570620252707,
+      "serial_gbps": 0.12598425196850394,
+      "slots_for_full_rate_ideal": 64,
+      "response_reservation_bytes": 512
+    },
+    {
+      "burst_bytes": 64,
+      "outstanding": 16,
+      "latency_ns": 500,
+      "bus_gbps": 8,
+      "stream_gbps": 2.01388974248663,
+      "serial_gbps": 0.12598425196850394,
+      "slots_for_full_rate_ideal": 64,
+      "response_reservation_bytes": 1024
+    },
+    {
+      "burst_bytes": 512,
+      "outstanding": 1,
+      "latency_ns": 500,
+      "bus_gbps": 8,
+      "stream_gbps": 0.9078014184396753,
+      "serial_gbps": 0.9078014184397161,
+      "slots_for_full_rate_ideal": 9,
+      "response_reservation_bytes": 512
+    },
+    {
+      "burst_bytes": 512,
+      "outstanding": 2,
+      "latency_ns": 500,
+      "bus_gbps": 8,
+      "stream_gbps": 1.8155022438916482,
+      "serial_gbps": 0.9078014184397161,
+      "slots_for_full_rate_ideal": 9,
+      "response_reservation_bytes": 1024
+    },
+    {
+      "burst_bytes": 512,
+      "outstanding": 4,
+      "latency_ns": 500,
+      "bus_gbps": 8,
+      "stream_gbps": 3.629998892212265,
+      "serial_gbps": 0.9078014184397161,
+      "slots_for_full_rate_ideal": 9,
+      "response_reservation_bytes": 2048
+    },
+    {
+      "burst_bytes": 512,
+      "outstanding": 8,
+      "latency_ns": 500,
+      "bus_gbps": 8,
+      "stream_gbps": 7.251161761451573,
+      "serial_gbps": 0.9078014184397161,
+      "slots_for_full_rate_ideal": 9,
+      "response_reservation_bytes": 4096
+    },
+    {
+      "burst_bytes": 512,
+      "outstanding": 16,
+      "latency_ns": 500,
+      "bus_gbps": 8,
+      "stream_gbps": 7.984770259362281,
+      "serial_gbps": 0.9078014184397161,
+      "slots_for_full_rate_ideal": 9,
+      "response_reservation_bytes": 8192
+    },
+    {
+      "burst_bytes": 4096,
+      "outstanding": 1,
+      "latency_ns": 500,
+      "bus_gbps": 8,
+      "stream_gbps": 4.047430830039664,
+      "serial_gbps": 4.047430830039525,
+      "slots_for_full_rate_ideal": 2,
+      "response_reservation_bytes": 4096
+    },
+    {
+      "burst_bytes": 4096,
+      "outstanding": 2,
+      "latency_ns": 500,
+      "bus_gbps": 8,
+      "stream_gbps": 7.998093106005936,
+      "serial_gbps": 4.047430830039525,
+      "slots_for_full_rate_ideal": 2,
+      "response_reservation_bytes": 8192
+    },
+    {
+      "burst_bytes": 4096,
+      "outstanding": 4,
+      "latency_ns": 500,
+      "bus_gbps": 8,
+      "stream_gbps": 7.998093106005936,
+      "serial_gbps": 4.047430830039525,
+      "slots_for_full_rate_ideal": 2,
+      "response_reservation_bytes": 16384
+    },
+    {
+      "burst_bytes": 4096,
+      "outstanding": 8,
+      "latency_ns": 500,
+      "bus_gbps": 8,
+      "stream_gbps": 7.998093106005936,
+      "serial_gbps": 4.047430830039525,
+      "slots_for_full_rate_ideal": 2,
+      "response_reservation_bytes": 32768
+    },
+    {
+      "burst_bytes": 4096,
+      "outstanding": 16,
+      "latency_ns": 500,
+      "bus_gbps": 8,
+      "stream_gbps": 7.998093106005936,
+      "serial_gbps": 4.047430830039525,
+      "slots_for_full_rate_ideal": 2,
+      "response_reservation_bytes": 65536
+    },
+    {
+      "burst_bytes": 64,
+      "outstanding": 1,
+      "latency_ns": 2000,
+      "bus_gbps": 8,
+      "stream_gbps": 0.03187250996015697,
+      "serial_gbps": 0.031872509960159355,
+      "slots_for_full_rate_ideal": 252,
+      "response_reservation_bytes": 64
+    },
+    {
+      "burst_bytes": 64,
+      "outstanding": 2,
+      "latency_ns": 2000,
+      "bus_gbps": 8,
+      "stream_gbps": 0.06374489591459188,
+      "serial_gbps": 0.031872509960159355,
+      "slots_for_full_rate_ideal": 252,
+      "response_reservation_bytes": 128
+    },
+    {
+      "burst_bytes": 64,
+      "outstanding": 4,
+      "latency_ns": 2000,
+      "bus_gbps": 8,
+      "stream_gbps": 0.12748855178638854,
+      "serial_gbps": 0.031872509960159355,
+      "slots_for_full_rate_ideal": 252,
+      "response_reservation_bytes": 256
+    },
+    {
+      "burst_bytes": 64,
+      "outstanding": 8,
+      "latency_ns": 2000,
+      "bus_gbps": 8,
+      "stream_gbps": 0.2549661917693065,
+      "serial_gbps": 0.031872509960159355,
+      "slots_for_full_rate_ideal": 252,
+      "response_reservation_bytes": 512
+    },
+    {
+      "burst_bytes": 64,
+      "outstanding": 16,
+      "latency_ns": 2000,
+      "bus_gbps": 8,
+      "stream_gbps": 0.5098411414168116,
+      "serial_gbps": 0.031872509960159355,
+      "slots_for_full_rate_ideal": 252,
+      "response_reservation_bytes": 1024
+    },
+    {
+      "burst_bytes": 512,
+      "outstanding": 1,
+      "latency_ns": 2000,
+      "bus_gbps": 8,
+      "stream_gbps": 0.24806201550385837,
+      "serial_gbps": 0.2480620155038759,
+      "slots_for_full_rate_ideal": 33,
+      "response_reservation_bytes": 512
+    },
+    {
+      "burst_bytes": 512,
+      "outstanding": 2,
+      "latency_ns": 2000,
+      "bus_gbps": 8,
+      "stream_gbps": 0.4961165195536601,
+      "serial_gbps": 0.2480620155038759,
+      "slots_for_full_rate_ideal": 33,
+      "response_reservation_bytes": 1024
+    },
+    {
+      "burst_bytes": 512,
+      "outstanding": 4,
+      "latency_ns": 2000,
+      "bus_gbps": 8,
+      "stream_gbps": 0.9921579313894688,
+      "serial_gbps": 0.2480620155038759,
+      "slots_for_full_rate_ideal": 33,
+      "response_reservation_bytes": 2048
+    },
+    {
+      "burst_bytes": 512,
+      "outstanding": 8,
+      "latency_ns": 2000,
+      "bus_gbps": 8,
+      "stream_gbps": 1.983655184938528,
+      "serial_gbps": 0.2480620155038759,
+      "slots_for_full_rate_ideal": 33,
+      "response_reservation_bytes": 4096
+    },
+    {
+      "burst_bytes": 512,
+      "outstanding": 16,
+      "latency_ns": 2000,
+      "bus_gbps": 8,
+      "stream_gbps": 3.961794220771379,
+      "serial_gbps": 0.2480620155038759,
+      "slots_for_full_rate_ideal": 33,
+      "response_reservation_bytes": 8192
+    },
+    {
+      "burst_bytes": 4096,
+      "outstanding": 1,
+      "latency_ns": 2000,
+      "bus_gbps": 8,
+      "stream_gbps": 1.6305732484076043,
+      "serial_gbps": 1.6305732484076432,
+      "slots_for_full_rate_ideal": 5,
+      "response_reservation_bytes": 4096
+    },
+    {
+      "burst_bytes": 4096,
+      "outstanding": 2,
+      "latency_ns": 2000,
+      "bus_gbps": 8,
+      "stream_gbps": 3.2608219723355325,
+      "serial_gbps": 1.6305732484076432,
+      "slots_for_full_rate_ideal": 5,
+      "response_reservation_bytes": 8192
+    },
+    {
+      "burst_bytes": 4096,
+      "outstanding": 4,
+      "latency_ns": 2000,
+      "bus_gbps": 8,
+      "stream_gbps": 6.518400636562656,
+      "serial_gbps": 1.6305732484076432,
+      "slots_for_full_rate_ideal": 5,
+      "response_reservation_bytes": 16384
+    },
+    {
+      "burst_bytes": 4096,
+      "outstanding": 8,
+      "latency_ns": 2000,
+      "bus_gbps": 8,
+      "stream_gbps": 7.992377874493877,
+      "serial_gbps": 1.6305732484076432,
+      "slots_for_full_rate_ideal": 5,
+      "response_reservation_bytes": 32768
+    },
+    {
+      "burst_bytes": 4096,
+      "outstanding": 16,
+      "latency_ns": 2000,
+      "bus_gbps": 8,
+      "stream_gbps": 7.992377874493877,
+      "serial_gbps": 1.6305732484076432,
+      "slots_for_full_rate_ideal": 5,
+      "response_reservation_bytes": 65536
+    }
+  ],
+  "dense_compute_seconds_at_200MHz": {
+    "1": 128.1097728,
+    "8": 16.0137216,
+    "64": 2.0017152,
+    "256": 0.5004288
+  },
+  "prefill_weight_bytes_per_token_ideal": {
+    "1": 51249210368.0,
+    "8": 6406160256.0,
+    "16": 3203085248.0,
+    "32": 1601547744.0
+  },
+  "notes": [
+    "Prefill number assumes each weight tile shared by U rows, including requested logits; ignores other traffic.",
+    "Last-position-only LM head has a different prefill count.",
+    "Online attention changes finite-precision/cast behavior; quality qualification required.",
+    "Eight-lane uncached GEMV input rereads add roughly dense BF16 weight bytes / 8."
+  ]
+}

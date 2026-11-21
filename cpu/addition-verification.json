@@ -1,0 +1,49 @@
+{
+  "status": "PASS",
+  "timestamp_utc": "2026-10-23T14:13:27.837323+00:00",
+  "program": "add",
+  "source": "sim/cpu/add_one.c",
+  "observed_output": [
+    2
+  ],
+  "cycles": 48,
+  "retired_instructions": 13,
+  "ram_writes": 1,
+  "differential_events": 15,
+  "all_outputs_match": true,
+  "debug_binary_identical": true,
+  "source_sha256": {
+    "rtl/cpu/rv64_core.sv": "831101d3f376ed35f96e4549eb0e9cf67fd59ef79bdf025b3ddbf432aebd75d1",
+    "rtl/cpu/rv64_bram_soc.sv": "a38d2ca4a05142f1982635fb9824a29b80abc94e31635415d3b341df0c06ae57",
+    "sim/cpu/start.S": "343ee45afbff29e1022bafb150b50494f2d0391faa93b6b97bd16540e894160c",
+    "sim/cpu/link.ld": "ccda181dde4ffd33cfedefa153a55441205868875a55c5dbbec566f1bb2168c4",
+    "sim/cpu/tb_visualizer.sv": "7c75dbfcad0acb90562feab166acba5470408890704827a6b7977703e95010d8",
+    "sim/cpu/build_firmware.py": "693e6572bac357ef58d54bbfc58598590cfb6c8195e5d0d60176e7564245015a",
+    "sim/cpu/reference.py": "91c892984a72105acc005a0a9a0133093eaa83ad0700cc26e470ec405ef49cb0",
+    "sim/cpu/run_c_demo.py": "d9d858883addff753a5ba0569a4523974b717413370d583b052843b881df7e32",
+    "sim/cpu/build_visualizer.py": "698e468599154cb2d8688082191156bfbc2003014156439311c1291aca6b372a",
+    "sim/cpu/add_one.c": "e59671757574c00d013a2bdca7f8e0d21f30a276d8b99a5b71aaf524449591ab"
+  },
+  "firmware_sha256": "5e07782a25ea1dae7c2cc6eb726d3ad76521ccf68ecc7691c5b0bb0fdb03bc47",
+  "clock_trace_sha256": "20f95b651d4544d4dd9c424be25b2c26faffa66cf407fa63840ae555c3b0ea67",
+  "scope": "Replay of sampled RTL simulation clocks with synchronous RAM. Not a live FPGA or in-browser RTL simulator.",
+  "sampling": "Circuit state, operands and bus before rising edge; RAM and register effects after that edge. RAM writes on adapter acceptance, one cycle before CPU acknowledgement. C lines are optimized compiler debug attribution, not exact source-level stepping.",
+  "addition": {
+    "clock": 28,
+    "pc": 36,
+    "instruction_hex": "00b505b3",
+    "bits": "00000000101101010000010110110011",
+    "assembly": "add a1, a0, a1",
+    "rs1": 10,
+    "rs2": 11,
+    "rd": 11,
+    "operands": [
+      1,
+      1
+    ],
+    "result": 2
+  },
+  "viewer_sha256": "76f6be2921b00e6065a9ebdd531788f79b1188af1929e42205f00e97f02f6bf1",
+  "template_sha256": "a4d3f430ee4427620d52da8080da56d9ef97a21cbf079ce09ba0beedd44b54c9",
+  "html_bytes": 44972
+}
