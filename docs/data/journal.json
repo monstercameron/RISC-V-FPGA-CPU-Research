@@ -784,6 +784,56 @@
      "time": "about 13:40",
      "text": "Frontend engineer final: hand-off 2 (fetch/rename width separate from retire width, 64-entry fetch queue) applied after middle's wider retirement and backend's ports: with fetch 32 the stack gives reference **15,704** / fast **10,371** clocks (probe; 18.1 / 27.4 DMIPS/MHz), fetch 24 15,724 / 11,002, fetch 16 about 18,060 / 14,650; regression of that stack 249/249 at both cache sizes (its own 32-slot tb_core copy). Taken transfers 8 add under 0.3%. Hand-off 3 (64-entry return stack): no Dhrystone change, 231/231; for a later release",
      "kind": "output"
+    },
+    {
+     "time": "13:47",
+     "text": "Commit `4601f4f`: 0.13.0 run records and site (gallery works for 0.12.1 to 0.13.0); logged fast runtime **17.5285 DMIPS/MHz** (32.5 clocks per run)",
+     "kind": "git"
+    },
+    {
+     "time": "13:48 to 13:52",
+     "text": "0.13.1 (backend hand-off 2: `N_LD` 4, `N_ST` 3; tests `many_memory_ports`, `ports_load_fault_third`, `ports_load_fault_fourth`, `ports_store_fault_second`, `ports_mixed_fault_last_load`; the backend's divider test was left out with its divider). Probe: reference 20,801 to **18,575** clocks (15.32 DMIPS/MHz), fast 16,235 to **15,335** (18.56). Regression: out-of-order 264/264 at both cache sizes; multicycle and pipelined 264/264",
+     "kind": "output"
+    },
+    {
+     "time": "13:52",
+     "text": "Commit `dcae4df`, 0.13.1; tagged `cpu-v0.13.1`, local only. Correction: the header comment of the generated `rtl/cpu/rv64_ooo.sv` still read \"architecture 0.12.0\" in 0.13.0 and 0.13.1 (the assembler's label was not updated after the split); fixed from 0.14.0",
+     "kind": "git"
+    },
+    {
+     "time": "13:53 to 13:58",
+     "text": "0.14.0 (middle hand-off 2, plain variant: ROB 512, 544 physical registers, retirement `RW` 32 with fetch/rename 16; `tb_core.sv` `RWT` 32; tests `retire_wide_trap`, `retire_wide_stores`, `retire_wide_store_fault`). The two-per-entry variant (2b) measured the same at half the entries and registers; kept on file. Probe: reference 18,575 to **18,059** clocks (15.76 DMIPS/MHz), fast 15,335 to **14,652** (19.43). Regression: out-of-order 273/273 at both cache sizes; multicycle and pipelined 273/273",
+     "kind": "output"
+    },
+    {
+     "time": "13:58",
+     "text": "Commit `57ea114`, 0.14.0; tagged `cpu-v0.14.0`, local only",
+     "kind": "git"
+    },
+    {
+     "time": "13:59 to 14:03",
+     "text": "0.14.1 (frontend hand-off 2: fetch/rename width `FW` 32, separate from `RW`; 64-entry fetch queue). Probe: reference 18,059 to **15,704** clocks (18.12 DMIPS/MHz), fast 14,652 to **10,371** (27.44). Regression 273/273 at both cache sizes (no test change; other cores unaffected). The fast-runtime binary passes 20 DMIPS/MHz in this simulation; the reference binary needs about 9% fewer clocks (14,230). Probe figures on the idealized 5-stage model; logged runs follow",
+     "kind": "output"
+    },
+    {
+     "time": "14:03",
+     "text": "Commit `def6fd9`, 0.14.1; tagged `cpu-v0.14.1`, local only. Logged runs for 0.14.1 started 14:03 (council paused)",
+     "kind": "git"
+    },
+    {
+     "time": "14:05",
+     "text": "Coordinator decisions on the periodic Codex reviews of 12:54, 13:09, 13:24, 13:39 and 13:54 (`build/cpu/ooo-debug/council/codex/DECISIONS.md`). Accepted harness bugs (coordinator): the benchmark checks its run count against its own mailbox value; the profiler decoder mislabels `sh2add` and `divw` and its out-of-order memory-wait estimate is meaningless; `full_check.sh` lacks `pipefail`; a gate checks canonical rather than simulated core hashes; probes discard MAILBOX results; the \"half the entries and registers\" wording for the two-per-entry variant overstated its saving (only logical entries and allocatable registers halve). Accepted for memory: an `EXTRA_WRITES` range check, a lane-use cover for the four-store fault tests, the return-stack pointer on a head-load replay, a possible false dependence from value-predicted loads, and beat reuse (16,500 of 59,003 reference loads revisit a recently read beat). For middle: more rename-time constant folding (~5,000 more operations), rename-time resolution of ready equality branches, IQ/ROB limits. For backend: port limits at fetch 32, load-then-branch resolution, and with frontend a realistic-latency mode. Rejected: a small-quotient divide path (one operand pair in Dhrystone; the divide no longer limits)",
+     "kind": "review"
+    },
+    {
+     "time": "14:03 to 14:19",
+     "text": "Logged runs for 0.14.1 on `def6fd9` (`run_dhrystone.ps1 -Isa rv64im_zba_zbb_zbs_zifencei -Core ooo -Record`, then `-Runtime fast -Record`; clang 23.1.5 `-O2`), council paused: reference **18.1212 DMIPS/MHz** (31.4 clocks per run), fast runtime **27.4396** (20.7). The word-wise (fast runtime) binary passes 20 DMIPS/MHz in this simulation; the byte-wise reference binary needs 28.5 clocks per run (14,230 region clocks, -9.4%). Both figures come from an idealized 5-stage model (1-clock loads, ~3-clock mispredict recovery) and are not hardware results",
+     "kind": "output"
+    },
+    {
+     "time": "14:19",
+     "text": "Site: gallery works for 0.13.1, 0.14.0, 0.14.1 and a seventh room; regenerated (36 artworks, 70 runs)",
+     "kind": "site"
     }
    ],
    "commits": []
@@ -2228,6 +2278,26 @@
    "compiler": "clang version 23.1.5 -O2 rv64imb fast runtime out-of-order core",
    "clocks": 32.5,
    "dmips_mhz": 17.5285,
+   "fast": true
+  },
+  {
+   "time": "2026-11-21 14:12:48 -0500",
+   "commit": "def6fd9",
+   "uncommitted": "yes",
+   "version": "0.14.1",
+   "compiler": "clang version 23.1.5 -O2 rv64imb out-of-order core",
+   "clocks": 31.4,
+   "dmips_mhz": 18.1212,
+   "fast": false
+  },
+  {
+   "time": "2026-11-21 14:19:23 -0500",
+   "commit": "def6fd9",
+   "uncommitted": "yes",
+   "version": "0.14.1",
+   "compiler": "clang version 23.1.5 -O2 rv64imb fast runtime out-of-order core",
+   "clocks": 20.7,
+   "dmips_mhz": 27.4396,
    "fast": true
   }
  ]

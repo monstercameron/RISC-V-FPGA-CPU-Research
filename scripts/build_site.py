@@ -369,6 +369,15 @@ WORKS = [
     ("0.13.0", "Les Quatre Lettres",
      "Up to four stores leave together in one write, and store addresses are worked out before the loads of the same clock.",
      dict(marks=["four stores a write"])),
+    ("0.13.1", "Les Sept Portes",
+     "Seven doors to memory: four for loads, three for store addresses, so the wide front end is no longer kept waiting at the threshold.",
+     dict(loads=4, stores=3, marks=["four loads, three stores a clock"])),
+    ("0.14.0", "La Grande Salle",
+     "The waiting room doubles to 512 places, and thirty-two instructions may take their leave in one clock.",
+     dict(rob=512, prf=544, retire=32, marks=["512 in flight", "thirty-two retire"])),
+    ("0.14.1", "Le Grand Souffle",
+     "Fetch and rename breathe thirty-two at a time. In simulation the word-wise Dhrystone passes twenty-seven DMIPS per MHz.",
+     dict(fetch_w=32, decode_w=32, marks=["thirty-two lanes"])),
 ]
 
 ERAS = [
@@ -378,6 +387,7 @@ ERAS = [
     ("IV", "Salle IV", "Le Désordre", "Out of order: instructions run when ready, retire in order.", "0.9.0", "0.9.4"),
     ("V", "Salle V", "L'Octuple", "Eight wide, and learning to guess.", "0.10.0", "0.11.2"),
     ("VI", "Salle VI", "Le Grand Format", "Sixteen wide, and then a council of engineers.", "0.12.0", "0.13.0"),
+    ("VII", "Salle VII", "Le Conseil", "The council widens everything at once: doors, room and breath.", "0.13.1", "0.14.1"),
 ]
 
 

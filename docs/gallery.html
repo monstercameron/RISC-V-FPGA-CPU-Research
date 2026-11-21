@@ -32,7 +32,7 @@
 
 <section class="page-head">
   <p class="eyebrow">La Galerie</p>
-  <h1>33 portraits of a processor</h1>
+  <h1>36 portraits of a processor</h1>
   <p class="lede">Each drawing is generated from the architecture history: one canvas per version, its units sized and arranged by their recorded counts.
   Walk the rooms in order and the machine learns to fetch, to pair, to pipeline, to run out of order. Select a work to see it enlarged.</p>
   <p class="legend small"><span class="sw" style="--c:#c58f2c"></span>fetch, loads
@@ -41,7 +41,7 @@
      <span class="sw" style="--c:#7f9168"></span>registers, multiply
      <span class="sw" style="--c:#b8923a"></span>retirement, prediction</p>
 </section>
-<nav class="rooms-nav" aria-label="Rooms"><a href="#salle-i"><span>Salle I</span> Les Premiers Pas</a><a href="#salle-ii"><span>Salle II</span> Le Duo et le Trio</a><a href="#salle-iii"><span>Salle III</span> La Chaîne</a><a href="#salle-iv"><span>Salle IV</span> Le Désordre</a><a href="#salle-v"><span>Salle V</span> L&#x27;Octuple</a><a href="#salle-vi"><span>Salle VI</span> Le Grand Format</a></nav>
+<nav class="rooms-nav" aria-label="Rooms"><a href="#salle-i"><span>Salle I</span> Les Premiers Pas</a><a href="#salle-ii"><span>Salle II</span> Le Duo et le Trio</a><a href="#salle-iii"><span>Salle III</span> La Chaîne</a><a href="#salle-iv"><span>Salle IV</span> Le Désordre</a><a href="#salle-v"><span>Salle V</span> L&#x27;Octuple</a><a href="#salle-vi"><span>Salle VI</span> Le Grand Format</a><a href="#salle-vii"><span>Salle VII</span> Le Conseil</a></nav>
 
 <section class="room" id="salle-i" aria-labelledby="h-i">
   <header class="room-head">
@@ -835,6 +835,84 @@
     <table class="units"><tbody><tr><th scope='row'>Organisation</th><td>Out of order (rtl/cpu/rv64_ooo.sv)</td></tr><tr><th scope='row'>Fetch / rename / retire</th><td>16 / 16 / 16 per clock</td></tr><tr><th scope='row'>Reorder buffer</th><td>256 entries</td></tr><tr><th scope='row'>Physical registers</th><td>288</td></tr><tr><th scope='row'>Issue queue</th><td>128 entries</td></tr><tr><th scope='row'>ALUs</th><td>8, of which 3 full (branch, multiply, divide)</td></tr><tr><th scope='row'>Memory ports</th><td>3 load, 2 store-address</td></tr><tr><th scope='row'>Branch target buffer</th><td>1,024 entries, with return stack</td></tr><tr><th scope='row'>Caches</th><td>128 KiB instruction, 128 KiB data, two-way data cache</td></tr><tr><th scope='row'>Taken transfers per fetch</th><td>4</td></tr><tr><th scope='row'>Loop predictor</th><td>1,024 entries</td></tr><tr><th scope='row'>Branch bias</th><td>a branch that has gone one way at least 4 times with no exit is predicted that way</td></tr><tr><th scope='row'>Instruction fusion</th><td>a simple integer producer and the next instruction reading it</td></tr><tr><th scope='row'>Store writes</th><td>paired on the bus</td></tr><tr><th scope='row'>Value prediction</th><td>loads, multiplies, divides</td></tr><tr><th scope='row'>Fetch predecode</th><td>direct jumps, calls, returns, backward branches</td></tr></tbody></table>
     <h4>Marginalia</h4><ul class="marks"><li>a one-beat fetch buffer</li><li>requests issue from EXECUTE</li><li>writes acknowledged in the same clock</li><li>second slot across beats</li><li>second data-cache port</li><li>jump in the second slot</li><li>slot-to-slot forwarding</li><li>branch folding</li><li>registered multiplier</li><li>fetch queue and X stage</li><li>store-to-load forwarding</li><li>stores finish at retirement</li><li>cross-beat fetch</li><li>instruction fusion</li><li>1,024-entry predictors</li><li>fixed-direction bias</li><li>sixteen lanes</li><li>one rule for stores and retirement</li><li>four taken turns</li><li>folded at rename</li><li>four stores a write</li></ul>
     <p class="small">Compatibility: Yes: new EXTRA_WRITES parameter and mem_xaddr/mem_xwdata/mem_xwstrb/mem_xerror ports on the out-of-order core. <a href="https://github.com/monstercameron/RISC-V-FPGA-CPU-Research/releases/tag/cpu-v0.13.0" rel="noopener">Tag cpu-v0.13.0</a>.
+    Areas and sizes are symbolic; counts follow the history row. Simulated, not a hardware measurement.</p>
+  </div>
+</figure></div>
+    <div class="floor" aria-hidden="true"></div>
+  </div>
+</section>
+<section class="room" id="salle-vii" aria-labelledby="h-vii">
+  <header class="room-head">
+    <p class="room-no">Salle VII</p>
+    <h2 id="h-vii">Le Conseil</h2>
+    <p class="room-blurb">The council widens everything at once: doors, room and breath.</p>
+  </header>
+  <div class="wall">
+    <div class="rail" aria-hidden="true"></div>
+    <div class="hang">
+<figure class="work" id="v0-13-1" data-index="33" data-kind="ooo">
+  <button class="frame" type="button" aria-label="View No. 34, Les Sept Portes, version 0.13.1, enlarged">
+    <span class="mat"><img src="art/v0.13.1.svg" width="800" height="1000" loading="lazy" alt="Abstract ink drawing of the processor at version 0.13.1, an out-of-order core. Blocks for a 256-entry reorder buffer, 288 physical registers, a 128-entry issue queue, 8 integer units, and instruction and data caches above a bus."></span>
+  </button>
+  <figcaption class="placard">
+    <span class="no">No. 34</span>
+    <h3>Les Sept Portes</h3>
+    <p class="ver">Version 0.13.1<span class="sep"> · </span>21 novembre 2026</p>
+    <p class="medium">ink, oxblood and gold leaf on vellum; simulated</p>
+    <p class="cap">Seven doors to memory: four for loads, three for store addresses, so the wide front end is no longer kept waiting at the threshold.</p>
+    <p class="perf none">Dhrystone: no run logged for this version yet. Simulated results are recorded in the journal as they are measured.</p>
+  </figcaption>
+  <div class="detail" hidden>
+    <h4>From the register</h4>
+    <p>Load ports 4 and store-address ports 3 (backend engineer, agreed with memory). Tests many_memory_ports and port fault cases. Probe: reference 20,801 to 18,575, fast 16,235 to 15,335</p>
+    <h4>The units</h4>
+    <table class="units"><tbody><tr><th scope='row'>Organisation</th><td>Out of order (rtl/cpu/rv64_ooo.sv)</td></tr><tr><th scope='row'>Fetch / rename / retire</th><td>16 / 16 / 16 per clock</td></tr><tr><th scope='row'>Reorder buffer</th><td>256 entries</td></tr><tr><th scope='row'>Physical registers</th><td>288</td></tr><tr><th scope='row'>Issue queue</th><td>128 entries</td></tr><tr><th scope='row'>ALUs</th><td>8, of which 3 full (branch, multiply, divide)</td></tr><tr><th scope='row'>Memory ports</th><td>4 load, 3 store-address</td></tr><tr><th scope='row'>Branch target buffer</th><td>1,024 entries, with return stack</td></tr><tr><th scope='row'>Caches</th><td>128 KiB instruction, 128 KiB data, two-way data cache</td></tr><tr><th scope='row'>Taken transfers per fetch</th><td>4</td></tr><tr><th scope='row'>Loop predictor</th><td>1,024 entries</td></tr><tr><th scope='row'>Branch bias</th><td>a branch that has gone one way at least 4 times with no exit is predicted that way</td></tr><tr><th scope='row'>Instruction fusion</th><td>a simple integer producer and the next instruction reading it</td></tr><tr><th scope='row'>Store writes</th><td>paired on the bus</td></tr><tr><th scope='row'>Value prediction</th><td>loads, multiplies, divides</td></tr><tr><th scope='row'>Fetch predecode</th><td>direct jumps, calls, returns, backward branches</td></tr></tbody></table>
+    <h4>Marginalia</h4><ul class="marks"><li>a one-beat fetch buffer</li><li>requests issue from EXECUTE</li><li>writes acknowledged in the same clock</li><li>second slot across beats</li><li>second data-cache port</li><li>jump in the second slot</li><li>slot-to-slot forwarding</li><li>branch folding</li><li>registered multiplier</li><li>fetch queue and X stage</li><li>store-to-load forwarding</li><li>stores finish at retirement</li><li>cross-beat fetch</li><li>instruction fusion</li><li>1,024-entry predictors</li><li>fixed-direction bias</li><li>sixteen lanes</li><li>one rule for stores and retirement</li><li>four taken turns</li><li>folded at rename</li><li>four stores a write</li><li>four loads, three stores a clock</li></ul>
+    <p class="small">Compatibility: No. <a href="https://github.com/monstercameron/RISC-V-FPGA-CPU-Research/releases/tag/cpu-v0.13.1" rel="noopener">Tag cpu-v0.13.1</a>.
+    Areas and sizes are symbolic; counts follow the history row. Simulated, not a hardware measurement.</p>
+  </div>
+</figure>
+<figure class="work" id="v0-14-0" data-index="34" data-kind="ooo">
+  <button class="frame" type="button" aria-label="View No. 35, La Grande Salle, version 0.14.0, enlarged">
+    <span class="mat"><img src="art/v0.14.0.svg" width="800" height="1000" loading="lazy" alt="Abstract ink drawing of the processor at version 0.14.0, an out-of-order core. Blocks for a 512-entry reorder buffer, 544 physical registers, a 128-entry issue queue, 8 integer units, and instruction and data caches above a bus."></span>
+  </button>
+  <figcaption class="placard">
+    <span class="no">No. 35</span>
+    <h3>La Grande Salle</h3>
+    <p class="ver">Version 0.14.0<span class="sep"> · </span>21 novembre 2026</p>
+    <p class="medium">ink, oxblood and gold leaf on vellum; simulated</p>
+    <p class="cap">The waiting room doubles to 512 places, and thirty-two instructions may take their leave in one clock.</p>
+    <p class="perf none">Dhrystone: no run logged for this version yet. Simulated results are recorded in the journal as they are measured.</p>
+  </figcaption>
+  <div class="detail" hidden>
+    <h4>From the register</h4>
+    <p>Reorder buffer 512 entries (544 physical registers) and retirement 32 instructions per clock, fetch/rename 16 (middle engineer); wide trace 32 slots. Tests retire_wide_trap, retire_wide_stores, retire_wide_store_fault. Probe: reference 18,575 to 18,059, fast 15,335 to 14,652</p>
+    <h4>The units</h4>
+    <table class="units"><tbody><tr><th scope='row'>Organisation</th><td>Out of order (rtl/cpu/rv64_ooo.sv)</td></tr><tr><th scope='row'>Fetch / rename / retire</th><td>16 / 16 / 32 per clock</td></tr><tr><th scope='row'>Reorder buffer</th><td>512 entries</td></tr><tr><th scope='row'>Physical registers</th><td>544</td></tr><tr><th scope='row'>Issue queue</th><td>128 entries</td></tr><tr><th scope='row'>ALUs</th><td>8, of which 3 full (branch, multiply, divide)</td></tr><tr><th scope='row'>Memory ports</th><td>4 load, 3 store-address</td></tr><tr><th scope='row'>Branch target buffer</th><td>1,024 entries, with return stack</td></tr><tr><th scope='row'>Caches</th><td>128 KiB instruction, 128 KiB data, two-way data cache</td></tr><tr><th scope='row'>Taken transfers per fetch</th><td>4</td></tr><tr><th scope='row'>Loop predictor</th><td>1,024 entries</td></tr><tr><th scope='row'>Branch bias</th><td>a branch that has gone one way at least 4 times with no exit is predicted that way</td></tr><tr><th scope='row'>Instruction fusion</th><td>a simple integer producer and the next instruction reading it</td></tr><tr><th scope='row'>Store writes</th><td>paired on the bus</td></tr><tr><th scope='row'>Value prediction</th><td>loads, multiplies, divides</td></tr><tr><th scope='row'>Fetch predecode</th><td>direct jumps, calls, returns, backward branches</td></tr></tbody></table>
+    <h4>Marginalia</h4><ul class="marks"><li>a one-beat fetch buffer</li><li>requests issue from EXECUTE</li><li>writes acknowledged in the same clock</li><li>second slot across beats</li><li>second data-cache port</li><li>jump in the second slot</li><li>slot-to-slot forwarding</li><li>branch folding</li><li>registered multiplier</li><li>fetch queue and X stage</li><li>store-to-load forwarding</li><li>stores finish at retirement</li><li>cross-beat fetch</li><li>instruction fusion</li><li>1,024-entry predictors</li><li>fixed-direction bias</li><li>sixteen lanes</li><li>one rule for stores and retirement</li><li>four taken turns</li><li>folded at rename</li><li>four stores a write</li><li>four loads, three stores a clock</li><li>512 in flight</li><li>thirty-two retire</li></ul>
+    <p class="small">Compatibility: Yes: the out-of-order core&#x27;s RW default (trace width) changes from 16 to 32. <a href="https://github.com/monstercameron/RISC-V-FPGA-CPU-Research/releases/tag/cpu-v0.14.0" rel="noopener">Tag cpu-v0.14.0</a>.
+    Areas and sizes are symbolic; counts follow the history row. Simulated, not a hardware measurement.</p>
+  </div>
+</figure>
+<figure class="work" id="v0-14-1" data-index="35" data-kind="ooo">
+  <button class="frame" type="button" aria-label="View No. 36, Le Grand Souffle, version 0.14.1, enlarged">
+    <span class="mat"><img src="art/v0.14.1.svg" width="800" height="1000" loading="lazy" alt="Abstract ink drawing of the processor at version 0.14.1, an out-of-order core. Blocks for a 512-entry reorder buffer, 544 physical registers, a 128-entry issue queue, 8 integer units, and instruction and data caches above a bus."></span>
+  </button>
+  <figcaption class="placard">
+    <span class="no">No. 36</span>
+    <h3>Le Grand Souffle</h3>
+    <p class="ver">Version 0.14.1<span class="sep"> · </span>21 novembre 2026</p>
+    <p class="medium">ink, oxblood and gold leaf on vellum; simulated</p>
+    <p class="cap">Fetch and rename breathe thirty-two at a time. In simulation the word-wise Dhrystone passes twenty-seven DMIPS per MHz.</p>
+    <p class="perf"><span class="num">18.12</span> DMIPS/MHz<span class="tag">simulated, reference runtime</span> <span class="aside">(fast runtime: 27.44)</span></p>
+  </figcaption>
+  <div class="detail" hidden>
+    <h4>From the register</h4>
+    <p>Fetch and rename 32 per clock, separate from retirement width, 64-entry fetch queue (frontend engineer). Probe: reference 18,059 to 15,704, fast 14,652 to 10,371</p>
+    <h4>The units</h4>
+    <table class="units"><tbody><tr><th scope='row'>Organisation</th><td>Out of order (rtl/cpu/rv64_ooo.sv)</td></tr><tr><th scope='row'>Fetch / rename / retire</th><td>32 / 32 / 32 per clock</td></tr><tr><th scope='row'>Reorder buffer</th><td>512 entries</td></tr><tr><th scope='row'>Physical registers</th><td>544</td></tr><tr><th scope='row'>Issue queue</th><td>128 entries</td></tr><tr><th scope='row'>ALUs</th><td>8, of which 3 full (branch, multiply, divide)</td></tr><tr><th scope='row'>Memory ports</th><td>4 load, 3 store-address</td></tr><tr><th scope='row'>Branch target buffer</th><td>1,024 entries, with return stack</td></tr><tr><th scope='row'>Caches</th><td>128 KiB instruction, 128 KiB data, two-way data cache</td></tr><tr><th scope='row'>Taken transfers per fetch</th><td>4</td></tr><tr><th scope='row'>Loop predictor</th><td>1,024 entries</td></tr><tr><th scope='row'>Branch bias</th><td>a branch that has gone one way at least 4 times with no exit is predicted that way</td></tr><tr><th scope='row'>Instruction fusion</th><td>a simple integer producer and the next instruction reading it</td></tr><tr><th scope='row'>Store writes</th><td>paired on the bus</td></tr><tr><th scope='row'>Value prediction</th><td>loads, multiplies, divides</td></tr><tr><th scope='row'>Fetch predecode</th><td>direct jumps, calls, returns, backward branches</td></tr></tbody></table>
+    <h4>Marginalia</h4><ul class="marks"><li>a one-beat fetch buffer</li><li>requests issue from EXECUTE</li><li>writes acknowledged in the same clock</li><li>second slot across beats</li><li>second data-cache port</li><li>jump in the second slot</li><li>slot-to-slot forwarding</li><li>branch folding</li><li>registered multiplier</li><li>fetch queue and X stage</li><li>store-to-load forwarding</li><li>stores finish at retirement</li><li>cross-beat fetch</li><li>instruction fusion</li><li>1,024-entry predictors</li><li>fixed-direction bias</li><li>sixteen lanes</li><li>one rule for stores and retirement</li><li>four taken turns</li><li>folded at rename</li><li>four stores a write</li><li>four loads, three stores a clock</li><li>512 in flight</li><li>thirty-two retire</li><li>thirty-two lanes</li></ul>
+    <p class="small">Compatibility: No. <a href="https://github.com/monstercameron/RISC-V-FPGA-CPU-Research/releases/tag/cpu-v0.14.1" rel="noopener">Tag cpu-v0.14.1</a>.
     Areas and sizes are symbolic; counts follow the history row. Simulated, not a hardware measurement.</p>
   </div>
 </figure></div>
