@@ -939,6 +939,156 @@
      "time": "about 15:25",
      "text": "Council stack measurements (probe, on 0.14.4): backend hand-off 3 (4 branch-capable ports, full ports prefer branch-class operations) + memory reuse lanes (4 lanes, 2 entries): 14,112 / 10,185; + middle store addresses at rename: 14,004 / **9,590** (fast 29.7 DMIPS/MHz in the probe); + memory renaming (middle rename side, memory verification): **12,762** / 9,589 (reference 22.3). Memory hand-off 8 (reuse lanes, 4 lanes / 4 entries) with a 5-branch-port stand-in: 13,311 / 10,138. Integration order: backend hand-off 3, memory hand-off 8, middle hand-off 7, then memory renaming",
      "kind": "output"
+    },
+    {
+     "time": "15:27",
+     "text": "Commit `44fd723`, 0.14.5 with the site update; tagged `cpu-v0.14.5`, local only. Local `main` is 5 commits ahead of `origin/main` (`5604d56`); not pushed",
+     "kind": "git"
+    },
+    {
+     "time": "15:27 to 15:42",
+     "text": "0.14.6 (backend hand-off 3: `N_BR` 4, full ports select branch/jump/system/M first, `MQ_N = N_BR * MUL_LAT` with a `$fatal` on overflow; test `branch_ports_many`; 94 programs). The backend found that the 8-entry multiply queue silently drops a multiply with 5 branch-capable ports (hang in `mul_then_store_pad0`); unreachable at 3-4 ports. Probe: reference 15,683 to **15,658**, fast 10,208 to **10,202**. `full_check.sh`: all cores 282/282 at both cache sizes, `check_bitmanip.py` pass",
+     "kind": "output"
+    },
+    {
+     "time": "15:28 to 15:31",
+     "text": "Pre-built next steps (scratch `w0147`, `w0148`; probes): 0.14.6 + memory reuse lanes (4 lanes, 4 beats) = **13,306** / 10,156 (21.39 DMIPS/MHz reference); + middle store addresses at rename = 13,505 / **9,590** (fast 29.68, reference 1.5% worse than without it); returned to middle",
+     "kind": "output"
+    },
+    {
+     "time": "15:42",
+     "text": "Commit `f35b038`, 0.14.6; tagged `cpu-v0.14.6`, local only",
+     "kind": "git"
+    },
+    {
+     "time": "15:42 to 15:45",
+     "text": "0.14.7 candidate (memory hand-off 8, reuse lanes 4/4) built and its full check started, then held: periodic Codex reviews (14:54, 15:09, 15:24) found that a reuse lane can read the L1 after its buffered beat was evicted (more than 4 L1 reads per clock counted free, so the 13,306 probe may be optimistic), that the buffer is not cleared on reset, and that the lane tests pass with lanes disabled. Returned to memory (hand-off 8b). Canonical and `rtl/` reset to 0.14.6. While stopping the check, the coordinator's `pkill -f \"test_cpu.py --core\"` also killed any engineer regression running at 15:43 (engineers told to rerun)",
+     "kind": "process"
+    },
+    {
+     "time": "15:45",
+     "text": "Coordinator decisions on reviews 14:09-15:24 (`build/cpu/ooo-debug/council/codex/DECISIONS.md`): released-version bugs assigned as their own PATCH steps: 0.14.3 constant ALU folds more than one level per rename group (middle), 0.14.5 `FE_DEPTH` counter wrap (frontend), over-broad self-modifying-code flush at fetch 32 (frontend); memory-renaming correctness issues before any hand-off (memory, middle). Harness: `run_bench.py` now copies the RTL, testbenches and `cpu/VERSION` to `source-snapshot/` at the start of a run and compiles, times and hashes that copy, so a logged run cannot mix two revisions (validation run started)",
+     "kind": "review"
+    },
+    {
+     "time": "15:45 to 15:48",
+     "text": "User stopped the work and asked to wait; the memory and frontend engineer agents were stopped by the user. The runner snapshot validation (an unlogged fast-runtime run of 0.14.6 via `run_bench.py --core ooo`) passed: 27.8941 DMIPS/MHz (simulation), sources compiled from `build/cpu/bench/dhrystone-rv64imb-fastrt-ooo/source-snapshot/`",
+     "kind": "output"
+    },
+    {
+     "time": "15:49",
+     "text": "User direction: push. `git push origin main` (`5604d56..f35b038`, six commits through 0.14.6) and `git push origin --tags` (all `cpu-v*` tags); Pages rebuilds from `main`",
+     "kind": "git"
+    },
+    {
+     "time": "15:50",
+     "text": "User direction (new goal): make 7-Zip the new benchmark program: get its source, compile it, and research other CPUs' scores. Source: official repository `https://github.com/ip7z/7zip` (shallow clone into the ignored `build/third-party/7zip/`): 7-Zip 26.06, commit `d3296e39e1f1f92c7b41c0c3848e65640428d42d` (2026-11-07), 16 MB",
+     "kind": "tool"
+    },
+    {
+     "time": "15:51 to 15:54",
+     "text": "Native build of the 7-Zip console `7zz` (`CPP/7zip/Bundles/Alone2`) in WSL Ubuntu with clang 18.1.3 (aarch64): WSL has no `make` or `gcc` and no sudo, so the commands were taken from a dry run of `makefile.gcc` with Strawberry Perl's `mingw32-make -n -B CC=clang CXX=clang++ Z7_OS=Linux IS_ARM64=1` (with the Windows `SystemDrive`/`OS` variables cleared), `-Werror` removed, and run in WSL (`build/7zip-bench/run_build.sh`: 322 compiles in parallel, one link; no errors)",
+     "kind": "tool"
+    },
+    {
+     "time": "15:55",
+     "text": "Native 7-Zip benchmark on the user's laptop (`build/7zip-bench/native_bench.sh`, `7zz b -mmt1 -md22` and `-md25`, pinned to logical CPU 6, a Cortex-X925 core; 7-Zip measured the single-thread clock at 3.7-4.3 GHz): dictionary 22: compressing rating **8,003 MIPS**, decompressing **8,087 MIPS** (about 1.9 per GHz each at ~4.2 GHz); dictionaries 22-25 average 7,085 / 8,042. Output in `build/7zip-bench/native_bench.txt`",
+     "kind": "output"
+    },
+    {
+     "time": "15:53",
+     "text": "Research agent on 7-Zip scores: the rating is an estimated instruction rate normalised to a Core 2 core (not real instructions); single-thread per-GHz (derived from 7-cpu.com and sbc-bench, versions and dictionaries vary): RISC-V U74 0.79 / 0.90 (compress / decompress), JH7110 and C910 about 0.8 combined, SG2042 (C920) about 0.81, SpacemiT K1 about 0.61; Cortex-A55 0.72 / 0.98, A76 1.18 / 1.19, Skylake about 1.16, Zen 3 1.52 / 2.11, Apple M1 2.22 / 2.52, Oryon about 1.3 combined; no single-thread X925, Zen 4/5, Lion Cove or M2-M4 figures found (the laptop run above fills X925 at ~1.9). Target: about 1.2-1.5 per GHz for A76/Zen 3 class, ~1.9 for X925, 2.2-2.5 for M1",
+     "kind": "research"
+    },
+    {
+     "time": "15:57",
+     "text": "An agent started on the bare-metal RV64 port: the LZMA benchmark kernel of 7-Zip (public-domain LZMA SDK C files, vendored with provenance), scaled to fit the simulator, as a second benchmark option in `build_bench.py`/`run_bench.py`, with 7-Zip's own rating formulas per MHz, a native build of the same kernel for calibration, and runs on all three cores",
+     "kind": "process"
+    },
+    {
+     "time": "16:55",
+     "text": "Goal changed by the user: optimization target is now a 10,000 MIPS single-thread 7-Zip rating. Stated at 4 GHz = 2.5 MIPS/MHz on `7z b -md22` (1.3x the X925 measured at 15:55); on the scaled kernel, using the X925's kernel/`7z b` ratio (4.37x compression, 1.34x decompression), about 10.9 / 3.35 MIPS/MHz. Written to `cpu/7zip-benchmark-targets.md`, the council charter, the Codex periodic prompt and AGENTS.md. Measured so far (0.14.6 RTL, simulation, scaled kernel): multicycle 1.61 / 1.69, pipelined 0.96 / 0.89; out-of-order sampled run in flight. A 5-minute status job was scheduled because updates had lapsed.",
+     "kind": ""
+    },
+    {
+     "time": "17:02",
+     "text": "At the user's request, an agent started a Verilator feasibility study: obtain Verilator from official sources if it isn't installed, build the out-of-order, multicycle and pipelined cores with the bench testbench in `build/verilator/`, check region clocks against Icarus (Dhrystone 10,202 / 15,658 at 0.14.6) and measure the speedup. Reason: under Icarus the out-of-order core can't finish the 3.5M-instruction LZMA kernel in a 300 s run.",
+     "kind": ""
+    },
+    {
+     "time": "17:08",
+     "text": "Interim out-of-order LZMA pieces (0.14.6, Icarus, 150k-instruction pieces after 20k warm-up, clocks per piece): compress 0: 28,422; 4: 55,861; 8: 56,797; 12: 54,719; 19: 60,840 (5 of 21, about 3.45 MIPS/MHz extrapolated, IPC about 2.9; piece 0 is an outlier); decompress 21: 49,366 and 23: 58,220 (IPC 2.59, about 2.65 MIPS/MHz). The sampling method matched the pipelined core's contiguous run within 0.08%. At the user's request a research agent started on what bounds compress IPC at about 2.6 (cache misses, load chains, mispredictions, memory parallelism, IQ/ROB, forwarding), reporting to the coordinator in `build/cpu/ooo-debug/council/lzma-research/`.",
+     "kind": ""
+    },
+    {
+     "time": "16:00 to 16:50",
+     "text": "Port agent: LZMA kernel bring-up runs (uncommitted; clang 23.1.5 for Windows `-O2` rv64imb, Icarus 12.0, Python 3.12.3, WSL). `python -B sim/cpu/bench/build_bench.py --benchmark lzma --out-dir build/cpu/bench/lzma-d12-rv64imb-<core>`, then `python3 -B sim/cpu/bench/run_bench.py --benchmark lzma --core multicycle|pipe --lzma-mode full`. Multicycle (whole program, trace-checked, liblzma decode matches): compress kernel 2,255,190 clocks, 3,065,962 instructions, IPC 1.360, 1.605 MIPS/MHz; decompress 259,246 clocks, 429,119 instructions, IPC 1.655, 1.691. Pipelined: compress 3,763,359 clocks (IPC 0.815, 0.962), decompress 491,743 (0.873, 0.892); 442 s wall. Failure: the first pipelined full run loaded a checkpoint image that had 3 NUL bytes after a write through `/mnt/c`; the trace check caught it, and `bench_checkpoint.write_images` now reads each file back. Native X925, same kernel (`build/7zip-bench/native/build_native.sh 12`, `taskset -c 19 ./d12/lzma_native 30000`, clang 18.1.3 aarch64, median of 30,000 passes x 3, clock 4.21-4.33 GHz from a dependent-add chain): compress 101.7 us = 8.34 MIPS/MHz, decompress 39.7 us = 2.59.",
+     "kind": ""
+    },
+    {
+     "time": "16:44 to 17:13",
+     "text": "Out-of-order LZMA, sampled (0.14.6 RTL, Icarus): the runner's 24-piece sampled run was stopped at 633 s (exit 143) because it reports only at the end; a scratch driver `build/7zip-bench/ooo_pieces.py` timed the same checkpoint pieces (150k instructions after 20k warm-up, up to 3 at once) and wrote each as it finished, stopping new pieces at 17:12. Compress 13 of 21 pieces (1.87M of 3.07M instructions, 662,620 clocks; IPC per piece 2.1-5.7, the literal-heavy start about 5.5) scaled to about 1,089,000 clocks, about 3.32 MIPS/MHz (3.30-3.39 interpolating the missing pieces); decompress all 3 pieces, 171,624 clocks, IPC 2.50, 2.555 MIPS/MHz. Supersedes the interim 17:08 estimate (decompress 2.65 from 2 pieces). Sampling check: the pipelined core with the same pieces matched its whole run within 0.08% (compress 3,766,251 vs 3,763,359; decompress 491,986 vs 491,743); multicycle with 1.2M pieces +0.04% / identical. No out-of-order piece was trace-checked. Simulation speed: about 800 instructions/s on the out-of-order model; decompress pieces took 266-297 s, near the 300 s limit. Dhrystone confirmation on the out-of-order core (`run_dhrystone.ps1 -Runtime fast -Core ooo -NoDevlog`): 10,202 region clocks, 223,030 instructions, 27.89 DMIPS/MHz, unchanged. Against the 10,000 MIPS goal (10.9 / 3.35 estimated on this kernel): compress about 30%, decompress about 76%.",
+     "kind": ""
+    },
+    {
+     "time": "17:02 to 17:18",
+     "text": "Verilator study (agent, uncommitted, nothing under rtl/ or sim/ edited). Verilator was not installed; official Ubuntu noble arm64 packages fetched with `apt-get download` (no sudo; verilator 5.020-1 = upstream v5.020, .deb sha256 matches the apt index; also make 4.3, flex, bison, m4, libfl), unpacked with `dpkg-deb -x` into `build/third-party/verilator/root/`; `build/verilator/env.sh` sets the paths; with clang 18.1.3 make needs `CFG_CXXFLAGS_STD=-std=gnu++20 CFG_CXXFLAGS_COROUTINES=`. Build: `bash build/verilator/build.sh ooo-bench rtl/cpu/rv64_ooo.sv tb_bench build/verilator/tb_bench_vl.sv -DWIDE_TRACE -GRAM_WORDS=8192`. All three cores build with the SoC, the bench testbench and tb_core. One rejected construct: `mailbox` is a SystemVerilog keyword, used as a variable at `sim/cpu/bench/tb_bench.sv:20,32,37,38` (renamed in copies in `build/verilator/`); otherwise warnings (721 BLKSEQ in rv64_ooo.sv, about 37 width, 20 empty pins in rv64_bram_soc.sv:88-95, missing timescale). Equivalence with Icarus 12.0: identical output in every case: ooo Dhrystone region 10,202 / 15,658 and hprobe WSTAT, tb_core traces at stall 0 and 7 and +profile byte-identical, multicycle and pipelined Dhrystone, multicycle and pipelined full LZMA regions 2,514,708 / 4,255,380, two ooo LZMA windows. Wall time Icarus to Verilator: ooo Dhrystone fast 86.0 s to 0.23 s, reference 129.5 s to 0.32 s, multicycle Dhrystone 17.0 to 0.09 s, pipelined 17.5 to 0.15 s, multicycle LZMA 237.8 to 0.93 s, pipelined 224.0 to 1.35 s, ooo LZMA window 100k-250k 301.8 to 0.96 s (110x to 400x). Caveat: Verilator starts registers at 0, Icarus at X, so reset-dependence bugs could hide; keep Icarus as the cross-check.",
+     "kind": ""
+    },
+    {
+     "time": "17:20",
+     "text": "Out-of-order LZMA, whole program under Verilator 5.020 (0.14.6 RTL, from the run above, `build/verilator/run-ooo-lzma-d12-rv64imb-ooo.txt`, 14.7 s wall): compress kernel 1,067,884 clocks, 3,065,963 instructions, IPC 2.871, **3.389 MIPS/MHz**; decompress kernel 171,494 clocks, 429,119 instructions, IPC 2.502, **2.557 MIPS/MHz**; mailbox passes and equals the multicycle core's. The sampled Icarus estimate (1,089,000 compress clocks from 13 of 21 pieces) was 2.0% high; decompress sampled 171,624 vs 171,494 (0.08%). Against the goal (10.9 / 3.35): 31% / 76%. `cpu/7zip-benchmark-targets.md` updated to the whole-program figure.",
+     "kind": ""
+    },
+    {
+     "time": "17:14 to 17:24",
+     "text": "Full regression after the LZMA testbench additions (`tb_bench.sv` laps and sample window, `tb_core.sv` `+max_retired`, all off by default), uncommitted tree on bfde6eb, Icarus 12.0: `wsl -e bash build/cpu/ooo-debug/full_check.sh`. ooo PASS (94 programs x 3 wait patterns = 282 runs), ooo with 2-line caches PASS (282), bitmanip PASS (12 groups), multicycle PASS (282), pipelined PASS (282); FULL CHECK PASSED in 9 min 54 s with up to 5 other simulations running. `python -B scripts/check_repo.py` PASS. Vendored LZMA files and the two 7-Zip licence texts checked byte-identical to the upstream git blobs at d3296e39 (`git hash-object --no-filters` against the clone).",
+     "kind": ""
+    },
+    {
+     "time": "17:10 to 17:45",
+     "text": "Research agent on the LZMA compress bottleneck (read-only; RTL copies and probe benches in `build/cpu/ooo-debug/council/lzma-research/`, `runs.log`; commit bfde6eb RTL; Icarus 12.0, Verilator 5.020, Python 3.12.3; the probe benches do not check program results, every variant retired the base instruction count). The benchmark uses the SoC defaults (`rv64_bram_soc.sv:8-9`): 4 KiB direct-mapped I-cache, 4 KiB 2-way D-cache, 8-byte lines, one bus at 2 clocks per read, one miss at a time for the oldest load only. Measured on the whole compress kernel (Verilator, 1,067,885 clocks): the bus spends 59.5% of clocks on instruction fetch (317,735 I-cache misses, 104 MPKI); load misses 9.8% of clocks (17 MPKI); stores 12.7%; zero-retire clocks 41.9%; fetch queue empty 46.6%; ROB average 58 of 512 (full 0.2%); IQ full 10.5%; mispredicts 10.5 MPKI. Dataflow bound with perfect prediction and 1-clock loads: 18.8 IPC on piece 4, so dependences are not the limit. Pieces 0 and 2 touch 3.5 KB of code (fits the I-cache, 24 MPKI); pieces 4 and 12 touch 7.6-8 KB (105-112 MPKI). Decompress is bound by the range decoder's multiply chain (dataflow bound 3.74 IPC at 3-clock multiply) and by 29.4 MPKI of data-dependent bits no predictor learns. Variants (compress / decompress MIPS/MHz): I-cache 32 KiB direct-mapped 4.54 / 2.81 (GetMatches aliases CodeOneBlock at 32 KiB); I-cache 64 KiB 6.45 / 2.81; I 64 + D 32 KiB 7.38 / 2.89; I and D 128 KiB 7.48 / 2.89; 1-clock reads with 4 KiB caches 4.83 / 2.73; 2-clock multiply 3.42 / 2.79; 2-clock multiply with 128 KiB caches 7.68 / 3.24; IQ 256 no gain; letting any load start a miss hung both kernels (300 s timeout). Trace simulation: 16 KiB 2-way I-cache 1.6 MPKI, 32 KiB 2-way 0.6. Ranked proposals: (1) 2-way 16-32 KiB I-cache with multi-beat lines; (2) pipelined or burst bus reads (SoC contract change); (3) 32-64 B D-cache lines with burst fill; (4) multiply latency 3 to 2; (5) global-history direction predictor (trace estimate compress 12.1 to 7.2 MPKI); (6) several misses in flight (naive version livelocks). Flag from the agent: raising the SoC default cache size alone changes the measurement configuration, not the core; sizing the cache to this benchmark's code would be tuning.",
+     "kind": ""
+    },
+    {
+     "time": "17:27 to 17:47",
+     "text": "Verilator integration (agent; uncommitted until the regression below): new `sim/cpu/simulator.py` (shared Icarus/Verilator build and run: parameter and define mapping, clang flags, -j up to 4, SHA-256-keyed build cache in `build/sim-cache/verilator/`, 300 s per step, records `simulator`, `simulator_name`, `simulator_cxx`); `--sim icarus|verilator` (default icarus) on `test_cpu.py`, `run_bench.py`, `lzma_run.py` and `run_dhrystone.ps1 -Sim`; `tb_bench.sv` variable `mailbox` renamed `mailbox_addr` (the `+mailbox=` plusarg is unchanged). Verification in WSL, `timeout 300`: `test_cpu.py --core ooo` Icarus PASS 229.5 s, Verilator PASS 12.8 s (cached build); multicycle Icarus 21.8 s / Verilator 27.3 s with build; pipe 21.1 / 23.4 s; all 282 traces per core byte-identical between simulators. Dhrystone under Verilator: ooo fast 10,202 clocks, reference 15,658; multicycle reference 128,403 on both. LZMA under Verilator through the runner: ooo full compress 1,067,884, decompress 171,494, 24 trace checks pass (147 s); multicycle compress 2,255,190, decompress 259,246, all checks pass (75 s). Surprise: clang++ 18 crashed once while another Verilator build ran; the next try passed, and the helper now retries `make` once at -j1. The old Dhrystone build folders are rejected as stale because build_bench.py changed; rebuilt copies have identical image bytes.",
+     "kind": ""
+    },
+    {
+     "time": "17:46 to 17:56",
+     "text": "Full Icarus regression with the Verilator integration in the tree (dee4d14 plus uncommitted script changes): `wsl -e bash build/cpu/ooo-debug/full_check.sh`. ooo PASS (282 runs), ooo 2-line caches PASS (282), bitmanip PASS (12 groups), multicycle PASS (282), pipe PASS (282); FULL CHECK PASSED in 9 min 57 s. The suite now names the simulator (\"Icarus Verilog\"). `python -B scripts/check_repo.py` PASS.",
+     "kind": ""
+    },
+    {
+     "time": "17:57",
+     "text": "Correction (Codex periodic review 16:09, item 3): the 7-Zip per-clock figures in the 15:53 and 15:55 rows and in `cpu/7zip-benchmark-targets.md` were labelled \"per GHz\" but are per MHz (8,003 MIPS / ~4,200 MHz = 1.9 MIPS/MHz); a factor-of-1,000 unit label error. The numbers and the 10,000 MIPS = 2.5 MIPS/MHz at 4 GHz target were right; the labels are fixed in the targets page. Also corrected: `cpu/lzma-benchmark.md` claimed every table fits in small caches (review 16:54, item 4; the BT4 hash is 528 KiB), and the targets page now states the goal's calibration uncertainty (review 17:39, item 4: the second native `-md22` row gives 10.59 / 3.28). Coordinator decisions on reviews 15:39 to 17:39 are in `build/cpu/ooo-debug/council/codex/DECISIONS.md`.",
+     "kind": ""
+    },
+    {
+     "time": "17:59",
+     "text": "Correction: the previous row and the targets-page note were first written with the time 18:05, which was not read from the clock; the clock read 17:58 at the next check, so the row is now 17:57 (commit 040cd92 carried the wrong time). Status at 17:58: no simulations running; no agents active; Codex loop running (latest review 17:39); next core version waits on the user's choice of the measured cache configuration.",
+     "kind": ""
+    },
+    {
+     "time": "18:04",
+     "text": "Codex periodic review 17:54 decided (`build/cpu/ooo-debug/council/codex/DECISIONS.md`): accepted bench fixes (LZMA lap order, Verilator build-cache race), a wording caveat (the decoder's 29.4 MPKI counts all redirects, not only data-dependent branches), and two frontend measurements (XOR-folded I-cache index; fetch in the recovery clock). Nothing running; the next core version waits on the user's cache-configuration choice.",
+     "kind": ""
+    },
+    {
+     "time": "18:05 to 18:10",
+     "text": "User: get the council running and optimize until the 7-Zip goal is met. Coordinator decision on the open question: 7-Zip is measured at 64 KiB I / 64 KiB D caches (the X925's L1 sizes), 4 KiB kept as the FPGA-class figure, Dhrystone unchanged at 4 KiB. New runner options `--icache-beats`, `--dcache-beats` (passed to `tb_bench.sv` parameters, recorded in results) and `--core-source` (time and check a candidate core; refused with `--devlog`). Baseline 0.14.6 at 64/64, Verilator 5.020, `python3 -B sim/cpu/bench/run_bench.py --benchmark lzma --core ooo --sim verilator --out-dir build/cpu/bench/lzma-d12-rv64imb-ooo` (121 s, 24 trace checks pass, liblzma decode matches): compress kernel 485,401 clocks, IPC 6.316, **7.456 MIPS/MHz**; decompress kernel 151,758, IPC 2.828, **2.889**. Goal 10.9 / 3.35: compress needs 332k clocks (-32%), decompress 131k (-14%). Dhrystone fast runtime unchanged at 10,202 clocks (Verilator, default caches).",
+     "kind": ""
+    },
+    {
+     "time": "18:11 to 18:19",
+     "text": "Council restarted on the 7-Zip goal (charter \"Phase 3\" in `build/cpu/ooo-debug/council/CHARTER.md`): frontend (global-history direction prediction, recovery-clock fetch, BTB/RAS fixes), backend (2-clock multiply, early wake, branch-producer priority), memory (younger misses as prefetches with guaranteed progress for the oldest load, longer D-cache lines), middle (rename-time work on the decoder chain, value prediction on LZMA, the multiply-offset fold bug). One mechanism per hand-off, each its own version. First spawn attempt failed (tool error from an unsupported field) and was repeated. Coordinator check script `build/cpu/ooo-debug/coord/vcheck.sh <candidate> <out>` (Verilator 5.020; tests at default and 2-line caches, LZMA at 64 KiB with 24 trace checks and at 4 KiB, both Dhrystone binaries with differential traces). First run failed: the bench copies lacked `link.ld` (copy command fixed in the script and the charter, 18:15). Baseline 0.14.6, 18:14:49 to 18:19:10: tests PASS 282 / 282 (2-line), LZMA 64 KiB 485,401 / 151,758 clocks (7.456 / 2.889 MIPS/MHz), 4 KiB 1,067,884 / 171,494, Dhrystone 15,658 / 10,202; VCHECK PASSED. `record_version.py` now fingerprints `rv64_ooo.sv` (Codex 1624-1).",
+     "kind": ""
+    },
+    {
+     "time": "18:20 to 18:24",
+     "text": "Frontend measurement on 0.14.6 at 64 KiB (no RTL change; `build/cpu/ooo-debug/council/frontend/NOTES.md`): compress 10.3 correct-path MPKI (conditional 29,522 = 9.6 MPKI, 270,542 rename-to-resolve clocks; return 1,894, of which 1,834 at the GetMatches return 0xb298, likely return-stack corruption by wrong paths; indirect 181; 38,467 recovery clocks); decompress conditional 11,648 (27.1 MPKI), about 80% range-decoder bit branches near 50% mispredict; I-cache misses 0.8% / 1.4% of clocks (compulsory) at 64 KiB. Backend hand-off 4 (multiply 3 to 2 clocks): compress 485,401 to 473,002 (7.65 MIPS/MHz), decompress 151,758 to 135,703 (3.23), Dhrystone unchanged; being integrated as 0.14.7 (the number of the held reuse-lane candidate, which was never released or tagged). User directive (18:22): focus on the memory and cache subsystems so the full 7-Zip benchmark can run cleanly. Council redirected (BOARD 18:23): memory leads an L2 + DRAM-latency model and several misses in flight; middle on memory-level parallelism from the window; backend on realistic load-to-use latency; frontend hands off the return-stack fix and takes the instruction side of the hierarchy; a new benchmark-infrastructure agent builds d16-d22 dictionaries with up to 64 MiB RAM and fast checkpointing.",
+     "kind": ""
     }
    ],
    "commits": []

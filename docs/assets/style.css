@@ -180,6 +180,26 @@ dialog#lightbox::backdrop { background: rgba(14, 10, 7, .86); }
 .ct-dot { fill: var(--gold); stroke: var(--text); stroke-width: 1.4; cursor: pointer; }
 .ct-dot:hover { fill: var(--oxblood); }
 .ct-note { font: italic 18px var(--serif); fill: var(--text); }
+/* the second measure: scaled 7-Zip kernel, horizontal bars (palette checked for colour-vision separation) */
+:root { --z-c: #a8741c; --z-d: #2a62b8; }
+@media (prefers-color-scheme: dark) { :root { --z-c: #b8842a; --z-d: #5d93dd; } }
+.sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+.legend .sw.z-c { --c: var(--z-c); margin-left: 0; }
+.legend .sw.z-d { --c: var(--z-d); }
+.legend .sw.z-goal { background: none; border: 1.5px dashed var(--text); }
+.zchart { list-style: none; margin: 1rem 0 .6rem; padding: 0; max-width: 46rem; }
+.zrow { padding: .55rem 0 .65rem; border-bottom: 1px solid var(--line); }
+.zlab { margin: 0 0 .3rem; font-size: 1.05rem; line-height: 1.3; }
+.znote { display: block; font-family: var(--sans); font-size: .68rem; letter-spacing: .08em; color: var(--muted); }
+.zb { display: flex; align-items: center; gap: .5rem; height: 16px; margin: 2px 0; }
+.zb .bar { display: block; flex: none; width: calc((100% - 3rem) * var(--f)); height: 12px; border-radius: 0 4px 4px 0; background: var(--z-c); }
+.zb.d .bar { background: var(--z-d); }
+.zrow.goal .bar { background: none; border: 1.5px dashed var(--text); border-left-width: 1.5px; }
+.zrow.native .zlab { font-style: italic; }
+.zb .val { font: 12px var(--sans); color: var(--text); font-variant-numeric: tabular-nums; white-space: nowrap; }
+@media (forced-colors: active) { .zb .bar { border: 1px solid CanvasText; } }
+.kind.none { border: 0; padding: 0; }
+.perf .z7 { display: block; margin-top: .35rem; font-style: normal; line-height: 1.4; }
 .day { margin: 3rem 0; }
 .day-head { border-top: 2px solid var(--text); padding-top: 1rem; margin-bottom: 1.5rem; }
 .day-head h2 { font-size: clamp(2rem, 6vw, 3.2rem); margin: 0; }

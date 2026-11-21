@@ -3052,7 +3052,7 @@
   "date": "2026-11-21",
   "date_fr": "21 novembre 2026",
   "kind": "ooo",
-  "status": "in progress",
+  "status": "tagged",
   "tag": "cpu-v0.14.5",
   "register": "Realistic-latency knob FE_DEPTH (frontend engineer; default 0 = unchanged); depth 8 with a 512-entry fetch queue: 15,985 / 10,688 (17.8 / 26.6 DMIPS/MHz probe)",
   "breaking": "No",
@@ -3160,5 +3160,123 @@
   "dmips_fast": null,
   "ref_run": null,
   "art": "art/v0.14.5.svg"
+ },
+ {
+  "no": 41,
+  "version": "0.14.6",
+  "title": "La Quatrième Main",
+  "caption": "A fourth of the eight hands learns to judge a branch, and those hands now turn to branches before plain arithmetic. The multiply queue is cut to the number of ports, so none is dropped as they grow. A small gain, in simulation: 15,658 / 10,202 clocks.",
+  "date": "2026-11-21",
+  "date_fr": "21 novembre 2026",
+  "kind": "ooo",
+  "status": "tagged",
+  "tag": "cpu-v0.14.6",
+  "register": "4 branch-capable ports with branch-class-first select; multiply queue sized to the ports (backend engineer). Test branch_ports_many. Probe: reference 15,683 to 15,658, fast 10,208 to 10,202",
+  "breaking": "No",
+  "units": [
+   [
+    "Organisation",
+    "Out of order (rtl/cpu/rv64_ooo.sv)"
+   ],
+   [
+    "Fetch / rename / retire",
+    "32 / 32 / 32 per clock"
+   ],
+   [
+    "Reorder buffer",
+    "512 entries"
+   ],
+   [
+    "Physical registers",
+    "544"
+   ],
+   [
+    "Issue queue",
+    "128 entries"
+   ],
+   [
+    "ALUs",
+    "8, of which 4 full (branch, multiply, divide)"
+   ],
+   [
+    "Memory ports",
+    "4 load, 3 store-address"
+   ],
+   [
+    "Branch target buffer",
+    "1,024 entries, with return stack"
+   ],
+   [
+    "Caches",
+    "128 KiB instruction, 128 KiB data, two-way data cache"
+   ],
+   [
+    "Taken transfers per fetch",
+    "4"
+   ],
+   [
+    "Loop predictor",
+    "1,024 entries"
+   ],
+   [
+    "Branch bias",
+    "a branch that has gone one way at least 4 times with no exit is predicted that way"
+   ],
+   [
+    "Instruction fusion",
+    "a simple integer producer and the next instruction reading it"
+   ],
+   [
+    "Store writes",
+    "paired on the bus"
+   ],
+   [
+    "Value prediction",
+    "loads, multiplies, divides"
+   ],
+   [
+    "Fetch predecode",
+    "direct jumps, calls, returns, backward branches"
+   ]
+  ],
+  "marks": [
+   "a one-beat fetch buffer",
+   "requests issue from EXECUTE",
+   "writes acknowledged in the same clock",
+   "second slot across beats",
+   "second data-cache port",
+   "jump in the second slot",
+   "slot-to-slot forwarding",
+   "branch folding",
+   "registered multiplier",
+   "fetch queue and X stage",
+   "store-to-load forwarding",
+   "stores finish at retirement",
+   "cross-beat fetch",
+   "instruction fusion",
+   "1,024-entry predictors",
+   "fixed-direction bias",
+   "sixteen lanes",
+   "one rule for stores and retirement",
+   "four taken turns",
+   "folded at rename",
+   "four stores a write",
+   "four loads, three stores a clock",
+   "512 in flight",
+   "thirty-two retire",
+   "thirty-two lanes",
+   "mended after review",
+   "constants and branches decided at rename",
+   "64-entry return stack",
+   "front-end depth dial",
+   "four branch-capable ports"
+  ],
+  "width": 32,
+  "alus": 8,
+  "dmips_ref": null,
+  "clocks_ref": null,
+  "dmips_fast": null,
+  "ref_run": null,
+  "art": "art/v0.14.6.svg"
  }
 ]

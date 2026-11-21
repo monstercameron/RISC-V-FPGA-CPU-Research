@@ -32,7 +32,7 @@
 
 <section class="page-head">
   <p class="eyebrow">La Galerie</p>
-  <h1>40 portraits of a processor</h1>
+  <h1>41 portraits of a processor</h1>
   <p class="lede">Each drawing is generated from the architecture history: one canvas per version, its units sized and arranged by their recorded counts.
   Walk the rooms in order and the machine learns to fetch, to pair, to pipeline, to run out of order. Select a work to see it enlarged.</p>
   <p class="legend small"><span class="sw" style="--c:#c58f2c"></span>fetch, loads
@@ -845,7 +845,7 @@
   <header class="room-head">
     <p class="room-no">Salle VII</p>
     <h2 id="h-vii">Le Conseil</h2>
-    <p class="room-blurb">The council widens everything at once: doors, room and breath, then a mending and a deeper memory for returns.</p>
+    <p class="room-blurb">The council widens everything at once: doors, room and breath, then a mending, a deeper memory for returns, and a fourth hand for branches.</p>
   </header>
   <div class="wall">
     <div class="rail" aria-hidden="true"></div>
@@ -989,7 +989,7 @@
   <figcaption class="placard">
     <span class="no">No. 40</span>
     <h3>La Profondeur</h3>
-    <p class="ver">Version 0.14.5<span class="sep"> · </span>21 novembre 2026 <span class="badge">newest, in progress</span></p>
+    <p class="ver">Version 0.14.5<span class="sep"> · </span>21 novembre 2026</p>
     <p class="medium">ink, oxblood and gold leaf on vellum; simulated</p>
     <p class="cap">A dial for honesty: the fetch path can be made as deep as a real core&#x27;s, so a wrong guess costs ten clocks instead of three. Set to zero the drawing is unchanged; set to eight it shows what a buildable pipeline would lose.</p>
     <p class="perf none">Dhrystone: no run logged for this version yet. Simulated results are recorded in the journal as they are measured.</p>
@@ -1000,7 +1000,29 @@
     <h4>The units</h4>
     <table class="units"><tbody><tr><th scope='row'>Organisation</th><td>Out of order (rtl/cpu/rv64_ooo.sv)</td></tr><tr><th scope='row'>Fetch / rename / retire</th><td>32 / 32 / 32 per clock</td></tr><tr><th scope='row'>Reorder buffer</th><td>512 entries</td></tr><tr><th scope='row'>Physical registers</th><td>544</td></tr><tr><th scope='row'>Issue queue</th><td>128 entries</td></tr><tr><th scope='row'>ALUs</th><td>8, of which 3 full (branch, multiply, divide)</td></tr><tr><th scope='row'>Memory ports</th><td>4 load, 3 store-address</td></tr><tr><th scope='row'>Branch target buffer</th><td>1,024 entries, with return stack</td></tr><tr><th scope='row'>Caches</th><td>128 KiB instruction, 128 KiB data, two-way data cache</td></tr><tr><th scope='row'>Taken transfers per fetch</th><td>4</td></tr><tr><th scope='row'>Loop predictor</th><td>1,024 entries</td></tr><tr><th scope='row'>Branch bias</th><td>a branch that has gone one way at least 4 times with no exit is predicted that way</td></tr><tr><th scope='row'>Instruction fusion</th><td>a simple integer producer and the next instruction reading it</td></tr><tr><th scope='row'>Store writes</th><td>paired on the bus</td></tr><tr><th scope='row'>Value prediction</th><td>loads, multiplies, divides</td></tr><tr><th scope='row'>Fetch predecode</th><td>direct jumps, calls, returns, backward branches</td></tr></tbody></table>
     <h4>Marginalia</h4><ul class="marks"><li>a one-beat fetch buffer</li><li>requests issue from EXECUTE</li><li>writes acknowledged in the same clock</li><li>second slot across beats</li><li>second data-cache port</li><li>jump in the second slot</li><li>slot-to-slot forwarding</li><li>branch folding</li><li>registered multiplier</li><li>fetch queue and X stage</li><li>store-to-load forwarding</li><li>stores finish at retirement</li><li>cross-beat fetch</li><li>instruction fusion</li><li>1,024-entry predictors</li><li>fixed-direction bias</li><li>sixteen lanes</li><li>one rule for stores and retirement</li><li>four taken turns</li><li>folded at rename</li><li>four stores a write</li><li>four loads, three stores a clock</li><li>512 in flight</li><li>thirty-two retire</li><li>thirty-two lanes</li><li>mended after review</li><li>constants and branches decided at rename</li><li>64-entry return stack</li><li>front-end depth dial</li></ul>
-    <p class="small">Compatibility: No. <a href="https://github.com/monstercameron/RISC-V-FPGA-CPU-Research/releases/tag/cpu-v0.14.5" rel="noopener">Tag cpu-v0.14.5</a> (not yet tagged).
+    <p class="small">Compatibility: No. <a href="https://github.com/monstercameron/RISC-V-FPGA-CPU-Research/releases/tag/cpu-v0.14.5" rel="noopener">Tag cpu-v0.14.5</a>.
+    Areas and sizes are symbolic; counts follow the history row. Simulated, not a hardware measurement.</p>
+  </div>
+</figure>
+<figure class="work" id="v0-14-6" data-index="40" data-kind="ooo">
+  <button class="frame" type="button" aria-label="View No. 41, La Quatrième Main, version 0.14.6, enlarged">
+    <span class="mat"><img src="art/v0.14.6.svg" width="800" height="1000" loading="lazy" alt="Abstract ink drawing of the processor at version 0.14.6, an out-of-order core. Blocks for a 512-entry reorder buffer, 544 physical registers, a 128-entry issue queue, 8 integer units, and instruction and data caches above a bus."></span>
+  </button>
+  <figcaption class="placard">
+    <span class="no">No. 41</span>
+    <h3>La Quatrième Main</h3>
+    <p class="ver">Version 0.14.6<span class="sep"> · </span>21 novembre 2026</p>
+    <p class="medium">ink, oxblood and gold leaf on vellum; simulated</p>
+    <p class="cap">A fourth of the eight hands learns to judge a branch, and those hands now turn to branches before plain arithmetic. The multiply queue is cut to the number of ports, so none is dropped as they grow. A small gain, in simulation: 15,658 / 10,202 clocks.</p>
+    <p class="perf none">Dhrystone: no logged run yet. An unlogged fast-runtime run measured 27.89 DMIPS/MHz (simulated); the probe counts 15,658 / 10,202 region clocks.<span class="aside z7">Scaled 7-Zip LZMA kernel: 7.46 / 2.89 MIPS/MHz compress / decompress at 64 KiB caches (3.39 / 2.56 at 4 KiB); simulated, not a 7-Zip score.</span></p>
+  </figcaption>
+  <div class="detail" hidden>
+    <h4>From the register</h4>
+    <p>4 branch-capable ports with branch-class-first select; multiply queue sized to the ports (backend engineer). Test branch_ports_many. Probe: reference 15,683 to 15,658, fast 10,208 to 10,202</p>
+    <h4>The units</h4>
+    <table class="units"><tbody><tr><th scope='row'>Organisation</th><td>Out of order (rtl/cpu/rv64_ooo.sv)</td></tr><tr><th scope='row'>Fetch / rename / retire</th><td>32 / 32 / 32 per clock</td></tr><tr><th scope='row'>Reorder buffer</th><td>512 entries</td></tr><tr><th scope='row'>Physical registers</th><td>544</td></tr><tr><th scope='row'>Issue queue</th><td>128 entries</td></tr><tr><th scope='row'>ALUs</th><td>8, of which 4 full (branch, multiply, divide)</td></tr><tr><th scope='row'>Memory ports</th><td>4 load, 3 store-address</td></tr><tr><th scope='row'>Branch target buffer</th><td>1,024 entries, with return stack</td></tr><tr><th scope='row'>Caches</th><td>128 KiB instruction, 128 KiB data, two-way data cache</td></tr><tr><th scope='row'>Taken transfers per fetch</th><td>4</td></tr><tr><th scope='row'>Loop predictor</th><td>1,024 entries</td></tr><tr><th scope='row'>Branch bias</th><td>a branch that has gone one way at least 4 times with no exit is predicted that way</td></tr><tr><th scope='row'>Instruction fusion</th><td>a simple integer producer and the next instruction reading it</td></tr><tr><th scope='row'>Store writes</th><td>paired on the bus</td></tr><tr><th scope='row'>Value prediction</th><td>loads, multiplies, divides</td></tr><tr><th scope='row'>Fetch predecode</th><td>direct jumps, calls, returns, backward branches</td></tr></tbody></table>
+    <h4>Marginalia</h4><ul class="marks"><li>a one-beat fetch buffer</li><li>requests issue from EXECUTE</li><li>writes acknowledged in the same clock</li><li>second slot across beats</li><li>second data-cache port</li><li>jump in the second slot</li><li>slot-to-slot forwarding</li><li>branch folding</li><li>registered multiplier</li><li>fetch queue and X stage</li><li>store-to-load forwarding</li><li>stores finish at retirement</li><li>cross-beat fetch</li><li>instruction fusion</li><li>1,024-entry predictors</li><li>fixed-direction bias</li><li>sixteen lanes</li><li>one rule for stores and retirement</li><li>four taken turns</li><li>folded at rename</li><li>four stores a write</li><li>four loads, three stores a clock</li><li>512 in flight</li><li>thirty-two retire</li><li>thirty-two lanes</li><li>mended after review</li><li>constants and branches decided at rename</li><li>64-entry return stack</li><li>front-end depth dial</li><li>four branch-capable ports</li></ul>
+    <p class="small">Compatibility: No. <a href="https://github.com/monstercameron/RISC-V-FPGA-CPU-Research/releases/tag/cpu-v0.14.6" rel="noopener">Tag cpu-v0.14.6</a>.
     Areas and sizes are symbolic; counts follow the history row. Simulated, not a hardware measurement.</p>
   </div>
 </figure></div>
@@ -1026,8 +1048,9 @@
 </main>
 <footer class="colophon">
   <p class="ornament" aria-hidden="true">· · ·</p>
-  <p>Art and science over time. Every figure on this site comes from simulation of the design in
-  <a href="https://github.com/monstercameron/RISC-V-FPGA-CPU-Research" rel="noopener">the repository</a>; nothing here is a hardware measurement.
+  <p>Art and science over time. Every figure for this processor comes from simulation of the design in
+  <a href="https://github.com/monstercameron/RISC-V-FPGA-CPU-Research" rel="noopener">the repository</a>; nothing here is a hardware measurement of it.
+  The one native figure, a laptop's Cortex-X925 running the scaled 7-Zip kernel, is a point of comparison and is labelled as such.
   The drawings are generated from the architecture history, not photographs of silicon.</p>
   <p class="small">Source code and full record: <a href="https://github.com/monstercameron/RISC-V-FPGA-CPU-Research" rel="noopener">github.com/monstercameron/RISC-V-FPGA-CPU-Research</a>.</p>
   <p class="small">Generated by <code>scripts/build_site.py</code>. Fonts from Google Fonts; no scripts from elsewhere, no trackers.</p>
