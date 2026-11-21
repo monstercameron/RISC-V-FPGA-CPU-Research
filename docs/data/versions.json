@@ -1,0 +1,1674 @@
+[
+ {
+  "no": 1,
+  "version": "0.1.0",
+  "title": "Le Premier Souffle",
+  "caption": "One instruction at a time, drawn in three breaths: fetch, execute, remember. No cache, no predictor.",
+  "date": "2026-11-20",
+  "date_fr": "20 novembre 2026",
+  "kind": "mc",
+  "status": "tagged",
+  "tag": "cpu-v0.1.0",
+  "register": "C0 integer foundation: multicycle RV64I and FENCE.I core, terminal laboratory trap record, unified 64-bit memory bus, retirement trace, 16 KiB synchronous RAM wrapper. Called \"revision 0\" before versioning began.",
+  "breaking": "Initial version",
+  "units": [
+   [
+    "Organisation",
+    "Multicycle core (rtl/cpu/rv64_core.sv)"
+   ],
+   [
+    "Control states",
+    "Fetch · Execute · Memory"
+   ],
+   [
+    "Issue",
+    "1 per clock"
+   ],
+   [
+    "Retirement",
+    "1 per clock"
+   ]
+  ],
+  "marks": [],
+  "dmips_ref": 0.2601,
+  "clocks_ref": 2188.2,
+  "dmips_fast": null,
+  "ref_run": "2026-11-20 21:08:12 -0500",
+  "art": "art/v0.1.0.svg"
+ },
+ {
+  "no": 2,
+  "version": "0.1.1",
+  "title": "Le Tampon",
+  "caption": "The last beat fetched is kept, and the next instruction often finds it already there.",
+  "date": "2026-11-20",
+  "date_fr": "20 novembre 2026",
+  "kind": "mc",
+  "status": "tagged",
+  "tag": "cpu-v0.1.1",
+  "register": "Fetch buffer: the last fetched 8-byte beat serves the next instruction when it is in the same beat, skipping FETCH. Cleared by reset, fence.i and stores to the beat. Dhrystone: 2,188.2 to 1,706.2 clocks per run.",
+  "breaking": "No",
+  "units": [
+   [
+    "Organisation",
+    "Multicycle core (rtl/cpu/rv64_core.sv)"
+   ],
+   [
+    "Control states",
+    "Fetch · Execute · Memory"
+   ],
+   [
+    "Issue",
+    "1 per clock"
+   ],
+   [
+    "Retirement",
+    "1 per clock"
+   ],
+   [
+    "Fetch",
+    "one-beat fetch buffer (8 bytes)"
+   ]
+  ],
+  "marks": [
+   "a one-beat fetch buffer"
+  ],
+  "dmips_ref": 0.3336,
+  "clocks_ref": 1706.2,
+  "dmips_fast": null,
+  "ref_run": "2026-11-20 21:32:24 -0500",
+  "art": "art/v0.1.1.svg"
+ },
+ {
+  "no": 3,
+  "version": "0.2.0",
+  "title": "La Bibliothèque",
+  "caption": "A small library of instructions replaces the buffer: 4 KiB, direct-mapped, 8-byte lines.",
+  "date": "2026-11-20",
+  "date_fr": "20 novembre 2026",
+  "kind": "mc",
+  "status": "tagged",
+  "tag": "cpu-v0.2.0",
+  "register": "Instruction cache replaces the fetch buffer: direct-mapped, ICACHE_BEATS 8-byte lines (default 512, 4 KiB), new parameter on rv64_core and rv64_bram_soc; same coherence rules. Dhrystone: 1,706.2 to 988.7 clocks per run.",
+  "breaking": "No (new parameter)",
+  "units": [
+   [
+    "Organisation",
+    "Multicycle core (rtl/cpu/rv64_core.sv)"
+   ],
+   [
+    "Control states",
+    "Fetch · Execute · Memory"
+   ],
+   [
+    "Issue",
+    "1 per clock"
+   ],
+   [
+    "Retirement",
+    "1 per clock"
+   ],
+   [
+    "Instruction cache",
+    "4 KiB, direct-mapped, 8-byte lines"
+   ]
+  ],
+  "marks": [
+   "a one-beat fetch buffer"
+  ],
+  "dmips_ref": 0.5756,
+  "clocks_ref": 988.7,
+  "dmips_fast": null,
+  "ref_run": "2026-11-20 21:35:53 -0500",
+  "art": "art/v0.2.0.svg"
+ },
+ {
+  "no": 4,
+  "version": "0.2.1",
+  "title": "L'Impatience",
+  "caption": "Loads and stores send their request from EXECUTE instead of waiting a clock.",
+  "date": "2026-11-20",
+  "date_fr": "20 novembre 2026",
+  "kind": "mc",
+  "status": "tagged",
+  "tag": "cpu-v0.2.1",
+  "register": "Loads and stores issue their bus request from EXECUTE; MEMORY holds the same request if needed. One clock less per data access with the synchronous RAM. Bus protocol unchanged.",
+  "breaking": "No",
+  "units": [
+   [
+    "Organisation",
+    "Multicycle core (rtl/cpu/rv64_core.sv)"
+   ],
+   [
+    "Control states",
+    "Fetch · Execute · Memory"
+   ],
+   [
+    "Issue",
+    "1 per clock"
+   ],
+   [
+    "Retirement",
+    "1 per clock"
+   ],
+   [
+    "Instruction cache",
+    "4 KiB, direct-mapped, 8-byte lines"
+   ]
+  ],
+  "marks": [
+   "a one-beat fetch buffer",
+   "requests issue from EXECUTE"
+  ],
+  "dmips_ref": 0.7162,
+  "clocks_ref": 794.7,
+  "dmips_fast": null,
+  "ref_run": "2026-11-20 21:38:42 -0500",
+  "art": "art/v0.2.1.svg"
+ },
+ {
+  "no": 5,
+  "version": "0.2.2",
+  "title": "L'Accusé",
+  "caption": "The memory acknowledges a write in the clock it is offered; stores now retire at once.",
+  "date": "2026-11-20",
+  "date_fr": "20 novembre 2026",
+  "kind": "mc",
+  "status": "tagged",
+  "tag": "cpu-v0.2.2",
+  "register": "RAM wrapper acknowledges writes in the clock they are presented; reads unchanged. Stores now retire from EXECUTE.",
+  "breaking": "No",
+  "units": [
+   [
+    "Organisation",
+    "Multicycle core (rtl/cpu/rv64_core.sv)"
+   ],
+   [
+    "Control states",
+    "Fetch · Execute · Memory"
+   ],
+   [
+    "Issue",
+    "1 per clock"
+   ],
+   [
+    "Retirement",
+    "1 per clock"
+   ],
+   [
+    "Instruction cache",
+    "4 KiB, direct-mapped, 8-byte lines"
+   ]
+  ],
+  "marks": [
+   "a one-beat fetch buffer",
+   "requests issue from EXECUTE",
+   "writes acknowledged in the same clock"
+  ],
+  "dmips_ref": 0.7919,
+  "clocks_ref": 718.7,
+  "dmips_fast": null,
+  "ref_run": "2026-11-20 21:40:59 -0500",
+  "art": "art/v0.2.2.svg"
+ },
+ {
+  "no": 6,
+  "version": "0.3.0",
+  "title": "Le Miroir",
+  "caption": "A data cache for loads, 4 KiB and write-through, answers what the bus used to.",
+  "date": "2026-11-20",
+  "date_fr": "20 novembre 2026",
+  "kind": "mc",
+  "status": "tagged",
+  "tag": "cpu-v0.3.0",
+  "register": "Data cache for loads: direct-mapped, write-through, DCACHE_BEATS 8-byte lines (default 512, 4 KiB), new parameter on rv64_core and rv64_bram_soc. Loads that hit complete in EXECUTE with no bus request; all memory treated as cacheable.",
+  "breaking": "No (new parameter; loads that hit no longer reach the bus)",
+  "units": [
+   [
+    "Organisation",
+    "Multicycle core (rtl/cpu/rv64_core.sv)"
+   ],
+   [
+    "Control states",
+    "Fetch · Execute · Memory"
+   ],
+   [
+    "Issue",
+    "1 per clock"
+   ],
+   [
+    "Retirement",
+    "1 per clock"
+   ],
+   [
+    "Instruction cache",
+    "4 KiB, direct-mapped, 8-byte lines"
+   ],
+   [
+    "Data cache",
+    "4 KiB, direct-mapped, write-through"
+   ]
+  ],
+  "marks": [
+   "a one-beat fetch buffer",
+   "requests issue from EXECUTE",
+   "writes acknowledged in the same clock"
+  ],
+  "dmips_ref": 0.9473,
+  "clocks_ref": 600.8,
+  "dmips_fast": null,
+  "ref_run": "2026-11-20 21:43:28 -0500",
+  "art": "art/v0.3.0.svg"
+ },
+ {
+  "no": 7,
+  "version": "0.4.0",
+  "title": "L'Arithmétique",
+  "caption": "The M extension arrives: multiply and a divider that steps once per clock.",
+  "date": "2026-11-20",
+  "date_fr": "20 novembre 2026",
+  "kind": "mc",
+  "status": "tagged",
+  "tag": "cpu-v0.4.0",
+  "register": "M extension: mul, mulh, mulhsu, mulhu, div, divu, rem, remu and the w forms. Multiply completes in EXECUTE; divide-by-zero, signed overflow and small dividends complete in EXECUTE; other divides use a DIVIDE state, one step per clock from the quotient's highest possible bit. ISA string rv64im_zifencei.",
+  "breaking": "No (instructions added)",
+  "units": [
+   [
+    "Organisation",
+    "Multicycle core (rtl/cpu/rv64_core.sv)"
+   ],
+   [
+    "Control states",
+    "Fetch · Execute · Memory · Divide"
+   ],
+   [
+    "Issue",
+    "1 per clock"
+   ],
+   [
+    "Retirement",
+    "1 per clock"
+   ],
+   [
+    "Instruction cache",
+    "4 KiB, direct-mapped, 8-byte lines"
+   ],
+   [
+    "Data cache",
+    "4 KiB, direct-mapped, write-through"
+   ],
+   [
+    "Multiply / divide",
+    "M extension; divide one step per clock"
+   ]
+  ],
+  "marks": [
+   "a one-beat fetch buffer",
+   "requests issue from EXECUTE",
+   "writes acknowledged in the same clock"
+  ],
+  "dmips_ref": 1.0242,
+  "clocks_ref": 555.7,
+  "dmips_fast": null,
+  "ref_run": "2026-11-20 21:48:47 -0500",
+  "art": "art/v0.4.0.svg"
+ },
+ {
+  "no": 8,
+  "version": "0.5.0",
+  "title": "Le Duo",
+  "caption": "Two instructions in one clock: a second slot and a second retirement port.",
+  "date": "2026-11-20",
+  "date_fr": "20 novembre 2026",
+  "kind": "mc",
+  "status": "tagged",
+  "tag": "cpu-v0.5.0",
+  "register": "Dual issue: the instruction after an integer operation, a data-cache-hit load or a store to another beat executes in the same clock when it is a simple integer operation in the same 8-byte beat, independent of the first. New second retirement port retire2_* on rv64_core and retire2_valid on rv64_bram_soc.",
+  "breaking": "No (new ports; trace order unchanged)",
+  "units": [
+   [
+    "Organisation",
+    "Multicycle core (rtl/cpu/rv64_core.sv)"
+   ],
+   [
+    "Control states",
+    "Fetch · Execute · Memory · Divide"
+   ],
+   [
+    "Issue",
+    "2 per clock"
+   ],
+   [
+    "Retirement",
+    "2 per clock"
+   ],
+   [
+    "Instruction cache",
+    "4 KiB, direct-mapped, 8-byte lines"
+   ],
+   [
+    "Data cache",
+    "4 KiB, direct-mapped, write-through"
+   ],
+   [
+    "Second slot",
+    "simple integer"
+   ],
+   [
+    "Multiply / divide",
+    "M extension; divide one step per clock"
+   ]
+  ],
+  "marks": [
+   "a one-beat fetch buffer",
+   "requests issue from EXECUTE",
+   "writes acknowledged in the same clock"
+  ],
+  "dmips_ref": 1.3062,
+  "clocks_ref": 435.7,
+  "dmips_fast": null,
+  "ref_run": "2026-11-20 22:19:24 -0500",
+  "art": "art/v0.5.0.svg"
+ },
+ {
+  "no": 9,
+  "version": "0.5.1",
+  "title": "Le Pont",
+  "caption": "The second slot may reach into the next beat, and may be a conditional branch.",
+  "date": "2026-11-20",
+  "date_fr": "20 novembre 2026",
+  "kind": "mc",
+  "status": "tagged",
+  "tag": "cpu-v0.5.1",
+  "register": "Second slot widened: it may come from the next 8-byte beat when that beat is in the instruction cache, and may be a conditional branch with an aligned target.",
+  "breaking": "No",
+  "units": [
+   [
+    "Organisation",
+    "Multicycle core (rtl/cpu/rv64_core.sv)"
+   ],
+   [
+    "Control states",
+    "Fetch · Execute · Memory · Divide"
+   ],
+   [
+    "Issue",
+    "2 per clock"
+   ],
+   [
+    "Retirement",
+    "2 per clock"
+   ],
+   [
+    "Instruction cache",
+    "4 KiB, direct-mapped, 8-byte lines"
+   ],
+   [
+    "Data cache",
+    "4 KiB, direct-mapped, write-through"
+   ],
+   [
+    "Second slot",
+    "simple integer, branch"
+   ],
+   [
+    "Multiply / divide",
+    "M extension; divide one step per clock"
+   ]
+  ],
+  "marks": [
+   "a one-beat fetch buffer",
+   "requests issue from EXECUTE",
+   "writes acknowledged in the same clock",
+   "second slot across beats"
+  ],
+  "dmips_ref": 1.4309,
+  "clocks_ref": 397.8,
+  "dmips_fast": 1.5773,
+  "ref_run": "2026-11-20 22:24:21 -0500",
+  "art": "art/v0.5.1.svg"
+ },
+ {
+  "no": 10,
+  "version": "0.5.2",
+  "title": "Deux Lectures",
+  "caption": "A second data-cache port lets an aligned load ride in the second slot.",
+  "date": "2026-11-20",
+  "date_fr": "20 novembre 2026",
+  "kind": "mc",
+  "status": "tagged",
+  "tag": "cpu-v0.5.2",
+  "register": "Second slot may also be an aligned load that hits the data cache, read through a second data-cache port, when the first slot is not a store.",
+  "breaking": "No",
+  "units": [
+   [
+    "Organisation",
+    "Multicycle core (rtl/cpu/rv64_core.sv)"
+   ],
+   [
+    "Control states",
+    "Fetch · Execute · Memory · Divide"
+   ],
+   [
+    "Issue",
+    "2 per clock"
+   ],
+   [
+    "Retirement",
+    "2 per clock"
+   ],
+   [
+    "Instruction cache",
+    "4 KiB, direct-mapped, 8-byte lines"
+   ],
+   [
+    "Data cache",
+    "4 KiB, direct-mapped, write-through"
+   ],
+   [
+    "Second slot",
+    "simple integer, branch, load"
+   ],
+   [
+    "Multiply / divide",
+    "M extension; divide one step per clock"
+   ]
+  ],
+  "marks": [
+   "a one-beat fetch buffer",
+   "requests issue from EXECUTE",
+   "writes acknowledged in the same clock",
+   "second slot across beats",
+   "second data-cache port"
+  ],
+  "dmips_ref": 1.464,
+  "clocks_ref": 388.8,
+  "dmips_fast": 1.6315,
+  "ref_run": "2026-11-20 22:34:43 -0500",
+  "art": "art/v0.5.2.svg"
+ },
+ {
+  "no": 11,
+  "version": "0.5.3",
+  "title": "Le Saut",
+  "caption": "Jumps may take the second slot; a not-taken branch may lead the pair.",
+  "date": "2026-11-20",
+  "date_fr": "20 novembre 2026",
+  "kind": "mc",
+  "status": "tagged",
+  "tag": "cpu-v0.5.3",
+  "register": "Pairing widened again: a not-taken branch may be first; JAL or JALR with an aligned target may be second; a data-cache-hit load may pair after a store to a different beat.",
+  "breaking": "No",
+  "units": [
+   [
+    "Organisation",
+    "Multicycle core (rtl/cpu/rv64_core.sv)"
+   ],
+   [
+    "Control states",
+    "Fetch · Execute · Memory · Divide"
+   ],
+   [
+    "Issue",
+    "2 per clock"
+   ],
+   [
+    "Retirement",
+    "2 per clock"
+   ],
+   [
+    "Instruction cache",
+    "4 KiB, direct-mapped, 8-byte lines"
+   ],
+   [
+    "Data cache",
+    "4 KiB, direct-mapped, write-through"
+   ],
+   [
+    "Second slot",
+    "simple integer, branch, load, jump"
+   ],
+   [
+    "Multiply / divide",
+    "M extension; divide one step per clock"
+   ]
+  ],
+  "marks": [
+   "a one-beat fetch buffer",
+   "requests issue from EXECUTE",
+   "writes acknowledged in the same clock",
+   "second slot across beats",
+   "second data-cache port",
+   "jump in the second slot"
+  ],
+  "dmips_ref": 1.5518,
+  "clocks_ref": 366.8,
+  "dmips_fast": 1.8309,
+  "ref_run": "2026-11-20 22:40:50 -0500",
+  "art": "art/v0.5.3.svg"
+ },
+ {
+  "no": 12,
+  "version": "0.5.4",
+  "title": "Le Relais",
+  "caption": "Stores join the second slot, and results are passed hand to hand within the clock.",
+  "date": "2026-11-20",
+  "date_fr": "20 novembre 2026",
+  "kind": "mc",
+  "status": "tagged",
+  "tag": "cpu-v0.5.4",
+  "register": "Second slot may be an aligned store when the first slot does not use the bus (it waits in MEMORY if the bus stalls, and traps precisely on a bus error); integer results of the first slot are forwarded to the second slot's operands in the same clock; same-destination pairs allowed.",
+  "breaking": "No",
+  "units": [
+   [
+    "Organisation",
+    "Multicycle core (rtl/cpu/rv64_core.sv)"
+   ],
+   [
+    "Control states",
+    "Fetch · Execute · Memory · Divide"
+   ],
+   [
+    "Issue",
+    "2 per clock"
+   ],
+   [
+    "Retirement",
+    "2 per clock"
+   ],
+   [
+    "Instruction cache",
+    "4 KiB, direct-mapped, 8-byte lines"
+   ],
+   [
+    "Data cache",
+    "4 KiB, direct-mapped, write-through"
+   ],
+   [
+    "Second slot",
+    "simple integer, branch, load, jump, store"
+   ],
+   [
+    "Multiply / divide",
+    "M extension; divide one step per clock"
+   ]
+  ],
+  "marks": [
+   "a one-beat fetch buffer",
+   "requests issue from EXECUTE",
+   "writes acknowledged in the same clock",
+   "second slot across beats",
+   "second data-cache port",
+   "jump in the second slot",
+   "slot-to-slot forwarding"
+  ],
+  "dmips_ref": 1.6951,
+  "clocks_ref": 335.8,
+  "dmips_fast": 2.1091,
+  "ref_run": "2026-11-20 22:48:39 -0500",
+  "art": "art/v0.5.4.svg"
+ },
+ {
+  "no": 13,
+  "version": "0.5.5",
+  "title": "Le Repli",
+  "caption": "Branch folding: a jump and the instruction at its target execute together.",
+  "date": "2026-11-20",
+  "date_fr": "20 novembre 2026",
+  "kind": "mc",
+  "status": "tagged",
+  "tag": "cpu-v0.5.5",
+  "register": "Branch folding: when the first slot is a jump or a taken branch, the second slot executes the instruction at its target, read from the instruction cache in the same clock; JAL/JALR links are forwarded.",
+  "breaking": "No",
+  "units": [
+   [
+    "Organisation",
+    "Multicycle core (rtl/cpu/rv64_core.sv)"
+   ],
+   [
+    "Control states",
+    "Fetch · Execute · Memory · Divide"
+   ],
+   [
+    "Issue",
+    "2 per clock"
+   ],
+   [
+    "Retirement",
+    "2 per clock"
+   ],
+   [
+    "Instruction cache",
+    "4 KiB, direct-mapped, 8-byte lines"
+   ],
+   [
+    "Data cache",
+    "4 KiB, direct-mapped, write-through"
+   ],
+   [
+    "Second slot",
+    "simple integer, branch, load, jump, store"
+   ],
+   [
+    "Branch folding",
+    "yes"
+   ],
+   [
+    "Multiply / divide",
+    "M extension; divide one step per clock"
+   ]
+  ],
+  "marks": [
+   "a one-beat fetch buffer",
+   "requests issue from EXECUTE",
+   "writes acknowledged in the same clock",
+   "second slot across beats",
+   "second data-cache port",
+   "jump in the second slot",
+   "slot-to-slot forwarding",
+   "branch folding"
+  ],
+  "dmips_ref": 1.9777,
+  "clocks_ref": 287.8,
+  "dmips_fast": 2.2598,
+  "ref_run": "2026-11-20 22:58:24 -0500",
+  "art": "art/v0.5.5.svg"
+ },
+ {
+  "no": 14,
+  "version": "0.6.0",
+  "title": "La Grammaire des Bits",
+  "caption": "The B extension (Zba, Zbb, Zbs) enters both slots; three multipliers become one.",
+  "date": "2026-11-20",
+  "date_fr": "20 novembre 2026",
+  "kind": "mc",
+  "status": "tagged",
+  "tag": "cpu-v0.6.0",
+  "register": "B extension (Zba, Zbb, Zbs) in both issue slots; ISA string rv64im_zba_zbb_zbs_zifencei. The three 128-bit multipliers are replaced by one signed 65x65 product (same results).",
+  "breaking": "No (instructions added)",
+  "units": [
+   [
+    "Organisation",
+    "Multicycle core (rtl/cpu/rv64_core.sv)"
+   ],
+   [
+    "Control states",
+    "Fetch · Execute · Memory · Divide"
+   ],
+   [
+    "Issue",
+    "2 per clock"
+   ],
+   [
+    "Retirement",
+    "2 per clock"
+   ],
+   [
+    "Instruction cache",
+    "4 KiB, direct-mapped, 8-byte lines"
+   ],
+   [
+    "Data cache",
+    "4 KiB, direct-mapped, write-through"
+   ],
+   [
+    "Second slot",
+    "simple integer, branch, load, jump, store"
+   ],
+   [
+    "Branch folding",
+    "yes"
+   ],
+   [
+    "Multiply / divide",
+    "M extension; divide one step per clock"
+   ],
+   [
+    "Bit manipulation",
+    "Zba, Zbb, Zbs"
+   ]
+  ],
+  "marks": [
+   "a one-beat fetch buffer",
+   "requests issue from EXECUTE",
+   "writes acknowledged in the same clock",
+   "second slot across beats",
+   "second data-cache port",
+   "jump in the second slot",
+   "slot-to-slot forwarding",
+   "branch folding"
+  ],
+  "dmips_ref": 1.9916,
+  "clocks_ref": 285.8,
+  "dmips_fast": 2.2964,
+  "ref_run": "2026-11-20 23:12:36 -0500",
+  "art": "art/v0.6.0.svg"
+ },
+ {
+  "no": 15,
+  "version": "0.7.0",
+  "title": "Le Trio",
+  "caption": "A third, ALU-only slot and a third retirement port: three instructions in a clock.",
+  "date": "2026-11-20",
+  "date_fr": "20 novembre 2026",
+  "kind": "mc",
+  "status": "tagged",
+  "tag": "cpu-v0.7.0",
+  "register": "ALU-only third issue slot: the instruction after the second slot, read from the instruction cache, issues in the same clock when it is a simple integer or B operation that does not depend on the second slot; new third retirement port retire3_* on rv64_core and retire3_valid on rv64_bram_soc.",
+  "breaking": "No (new ports; trace order unchanged)",
+  "units": [
+   [
+    "Organisation",
+    "Multicycle core (rtl/cpu/rv64_core.sv)"
+   ],
+   [
+    "Control states",
+    "Fetch · Execute · Memory · Divide"
+   ],
+   [
+    "Issue",
+    "3 per clock"
+   ],
+   [
+    "Retirement",
+    "3 per clock"
+   ],
+   [
+    "Instruction cache",
+    "4 KiB, direct-mapped, 8-byte lines"
+   ],
+   [
+    "Data cache",
+    "4 KiB, direct-mapped, write-through"
+   ],
+   [
+    "Second slot",
+    "simple integer, branch, load, jump, store"
+   ],
+   [
+    "Branch folding",
+    "yes"
+   ],
+   [
+    "Multiply / divide",
+    "M extension; divide one step per clock"
+   ],
+   [
+    "Bit manipulation",
+    "Zba, Zbb, Zbs"
+   ]
+  ],
+  "marks": [
+   "a one-beat fetch buffer",
+   "requests issue from EXECUTE",
+   "writes acknowledged in the same clock",
+   "second slot across beats",
+   "second data-cache port",
+   "jump in the second slot",
+   "slot-to-slot forwarding",
+   "branch folding"
+  ],
+  "dmips_ref": 2.2163,
+  "clocks_ref": 256.8,
+  "dmips_fast": 2.6243,
+  "ref_run": "2026-11-20 23:23:03 -0500",
+  "art": "art/v0.7.0.svg"
+ },
+ {
+  "no": 16,
+  "version": "0.7.1",
+  "title": "Le Temps Compté",
+  "caption": "The multiplier is registered: one clock longer, and the longest path shortens from 80 to 52 LUT levels.",
+  "date": "2026-11-20",
+  "date_fr": "20 novembre 2026",
+  "kind": "mc",
+  "status": "tagged",
+  "tag": "cpu-v0.7.1",
+  "register": "Registered multiplier: a multiply registers its operands in EXECUTE and retires from a new MULTIPLY state one clock later (two clocks instead of one), and no longer pairs with a following instruction. Generic 6-input LUT depth of the core falls from 80 to 52 levels.",
+  "breaking": "No (timing only)",
+  "units": [
+   [
+    "Organisation",
+    "Multicycle core (rtl/cpu/rv64_core.sv)"
+   ],
+   [
+    "Control states",
+    "Fetch · Execute · Memory · Divide · Multiply"
+   ],
+   [
+    "Issue",
+    "3 per clock"
+   ],
+   [
+    "Retirement",
+    "3 per clock"
+   ],
+   [
+    "Instruction cache",
+    "4 KiB, direct-mapped, 8-byte lines"
+   ],
+   [
+    "Data cache",
+    "4 KiB, direct-mapped, write-through"
+   ],
+   [
+    "Second slot",
+    "simple integer, branch, load, jump, store"
+   ],
+   [
+    "Branch folding",
+    "yes"
+   ],
+   [
+    "Multiply / divide",
+    "M extension; divide one step per clock"
+   ],
+   [
+    "Bit manipulation",
+    "Zba, Zbb, Zbs"
+   ]
+  ],
+  "marks": [
+   "a one-beat fetch buffer",
+   "requests issue from EXECUTE",
+   "writes acknowledged in the same clock",
+   "second slot across beats",
+   "second data-cache port",
+   "jump in the second slot",
+   "slot-to-slot forwarding",
+   "branch folding",
+   "registered multiplier"
+  ],
+  "dmips_ref": 2.2163,
+  "clocks_ref": 256.8,
+  "dmips_fast": 2.6243,
+  "ref_run": "2026-11-20 23:53:49 -0500",
+  "art": "art/v0.7.1.svg"
+ },
+ {
+  "no": 17,
+  "version": "0.8.0",
+  "title": "La Chaîne",
+  "caption": "A second implementation: a four-stage single-issue pipeline with a 256-entry branch target buffer.",
+  "date": "2026-11-21",
+  "date_fr": "21 novembre 2026",
+  "kind": "pipe",
+  "status": "tagged",
+  "tag": "cpu-v0.8.0",
+  "register": "Second implementation of the same contract: rtl/cpu/rv64_pipe.sv (da2caf82aff0), a four-stage single-issue pipeline with a 256-entry BTB and return stack, block-RAM-style caches and a LUT-RAM-friendly register file zeroed by a sequencer after reset. Selected with --core pipe; rv64_core.sv (multicycle, unchanged from 0.7.1) stays the default.",
+  "breaking": "No for ports and ISA; the pipelined core issues speculative instruction fetches",
+  "units": [
+   [
+    "Organisation",
+    "Pipelined, single issue (rtl/cpu/rv64_pipe.sv)"
+   ],
+   [
+    "Stages",
+    "F · D · E · M"
+   ],
+   [
+    "Branch target buffer",
+    "256 entries"
+   ],
+   [
+    "Return stack",
+    "4 entries"
+   ],
+   [
+    "Caches",
+    "4 KiB each, block-RAM style"
+   ],
+   [
+    "Retirement",
+    "1 per clock"
+   ]
+  ],
+  "marks": [
+   "a one-beat fetch buffer",
+   "requests issue from EXECUTE",
+   "writes acknowledged in the same clock",
+   "second slot across beats",
+   "second data-cache port",
+   "jump in the second slot",
+   "slot-to-slot forwarding",
+   "branch folding",
+   "registered multiplier"
+  ],
+  "dmips_ref": 0.967,
+  "clocks_ref": 588.6,
+  "dmips_fast": 1.1744,
+  "ref_run": "2026-11-21 00:41:58 -0500",
+  "art": "art/v0.8.0.svg"
+ },
+ {
+  "no": 18,
+  "version": "0.8.1",
+  "title": "L'Antichambre",
+  "caption": "A fetch queue between F and D, split redirects, and an extra stage for slow bus accesses.",
+  "date": "2026-11-21",
+  "date_fr": "21 novembre 2026",
+  "kind": "pipe",
+  "status": "tagged",
+  "tag": "cpu-v0.8.1",
+  "register": "Pipelined implementation rv64_pipe.sv (077ac0a99210) restructured for clock rate: fetch queue between F and D, redirects sent once from D (prediction check) and E (branch direction, JALR target), registered store/fence.i flush, X stage for bus accesses that do not complete in M's first clock, return stack in F. Multicycle rv64_core.sv unchanged.",
+  "breaking": "No",
+  "units": [
+   [
+    "Organisation",
+    "Pipelined, single issue (rtl/cpu/rv64_pipe.sv)"
+   ],
+   [
+    "Stages",
+    "F · D · E · M · X"
+   ],
+   [
+    "Branch target buffer",
+    "256 entries"
+   ],
+   [
+    "Return stack",
+    "4 entries"
+   ],
+   [
+    "Caches",
+    "4 KiB each, block-RAM style"
+   ],
+   [
+    "Fetch queue",
+    "between F and D"
+   ],
+   [
+    "Retirement",
+    "1 per clock"
+   ]
+  ],
+  "marks": [
+   "a one-beat fetch buffer",
+   "requests issue from EXECUTE",
+   "writes acknowledged in the same clock",
+   "second slot across beats",
+   "second data-cache port",
+   "jump in the second slot",
+   "slot-to-slot forwarding",
+   "branch folding",
+   "registered multiplier",
+   "fetch queue and X stage"
+  ],
+  "dmips_ref": null,
+  "clocks_ref": null,
+  "dmips_fast": null,
+  "ref_run": null,
+  "art": "art/v0.8.1.svg"
+ },
+ {
+  "no": 19,
+  "version": "0.9.0",
+  "title": "Le Désordre",
+  "caption": "A third implementation, out of order: rename, a 32-entry reorder buffer and an 8-entry issue queue.",
+  "date": "2026-11-21",
+  "date_fr": "21 novembre 2026",
+  "kind": "ooo",
+  "status": "tagged",
+  "tag": "cpu-v0.9.0",
+  "register": "Third implementation of the same contract: rtl/cpu/rv64_ooo.sv (055953ba9c6d), out of order: rename onto 64 physical registers, 32-entry reorder buffer retiring in order, 8-entry issue queue, an integer port and a load/store port, stores written at retirement, early fetch redirect on a mispredict with rename waiting for the branch to retire. Selected with --core ooo.",
+  "breaking": "No for ports and ISA; the out-of-order core issues speculative fetches and loads, holding any presented request until it completes",
+  "units": [
+   [
+    "Organisation",
+    "Out of order (rtl/cpu/rv64_ooo.sv)"
+   ],
+   [
+    "Fetch / rename / retire",
+    "1 / 1 / 1 per clock"
+   ],
+   [
+    "Reorder buffer",
+    "32 entries"
+   ],
+   [
+    "Physical registers",
+    "64"
+   ],
+   [
+    "Issue queue",
+    "8 entries"
+   ],
+   [
+    "Integer ports",
+    "1"
+   ],
+   [
+    "Memory port",
+    "one load/store port, memory issued in program order"
+   ],
+   [
+    "Branch target buffer",
+    "256 entries, with return stack"
+   ],
+   [
+    "Caches",
+    "4 KiB instruction, 4 KiB data"
+   ]
+  ],
+  "marks": [
+   "a one-beat fetch buffer",
+   "requests issue from EXECUTE",
+   "writes acknowledged in the same clock",
+   "second slot across beats",
+   "second data-cache port",
+   "jump in the second slot",
+   "slot-to-slot forwarding",
+   "branch folding",
+   "registered multiplier",
+   "fetch queue and X stage"
+  ],
+  "dmips_ref": 0.7888,
+  "clocks_ref": 721.6,
+  "dmips_fast": 0.9306,
+  "ref_run": "2026-11-21 01:33:28 -0500",
+  "art": "art/v0.9.0.svg"
+ },
+ {
+  "no": 20,
+  "version": "0.9.1",
+  "title": "Le Passage des Valeurs",
+  "caption": "A load may take its value straight from an older store still waiting to retire.",
+  "date": "2026-11-21",
+  "date_fr": "21 novembre 2026",
+  "kind": "ooo",
+  "status": "tagged",
+  "tag": "cpu-v0.9.1",
+  "register": "Out-of-order core rv64_ooo.sv (50ffb15f845a): a load issues once every older store has its address and data, with forwarding from the youngest older store to its beat when that store covers the load's bytes (partial overlap waits for retirement and reads the bus). New test store_load_forwarding.",
+  "breaking": "No",
+  "units": [
+   [
+    "Organisation",
+    "Out of order (rtl/cpu/rv64_ooo.sv)"
+   ],
+   [
+    "Fetch / rename / retire",
+    "1 / 1 / 1 per clock"
+   ],
+   [
+    "Reorder buffer",
+    "32 entries"
+   ],
+   [
+    "Physical registers",
+    "64"
+   ],
+   [
+    "Issue queue",
+    "8 entries"
+   ],
+   [
+    "Integer ports",
+    "1"
+   ],
+   [
+    "Memory port",
+    "one load/store port, memory issued in program order"
+   ],
+   [
+    "Branch target buffer",
+    "256 entries, with return stack"
+   ],
+   [
+    "Caches",
+    "4 KiB instruction, 4 KiB data"
+   ]
+  ],
+  "marks": [
+   "a one-beat fetch buffer",
+   "requests issue from EXECUTE",
+   "writes acknowledged in the same clock",
+   "second slot across beats",
+   "second data-cache port",
+   "jump in the second slot",
+   "slot-to-slot forwarding",
+   "branch folding",
+   "registered multiplier",
+   "fetch queue and X stage",
+   "store-to-load forwarding"
+  ],
+  "dmips_ref": 0.9428,
+  "clocks_ref": 603.7,
+  "dmips_fast": 1.0684,
+  "ref_run": "2026-11-21 01:51:24 -0500",
+  "art": "art/v0.9.1.svg"
+ },
+ {
+  "no": 21,
+  "version": "0.9.2",
+  "title": "Les Jumeaux",
+  "caption": "Two-wide: two fetched, two renamed, two integer ports, two retired per clock.",
+  "date": "2026-11-21",
+  "date_fr": "21 novembre 2026",
+  "kind": "ooo",
+  "status": "tagged",
+  "tag": "cpu-v0.9.2",
+  "register": "Out-of-order core rv64_ooo.sv (b2650b2af34e) made two-wide: two-instruction fetch from an aligned beat with a second BTB lookup, 8-entry fetch queue, two D slots, rename and dispatch of two per clock, a second integer port for simple integer and B operations, memory instructions issued in program order, two retirements per clock through retire2_*.",
+  "breaking": "No (uses the existing second retirement port)",
+  "units": [
+   [
+    "Organisation",
+    "Out of order (rtl/cpu/rv64_ooo.sv)"
+   ],
+   [
+    "Fetch / rename / retire",
+    "2 / 2 / 2 per clock"
+   ],
+   [
+    "Reorder buffer",
+    "32 entries"
+   ],
+   [
+    "Physical registers",
+    "64"
+   ],
+   [
+    "Issue queue",
+    "8 entries"
+   ],
+   [
+    "Integer ports",
+    "2"
+   ],
+   [
+    "Memory port",
+    "one load/store port, memory issued in program order"
+   ],
+   [
+    "Branch target buffer",
+    "256 entries, with return stack"
+   ],
+   [
+    "Caches",
+    "4 KiB instruction, 4 KiB data"
+   ]
+  ],
+  "marks": [
+   "a one-beat fetch buffer",
+   "requests issue from EXECUTE",
+   "writes acknowledged in the same clock",
+   "second slot across beats",
+   "second data-cache port",
+   "jump in the second slot",
+   "slot-to-slot forwarding",
+   "branch folding",
+   "registered multiplier",
+   "fetch queue and X stage",
+   "store-to-load forwarding"
+  ],
+  "dmips_ref": 1.2768,
+  "clocks_ref": 445.8,
+  "dmips_fast": 1.4419,
+  "ref_run": "2026-11-21 02:12:10 -0500",
+  "art": "art/v0.9.2.svg"
+ },
+ {
+  "no": 22,
+  "version": "0.9.3",
+  "title": "Le Dernier Mot",
+  "caption": "Stores read their data at retirement and no longer make the head of the line wait.",
+  "date": "2026-11-21",
+  "date_fr": "21 novembre 2026",
+  "kind": "ooo",
+  "status": "tagged",
+  "tag": "cpu-v0.9.3",
+  "register": "Out-of-order core rv64_ooo.sv (b719dfb760e3): stores issue on their address and read their data register at retirement; the retiring store's cache update and instruction-cache invalidation move to a pending register applied one clock later (alongside a fill to another line), so a store no longer waits a clock at the head; a load that waited in its second stage reads the bus.",
+  "breaking": "No",
+  "units": [
+   [
+    "Organisation",
+    "Out of order (rtl/cpu/rv64_ooo.sv)"
+   ],
+   [
+    "Fetch / rename / retire",
+    "2 / 2 / 2 per clock"
+   ],
+   [
+    "Reorder buffer",
+    "32 entries"
+   ],
+   [
+    "Physical registers",
+    "64"
+   ],
+   [
+    "Issue queue",
+    "8 entries"
+   ],
+   [
+    "Integer ports",
+    "2"
+   ],
+   [
+    "Memory port",
+    "one load/store port, memory issued in program order"
+   ],
+   [
+    "Branch target buffer",
+    "256 entries, with return stack"
+   ],
+   [
+    "Caches",
+    "4 KiB instruction, 4 KiB data"
+   ]
+  ],
+  "marks": [
+   "a one-beat fetch buffer",
+   "requests issue from EXECUTE",
+   "writes acknowledged in the same clock",
+   "second slot across beats",
+   "second data-cache port",
+   "jump in the second slot",
+   "slot-to-slot forwarding",
+   "branch folding",
+   "registered multiplier",
+   "fetch queue and X stage",
+   "store-to-load forwarding",
+   "stores finish at retirement"
+  ],
+  "dmips_ref": 1.5648,
+  "clocks_ref": 363.7,
+  "dmips_fast": 1.5777,
+  "ref_run": "2026-11-21 02:54:13 -0500",
+  "art": "art/v0.9.3.svg"
+ },
+ {
+  "no": 23,
+  "version": "0.9.4",
+  "title": "Par-dessus la Frontière",
+  "caption": "Fetch reads the next beat too, so a pair may straddle a boundary.",
+  "date": "2026-11-21",
+  "date_fr": "21 novembre 2026",
+  "kind": "ooo",
+  "status": "tagged",
+  "tag": "cpu-v0.9.4",
+  "register": "Out-of-order core rv64_ooo.sv (2581fcef3389): fetch also reads the next beat, so the second instruction of a fetch group can come from it.",
+  "breaking": "No",
+  "units": [
+   [
+    "Organisation",
+    "Out of order (rtl/cpu/rv64_ooo.sv)"
+   ],
+   [
+    "Fetch / rename / retire",
+    "2 / 2 / 2 per clock"
+   ],
+   [
+    "Reorder buffer",
+    "32 entries"
+   ],
+   [
+    "Physical registers",
+    "64"
+   ],
+   [
+    "Issue queue",
+    "8 entries"
+   ],
+   [
+    "Integer ports",
+    "2"
+   ],
+   [
+    "Memory port",
+    "one load/store port, memory issued in program order"
+   ],
+   [
+    "Branch target buffer",
+    "256 entries, with return stack"
+   ],
+   [
+    "Caches",
+    "4 KiB instruction, 4 KiB data"
+   ]
+  ],
+  "marks": [
+   "a one-beat fetch buffer",
+   "requests issue from EXECUTE",
+   "writes acknowledged in the same clock",
+   "second slot across beats",
+   "second data-cache port",
+   "jump in the second slot",
+   "slot-to-slot forwarding",
+   "branch folding",
+   "registered multiplier",
+   "fetch queue and X stage",
+   "store-to-load forwarding",
+   "stores finish at retirement",
+   "cross-beat fetch"
+  ],
+  "dmips_ref": 1.5778,
+  "clocks_ref": 360.7,
+  "dmips_fast": 1.618,
+  "ref_run": "2026-11-21 07:33:22 -0500",
+  "art": "art/v0.9.4.svg"
+ },
+ {
+  "no": 24,
+  "version": "0.10.0",
+  "title": "L'Octuple",
+  "caption": "Eight wide, sized after published measurements of the Apple M5 performance core: 128-entry reorder buffer, 160 physical registers, 64-entry issue queue, 8 ALUs (3 full), 3 load and 2 store ports.",
+  "date": "2026-11-21",
+  "date_fr": "21 novembre 2026",
+  "kind": "ooo",
+  "status": "tagged",
+  "tag": "cpu-v0.10.0",
+  "register": "Out-of-order core rv64_ooo.sv (released file c406a99e9105; corrected the same day, the row first gave d71a5889c2fa, an earlier candidate that hung) replaced by a wide behavioural model configured after the Apple M5 performance core: 8-wide fetch, rename and retirement, 128-entry ROB, 160 physical registers, 64-entry issue queue, 8 ALUs (3 full), 3 load and 2 store-address ports, replaying loads, per-branch rename snapshots, 128 KiB caches. New wide trace outputs rt_*; testbenches log a store's write just before its own retirement.",
+  "breaking": "Yes: new rt_* outputs on the out-of-order core and the store-write trace rule generalized; the other cores and ports are unchanged",
+  "units": [
+   [
+    "Organisation",
+    "Out of order (rtl/cpu/rv64_ooo.sv)"
+   ],
+   [
+    "Fetch / rename / retire",
+    "8 / 8 / 8 per clock"
+   ],
+   [
+    "Reorder buffer",
+    "128 entries"
+   ],
+   [
+    "Physical registers",
+    "160"
+   ],
+   [
+    "Issue queue",
+    "64 entries"
+   ],
+   [
+    "ALUs",
+    "8, of which 3 full (branch, multiply, divide)"
+   ],
+   [
+    "Memory ports",
+    "3 load, 2 store-address"
+   ],
+   [
+    "Branch target buffer",
+    "256 entries, with return stack"
+   ],
+   [
+    "Caches",
+    "128 KiB instruction, 128 KiB data"
+   ],
+   [
+    "Taken transfers per fetch",
+    "1"
+   ]
+  ],
+  "marks": [
+   "a one-beat fetch buffer",
+   "requests issue from EXECUTE",
+   "writes acknowledged in the same clock",
+   "second slot across beats",
+   "second data-cache port",
+   "jump in the second slot",
+   "slot-to-slot forwarding",
+   "branch folding",
+   "registered multiplier",
+   "fetch queue and X stage",
+   "store-to-load forwarding",
+   "stores finish at retirement",
+   "cross-beat fetch"
+  ],
+  "dmips_ref": 4.3169,
+  "clocks_ref": 131.8,
+  "dmips_fast": 3.8484,
+  "ref_run": "2026-11-21 08:51:11 -0500",
+  "art": "art/v0.10.0.svg"
+ },
+ {
+  "no": 25,
+  "version": "0.10.1",
+  "title": "Le Double Saut",
+  "caption": "Fetch follows two predicted-taken transfers in one clock.",
+  "date": "2026-11-21",
+  "date_fr": "21 novembre 2026",
+  "kind": "ooo",
+  "status": "tagged",
+  "tag": "cpu-v0.10.1",
+  "register": "Out-of-order core: fetch follows two predicted-taken transfers per clock (one call or return per group). Dhrystone timing probe 65,933 to 60,935 clocks (reference), 73,947 to 65,944 (fast runtime)",
+  "breaking": "No",
+  "units": [
+   [
+    "Organisation",
+    "Out of order (rtl/cpu/rv64_ooo.sv)"
+   ],
+   [
+    "Fetch / rename / retire",
+    "8 / 8 / 8 per clock"
+   ],
+   [
+    "Reorder buffer",
+    "128 entries"
+   ],
+   [
+    "Physical registers",
+    "160"
+   ],
+   [
+    "Issue queue",
+    "64 entries"
+   ],
+   [
+    "ALUs",
+    "8, of which 3 full (branch, multiply, divide)"
+   ],
+   [
+    "Memory ports",
+    "3 load, 2 store-address"
+   ],
+   [
+    "Branch target buffer",
+    "256 entries, with return stack"
+   ],
+   [
+    "Caches",
+    "128 KiB instruction, 128 KiB data"
+   ],
+   [
+    "Taken transfers per fetch",
+    "2"
+   ]
+  ],
+  "marks": [
+   "a one-beat fetch buffer",
+   "requests issue from EXECUTE",
+   "writes acknowledged in the same clock",
+   "second slot across beats",
+   "second data-cache port",
+   "jump in the second slot",
+   "slot-to-slot forwarding",
+   "branch folding",
+   "registered multiplier",
+   "fetch queue and X stage",
+   "store-to-load forwarding",
+   "stores finish at retirement",
+   "cross-beat fetch"
+  ],
+  "dmips_ref": 4.6702,
+  "clocks_ref": 121.9,
+  "dmips_fast": 4.3154,
+  "ref_run": "2026-11-21 10:10:26 -0500",
+  "art": "art/v0.10.1.svg"
+ },
+ {
+  "no": 26,
+  "version": "0.11.0",
+  "title": "La Boucle",
+  "caption": "A loop predictor, a two-way data cache and paired store writes on the bus.",
+  "date": "2026-11-21",
+  "date_fr": "21 novembre 2026",
+  "kind": "ooo",
+  "status": "tagged",
+  "tag": "cpu-v0.11.0",
+  "register": "Out-of-order core: loop predictor; two-way data cache (memory agent); paired store writes on the bus (mem_*2, PAIR_WRITES; memory agent); fixes from the Codex review (owner-tied fill errors, byte-granular forwarding that keeps read faults, FENCE ordering for loads, halt pulses, RW range, return-stack restore, multiply/divide latency 3/7). Timing probe: reference 60,935 to 46,010 clocks, fast runtime 65,944 to 46,528",
+  "breaking": "Yes: new mem_*2 ports and PAIR_WRITES parameter on the out-of-order core; the SoC pairs writes in out-of-order builds; the other cores are unchanged",
+  "units": [
+   [
+    "Organisation",
+    "Out of order (rtl/cpu/rv64_ooo.sv)"
+   ],
+   [
+    "Fetch / rename / retire",
+    "8 / 8 / 8 per clock"
+   ],
+   [
+    "Reorder buffer",
+    "128 entries"
+   ],
+   [
+    "Physical registers",
+    "160"
+   ],
+   [
+    "Issue queue",
+    "64 entries"
+   ],
+   [
+    "ALUs",
+    "8, of which 3 full (branch, multiply, divide)"
+   ],
+   [
+    "Memory ports",
+    "3 load, 2 store-address"
+   ],
+   [
+    "Branch target buffer",
+    "256 entries, with return stack"
+   ],
+   [
+    "Caches",
+    "128 KiB instruction, 128 KiB data, two-way data cache"
+   ],
+   [
+    "Taken transfers per fetch",
+    "2"
+   ],
+   [
+    "Loop predictor",
+    "yes"
+   ],
+   [
+    "Store writes",
+    "paired on the bus"
+   ]
+  ],
+  "marks": [
+   "a one-beat fetch buffer",
+   "requests issue from EXECUTE",
+   "writes acknowledged in the same clock",
+   "second slot across beats",
+   "second data-cache port",
+   "jump in the second slot",
+   "slot-to-slot forwarding",
+   "branch folding",
+   "registered multiplier",
+   "fetch queue and X stage",
+   "store-to-load forwarding",
+   "stores finish at retirement",
+   "cross-beat fetch"
+  ],
+  "dmips_ref": 6.1851,
+  "clocks_ref": 92.0,
+  "dmips_fast": 6.1162,
+  "ref_run": "2026-11-21 10:55:26 -0500",
+  "art": "art/v0.11.0.svg"
+ },
+ {
+  "no": 27,
+  "version": "0.11.1",
+  "title": "Le Pressentiment",
+  "caption": "Value prediction for loads, multiplies and divides; fetch predecode of direct jumps, calls and returns.",
+  "date": "2026-11-21",
+  "date_fr": "21 novembre 2026",
+  "kind": "ooo",
+  "status": "tagged",
+  "tag": "cpu-v0.11.1",
+  "register": "Out-of-order core: value prediction for loads, multiplies and divides (last value, 8 equal results, refetch after a wrong guess); fetch predecode of direct jumps, calls, returns and backward branches missing in the BTB. Second Codex review fixes (a fetch fault held across a redirect, loop-count limit). Memory agent: load wakeup at issue, memory-dependence speculation with a load-wait table, retirement past the store write. Timing probe: fast runtime 46,528 to 37,609 clocks, reference 46,010 to 44,550. New tests: value change, paired-store faults, forwarded-load read fault, six memory-dependence programs",
+  "breaking": "No",
+  "units": [
+   [
+    "Organisation",
+    "Out of order (rtl/cpu/rv64_ooo.sv)"
+   ],
+   [
+    "Fetch / rename / retire",
+    "8 / 8 / 8 per clock"
+   ],
+   [
+    "Reorder buffer",
+    "128 entries"
+   ],
+   [
+    "Physical registers",
+    "160"
+   ],
+   [
+    "Issue queue",
+    "64 entries"
+   ],
+   [
+    "ALUs",
+    "8, of which 3 full (branch, multiply, divide)"
+   ],
+   [
+    "Memory ports",
+    "3 load, 2 store-address"
+   ],
+   [
+    "Branch target buffer",
+    "256 entries, with return stack"
+   ],
+   [
+    "Caches",
+    "128 KiB instruction, 128 KiB data, two-way data cache"
+   ],
+   [
+    "Taken transfers per fetch",
+    "2"
+   ],
+   [
+    "Loop predictor",
+    "yes"
+   ],
+   [
+    "Store writes",
+    "paired on the bus"
+   ],
+   [
+    "Value prediction",
+    "loads, multiplies, divides"
+   ],
+   [
+    "Fetch predecode",
+    "direct jumps, calls, returns, backward branches"
+   ]
+  ],
+  "marks": [
+   "a one-beat fetch buffer",
+   "requests issue from EXECUTE",
+   "writes acknowledged in the same clock",
+   "second slot across beats",
+   "second data-cache port",
+   "jump in the second slot",
+   "slot-to-slot forwarding",
+   "branch folding",
+   "registered multiplier",
+   "fetch queue and X stage",
+   "store-to-load forwarding",
+   "stores finish at retirement",
+   "cross-beat fetch"
+  ],
+  "dmips_ref": 6.3878,
+  "clocks_ref": 89.1,
+  "dmips_fast": 7.5667,
+  "ref_run": "2026-11-21 11:32:21 -0500",
+  "art": "art/v0.11.1.svg"
+ }
+]

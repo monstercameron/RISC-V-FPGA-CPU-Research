@@ -1,0 +1,1949 @@
+{
+ "source": "DEVLOG.md",
+ "days": [
+  {
+   "date": "2026-11-21",
+   "title": "slot-3 branch trial, validation of 0.7.1, pipelining plan",
+   "findings": [
+    "A third-slot conditional branch does not pay: it moves branches from the start of a group to the end of the previous one, but a branch at the start of a group already folds its target into the second slot, so the clock count barely changes (+0.4% DMIPS/MHz). Dropped.",
+    "The independent review of 0.7.1 found no bug in the committed design but a missing test: allowing a multiply to pair (the pre-0.7.1 rule) puts a store on the bus early, and the regression did not notice. The test is now in the regression and catches it.",
+    "Absolute performance, not DMIPS/MHz, decides the next steps: 0.3.0 reaches 22.49 MHz on ECP5 (about 21 DMIPS), with 79% of its critical path in routing. A pipelining plan was drafted (below); its figures are estimates until measured."
+   ],
+   "timeline": [
+    {
+     "time": "00:00 to 00:02",
+     "text": "Candidate 0.7.2 written: conditional branch in the third slot (compare on the third slot's operands, target `pc3 + imm`, taken target misaligned does not issue there; the group's successor is the branch's outcome). New tests `triple_branch`, `triple_branch_misaligned`. Testbench `tb_core.sv` now counts second-slot, third-slot and third-slot-branch retirements on its DONE line, and `test_cpu.py` checks that `dual_issue_fold` and `triple_issue` use their slot (default caches, no wait cycles)",
+     "kind": "output"
+    },
+    {
+     "time": "00:02:25",
+     "text": "Regression: 52 programs x 3 wait patterns = 156 runs pass with default caches (15.7 s) and with 2-line caches (11.8 s); `triple_branch` retires 2 branches from the third slot",
+     "kind": "output"
+    },
+    {
+     "time": "00:04:31",
+     "text": "Unlogged Dhrystone run on the candidate (`rv64imb`, reference runtime, `-NoDevlog`): 2.2250 DMIPS/MHz, 255.8 clocks per run against 256.8 (-0.4%)",
+     "kind": "output"
+    },
+    {
+     "time": "about 00:06",
+     "text": "Blocker count on the candidate's trace (a scratch script groups the measured profile trace into issue groups): pairs stopped by a third-slot branch fell from 36.0 to 3.0 per run, but pairs stopped by a third-slot store rose from 18.0 to 48.0; triples rose by only 1.0 per run. The branch used to start the next group and fold its target into the second slot; now that target starts a group of its own. Candidate reverted; tests kept as plain differential tests",
+     "kind": "output"
+    },
+    {
+     "time": "00:00 to 00:07",
+     "text": "Independent validation of 0.7.1 by a review agent in a separate worktree at `c1b113f`: regression 150/150 (14.1 s) and 150/150 with 2-line caches (12.3 s); `check_bitmanip.py` passes (6.3 s, 28 B instructions, 33,124 and 15,003 retired); visualizer lessons pass after a rebuild (15.9 s); `check_repo.py` passes; RTL hashes, `cpu/VERSION`, tag and the 0.7.1 run rows agree with the records. No bug found in the multiply path. Mutants: reverting the pairing rule (`!m_op` to `!is_div`) passed the whole regression; three other multiply mutants were caught. Its focused scratch test caught the first. Tools: Icarus Verilog 12.0, Python 3.12.3 (WSL) and 3.12.10 (Windows), clang 18.1.3 (WSL) and 23.1.5 (Windows)",
+     "kind": "output"
+    },
+    {
+     "time": "00:07",
+     "text": "Review follow-ups: new tests `mul_then_store_pad0`, `mul_then_store_pad1` (a store after each multiply kind) and `mul_into_x0`; regression 55 programs x 3 = 165 runs pass with default and 2-line caches; with the pairing mutant applied, `mul_then_store_pad1` fails at event 14 (a store's W line before the multiply's R line). `runlog.py` no longer strips the leading space of `git status` output, which had cut the first character from the first dirty file name in run logs (for example \"`EVLOG.md`\"). `cpu/architecture.md` now lists the DIVIDE and MULTIPLY states and excludes multiplies from first-slot pairing in its text. Also reported: `cpu/programs-verification.json` and `cpu/visualizer-verification.json` still hold the RTL hashes of the initial commit (the regenerated copies in the working tree are current), and `cpu/dhrystone-rv64im-fastrt-results.json` is still the 0.6.0 run",
+     "kind": "output"
+    },
+    {
+     "time": "about 00:05",
+     "text": "Pipelining plan drafted by a planning agent from the RTL and the measurements: five short stages (PC, cache read, decode and register read, execute, memory and retire), instruction and data caches in block RAM, register file in LUT RAM (two copies for two read ports; a live-value table for two-wide), forwarding from two registered stages, static then BTB prediction, two-wide issue at most (slot 3 dropped), traps acted on at retirement. Estimates, not measurements: single-issue pipeline about 0.8 DMIPS/MHz at 60 to 75 MHz; two-wide about 1.3 DMIPS/MHz at 50 to 60 MHz (65 to 80 DMIPS, against about 21 for 0.3.0)",
+     "kind": "output"
+    },
+    {
+     "time": "00:07:44",
+     "text": "ECP5 synthesis of 0.7.0 and 0.7.1 still running after 30 minutes in Yosys `synth_ecp5` (0.3.0 took 59.5 s)",
+     "kind": "output"
+    },
+    {
+     "time": "00:08:39",
+     "text": "Commit `15074b8`: multiply-pairing and slot-use tests, slot-3 branch trial record, `runlog.py` fix",
+     "kind": "git"
+    },
+    {
+     "time": "00:09 to 00:13",
+     "text": "Pipeline what-if model `sim/cpu/bench/pipeline_model.py` (written by a side agent; Python 3.12.10) replayed the measured Dhrystone traces through an in-order pipeline with configurable prediction, width and stalls (instruction and data caches assumed to hit; redirect from E costs 3 bubbles, from D 2). Note: the `rv64imb` trace it read came from the reverted slot-3 branch candidate (255.8 clocks per run, against 256.8 for 0.7.1). `rv64imb` reference, clocks per run: single issue, not-taken 858.1 (0.663 DMIPS/MHz); static 813.1 (0.700); 64-entry BTB with a 4-entry return stack 639.3 (0.890); perfect prediction 579.1 (0.983); two-wide with a 64-entry BTB 465.2 (1.223); two-wide with perfect prediction 405.1 (1.405). Branch handling is the largest lever (about 279 of 858 clocks are control penalties without prediction); two-wide issue saves 145 to 175. Break-even: even two-wide with perfect prediction needs 1.58x the clocks of the measured core, single issue with a 64-entry BTB 2.50x, so a pipeline only wins if its clock is that much faster. Command: `python -B sim/cpu/bench/pipeline_model.py` plus sensitivity runs (BTB 32 to 256 entries, return stack 4 to 16 (no difference), tagless BTB, no late store data, fixed divide cost)",
+     "kind": "output"
+    },
+    {
+     "time": "00:12 to 00:19",
+     "text": "Branch `pipeline` created from `15074b8`. Candidate 0.8.0 written: `rv64_core.sv` replaced by a four-stage single-issue pipeline (F: registered instruction-cache read with fill bypass; D: register read, JAL and backward branches redirect F (1 bubble); E: execute, forwarding from M's integer result and from the last retirement, mispredict redirect (2 bubbles); M: data cache read registered as the instruction enters M, bus access, retirement, traps). Load or multiply result used by the next instruction: 1 clock; store data from a load is taken in M without a stall. A store to the beat of a younger fetched instruction flushes and refetches; traps wait until no fetch is outstanding. Register file has no reset loop; a sequencer zeroes it in 32 clocks after reset. Decode, B, multiply and divide logic reused; ports and trace unchanged (retire2/retire3 stay 0). `test_cpu.py` slot-use checks emptied on this branch (single issue)",
+     "kind": "output"
+    },
+    {
+     "time": "00:17 to 00:19",
+     "text": "Pipeline candidate: compiles with `iverilog -g2012 -Wall` without warnings; regression 55 programs x 3 = 165 runs pass on the first full run with default caches and with 2-line caches; `check_bitmanip.py` passes. Unlogged Dhrystone (`rv64imb`, reference runtime): **0.7944 DMIPS/MHz**, about 716 clocks per run (0.7.1: 2.2163). Better than the model's 0.700 for static prediction because this design's redirects cost 1 and 2 bubbles, not 2 and 3",
+     "kind": "output"
+    },
+    {
+     "time": "00:20:37",
+     "text": "ECP5 runs started for the pipeline candidate (snapshot `build/cpu/synth/p080a.sv`): 4-line caches, and default 512-line caches to check block-RAM inference. The 0.7.0 and 0.7.1 runs are still in Yosys after 42 minutes",
+     "kind": "output"
+    },
+    {
+     "time": "00:21 to 00:23",
+     "text": "Pipeline candidate with a branch target buffer (64 entries, direct-mapped on pc[7:2], 10-bit partial tags, 2-bit counters, a return flag) read in F, and a 4-entry return-address stack updated in E; D's static prediction is kept for BTB misses. Regression 165/165 with default and 2-line caches. Unlogged Dhrystone (`rv64imb`, reference): **0.9216 DMIPS/MHz**, about 618 clocks per run (+16% over 0.7944; model 0.890 with 3-bubble redirects)",
+     "kind": "output"
+    },
+    {
+     "time": "00:24:29",
+     "text": "Yosys `synth_ecp5` of the first pipeline candidate (no BTB): 4-line caches 15,171 LUT4, 1,323 CCU2C, 141 TRELLIS_DPR16X4 (register file in LUT RAM), 16 MULT18X18D, 1,985 flip-flops (0.3.0: 22,887 LUT4, 3,662 flip-flops); default 512-line caches add 10 DP16KD block RAMs (caches inferred as block RAM), 19,844 LUT4, 3,104 flip-flops. Place and route running",
+     "kind": "output"
+    },
+    {
+     "time": "00:24:45",
+     "text": "Commit `ba38182` on branch `pipeline`: pipeline candidate with BTB, and the pipeline model (not versioned; local only)",
+     "kind": "git"
+    },
+    {
+     "time": "00:26:26",
+     "text": "Return stack moved from E to D (calls push and returns pop as they leave D; a return in F can take the target of a call leaving D in the same clock). Regression 165/165 (default and 2-line caches). Unlogged Dhrystone: 0.9216 DMIPS/MHz, unchanged: the remaining JALR misses are not return-stack timing (the model attributes them to BTB conflicts)",
+     "kind": "output"
+    },
+    {
+     "time": "about 00:26",
+     "text": "ECP5 place and route of the first pipeline candidate (`p080a`, no BTB; LFE5U-85F speed 6, seed 1): **21.09 MHz** with 512-line caches (23,072 of 83,640 cells; critical path 47.4 ns, 16.5 ns logic, 30.9 ns routing) and **19.87 MHz** with 4-line caches (18,861 cells; 17.4 ns logic, 32.9 ns routing). No faster than 0.3.0 (22.49 MHz): the critical path runs from M's exception flag through the stall logic and E's operand forwarding into the divider's set-up (operand magnitudes, leading-zero counts, early results) and on to M's result register",
+     "kind": "output"
+    },
+    {
+     "time": "00:27 to 00:29",
+     "text": "Divider set-up moved from E to M: divide operands are registered as the instruction enters M; M's first clock completes the early cases or sets up the loop. E's result for multiply and divide is now 0. Regression 165/165 (default and 2-line caches); unlogged Dhrystone 0.9202 DMIPS/MHz (one more clock per divide). ECP5 runs of the BTB version (`p080b`) were stopped as superseded; `p080c` (this version, 512-line caches) started at 00:31:17",
+     "kind": "output"
+    },
+    {
+     "time": "00:31 to 00:34",
+     "text": "256-entry BTB tried in simulation: 0.9670 DMIPS/MHz (+5% over 64 entries, as the model predicted from conflict misses); kept, with only target bits 31:2 stored (upper bits from the PC; a target in another 4 GiB region is mispredicted and corrected in E). Regression 165/165 with default and 2-line caches; Dhrystone 0.9670 unchanged by the compression",
+     "kind": "output"
+    },
+    {
+     "time": "about 00:35",
+     "text": "On request, work moved back to `main`: the uncommitted pipeline changes were stashed, `main` fast-forwarded from `15074b8` to the branch's one commit `ba38182`, and the stash restored. `origin/main` was already at `15074b8`, pushed from outside this session. Then, on `main`: the pipelined core moved to its own file `rtl/cpu/rv64_pipe.sv` and `rtl/cpu/rv64_core.sv` restored byte for byte to 0.7.1 (SHA-256 `dd153c8d...`), so both implementations are kept. `test_cpu.py`, `check_bitmanip.py`, `run_bench.py` and `run_dhrystone.ps1` take `--core multicycle|pipe` (default multicycle); pipe runs use build folders and records ending in `-pipe`, and run logs and trends keep the two cores apart",
+     "kind": "output"
+    },
+    {
+     "time": "about 00:38",
+     "text": "Both cores, regression 55 programs x 3 = 165 runs with default and 2-line caches, and `check_bitmanip.py`: all pass (`build/cpu/regress_both.sh`)",
+     "kind": "output"
+    },
+    {
+     "time": "00:40:17",
+     "text": "`origin/main` found at `ba38182`: the pipeline commit had been pushed from outside this session's commands after the fast-forward",
+     "kind": "git"
+    },
+    {
+     "time": "about 00:40",
+     "text": "Recorded as architecture 0.8.0 (MINOR: a second implementation whose instruction fetches are speculative, visible on the bus; ISA, ports and trace unchanged). `cpu/architecture.md` describes the pipelined implementation",
+     "kind": "output"
+    },
+    {
+     "time": "00:40:29",
+     "text": "Commit `53c6772`, both cores on `main` (0.8.0); tagged `cpu-v0.8.0`",
+     "kind": "git"
+    },
+    {
+     "time": "00:40 to 00:43",
+     "text": "Logged runs, pipelined core (`--core pipe`, `-Record`): `rv64imb` reference **0.9670 DMIPS/MHz**, fast runtime **1.1744**; [devlog-53c6772.md](devlog/devlog-53c6772.md)",
+     "kind": "record"
+    },
+    {
+     "time": "about 00:43",
+     "text": "ECP5 place and route of the pipeline with the divider set-up in M (`p080c`, 64-entry BTB, 512-line caches): **24.30 MHz** (from 21.09), 25,039 cells, 456.5 s; critical path 41.2 ns (12.3 ns logic, 28.9 ns routing) from the data-cache tag block RAM through M's hit check, M's completion, E's and D's advance and the next-fetch-PC select into `f_pc`. The stall decision runs the length of the pipeline in one clock and its enables drive hundreds of flip-flops. Estimate: 0.3.0 21.3 DMIPS (22.49 MHz x 0.9473); this pipeline about 23 DMIPS (24.3 MHz x 0.9670 for the 256-entry BTB, whose own clock is not yet measured). Next: decouple fetch from the stall chain",
+     "kind": "output"
+    },
+    {
+     "time": "00:44 to 00:47",
+     "text": "Candidate 0.8.1, step 1 (`rv64_pipe.sv`): fetch decoupled from the stall chain. A 4-entry fetch queue sits between F and D (D takes F's instruction directly when the queue is empty); F advances whenever the queue is not full, a registered condition. E and D redirects are sent once, as soon as the stage knows, instead of when the stage advances (E waits for valid operands first). Store-to-fetched-beat and `fence.i` flushes are registered and act one clock after the retirement, discarding everything younger, including an instruction that entered M at that edge; the check also covers queue entries. The return stack moved to F (calls and returns update it as they are fetched). Regression (pipe core) 165/165 with default and 2-line caches; Dhrystone 0.9670, unchanged. A first attempt to start its ECP5 run died silently: a background job started from a WSL command that exited at once did not survive; later jobs wait a few seconds before the command exits",
+     "kind": "output"
+    },
+    {
+     "time": "00:49 to 00:53",
+     "text": "Step 2: X stage. M finishes its instruction in one clock without waiting: it retires it (integer result, load hit, multiply, or a bus access completed in that clock) or hands an unfinished bus access to X, which holds the identical request until the bus completes and then retires it; M waits while X is busy. So whether E may advance depends only on registers (X busy, divide still running), not on the data-cache hit; a bus error in M's first clock traps from X one clock later. Divides always take their set-up clock. X's data-cache write also updates the line M already read. Regression 165/165 (default and 2-line caches), B cross-check passes, Dhrystone 0.9670",
+     "kind": "output"
+    },
+    {
+     "time": "about 00:55",
+     "text": "ECP5 result for the tagged 0.8.0 pipelined core (`p080d`, 512-line caches): **28.00 MHz**, 27,495 cells, 348.1 s; critical path 35.7 ns (13.8 ns logic, 21.9 ns routing) from E's instruction through operand forwarding, the load/store misalignment check, E's exception flag and E's mispredict redirect into the next-fetch-PC select and the instruction-cache block-RAM address. About 27 DMIPS (28.0 x 0.9670) against about 21 for 0.3.0: the first absolute gain",
+     "kind": "output"
+    },
+    {
+     "time": "00:55 to 00:57",
+     "text": "Step 3: redirect checks split between D and E. D compares fetch's prediction with what it can compute itself (JAL target; conditional-branch target with the BTB's direction, or taken if backward without a BTB entry; fall-through for anything else; JALR keeps the prediction) and redirects once on a mismatch. E checks only a conditional branch's direction and a JALR's target, and no longer waits for its exception flag (a faulting instruction traps in M either way). Regression 165/165 (default and 2-line caches), B cross-check passes, Dhrystone 0.9670. ECP5 runs of steps 1, 2 and 3 (`p081a`, `p081b`, `p081c`) started",
+     "kind": "output"
+    },
+    {
+     "time": "about 00:59",
+     "text": "ECP5 result for step 1 alone (`p081a`): **25.67 MHz**, 28,026 cells, critical path 39.0 ns (9.1 ns logic, 29.9 ns routing), slower than 0.8.0's 28.00. The path runs from the data-cache tag through M's hit check and \"M needs the bus\" into bus arbitration (a fetch waits for a data access), fetch completion, F's advance and the return-stack enables. Steps 2 and 3 keep that dependency",
+     "kind": "output"
+    },
+    {
+     "time": "01:00 to 01:02",
+     "text": "Step 4: a new fetch no longer waits on whether M needs the bus this clock; it waits whenever M holds a load or store (a registered condition). Regression 165/165 (default and 2-line caches), B cross-check passes, Dhrystone 0.9669 (from 0.9670). ECP5 run `p081d` started",
+     "kind": "output"
+    },
+    {
+     "time": "01:02 to 01:04",
+     "text": "Tried to add a `--noabc9` option to `synth_fmax.py` so the 0.7.x syntheses (in Yosys for 85 minutes) could finish faster: Yosys 0.33 rejected it, because in 0.33 `synth_ecp5` already maps with ABC by default and ABC9 is the opt-in. Option removed; reports now name the mapper",
+     "kind": "output"
+    },
+    {
+     "time": "01:03:58",
+     "text": "Commit `251ac29`, pipelined core restructured for clock rate (0.8.1); tagged `cpu-v0.8.1`, local only",
+     "kind": "git"
+    },
+    {
+     "time": "01:03 to 01:30",
+     "text": "ECP5 results for the 0.8.1 steps (512-line caches): step 2 `p081b` (fetch queue and X stage) **24.85 MHz**, 41,002 cells, critical path 40.3 ns (8.9 logic, 31.4 routing) from E's instruction through the E redirect into the return-stack enables; step 4 `p081d` (= tagged 0.8.1) **28.29 MHz**, 41,178 cells, 35.3 ns (7.6 logic, 27.7 routing). 0.8.1 is only 1% faster than 0.8.0 (28.00 MHz) and 50% larger: the logic on the longest path fell from 13.8 to 7.6 ns but routing stayed near 28 ns. Step 3 `p081c` still routing",
+     "kind": "output"
+    },
+    {
+     "time": "01:05",
+     "text": "New user direction: move toward the Apple M5 (an out-of-order design). Plan: a third implementation, `rtl/cpu/rv64_ooo.sv`, built in stages that each pass the full trace regression",
+     "kind": "output"
+    },
+    {
+     "time": "01:05 to 01:25",
+     "text": "Out-of-order model added to `sim/cpu/bench/pipeline_model.py` by a side agent (`--ooo`; Python 3.12.10; in-order output unchanged, checked with `cmp`). Caches always hit; ordering (a) loads wait for older stores to retire, (b) loads never wait (an upper bound), (c) loads wait for older stores to issue (store-queue forwarding). `rv64imb` reference trace, DMIPS/MHz: in-order w1 BTB256 0.961, w2 1.361; out-of-order 1-wide (a) 0.954 to 0.972; **2-wide, ROB 32, IQ 16, 2 ALUs, 1 memory port, checkpoint recovery: (a) 1.443, (c) 1.733, (b) 1.749**; 4-wide ROB 64 3 ALUs (b) 2.428. Memory ordering is the largest lever ((a) to (c) +20%), then width; under (a) a load latency of 3 instead of 2 costs 15%; recovery (retire, early, checkpoint) is worth 3% here and 9% on the fast-runtime trace. Limits: no cache misses, no wrong-path occupancy, no clock-rate dimension",
+     "kind": "output"
+    },
+    {
+     "time": "01:06 to 01:22",
+     "text": "Stage A written (`rtl/cpu/rv64_ooo.sv`, 1,011 lines): the pipelined core's front end; rename of one instruction per clock onto 64 physical registers; 32-entry reorder buffer retiring one per clock; 8-entry issue queue with wakeup and select; an integer port (multiply/divide unit behind it) and a two-stage load/store port; stores write at retirement; loads issue when every older store has retired; mispredict redirects fetch at execute and rename waits for the branch to retire. Decode, B and M logic reused from the pipelined core. `--core ooo` added to `test_cpu.py`, `check_bitmanip.py`, `run_bench.py`, `run_dhrystone.ps1` and the run log",
+     "kind": "output"
+    },
+    {
+     "time": "01:19 to 01:23",
+     "text": "First regression of stage A: 53 of 55 programs pass; `memory_lanes` and `mul_then_store_pad0` fail at 19 wait cycles with \"unstable stalled request\". A debug bench (`build/cpu/ooo-debug/`) showed a load miss's held request dropped: completing a store in the load/store port's first stage also cleared its second stage. Fixed; that exposed hangs in three programs: when the first stage finished a store in the same clock the second finished a load, the second stage was not cleared, and the finished load later read an unwritten cache tag (X). Fixed by handling the two cases separately",
+     "kind": "output"
+    },
+    {
+     "time": "01:23 to 01:25",
+     "text": "Stage A: regression 165/165 with default and 2-line caches; `check_bitmanip.py --core ooo` passes. Unlogged Dhrystone (`rv64imb`, reference): **0.7888 DMIPS/MHz**, below the pipelined core's 0.9670 and the model's 1-wide (a) 0.954: this design's load-to-dependent latency is 3 clocks and loads wait for older stores to retire",
+     "kind": "output"
+    },
+    {
+     "time": "01:29 to 01:35",
+     "text": "Logged runs, out-of-order core (`-Core ooo -Record`): `rv64imb` reference 0.7888 DMIPS/MHz, fast runtime 0.9306; [devlog-251ac29.md](devlog/devlog-251ac29.md). ECP5 run of stage A (`o090`) started",
+     "kind": "record"
+    },
+    {
+     "time": "01:37:20",
+     "text": "Commit `f1f94c4`, out-of-order stage A (0.9.0); tagged `cpu-v0.9.0`, local only",
+     "kind": "git"
+    },
+    {
+     "time": "01:37 to 01:40",
+     "text": "0.9.1 written (out-of-order core): a load issues once every older store has its address and data; in its second stage it scans the older stores still in the reorder buffer for its 8-byte beat and takes the youngest one's data when it covers every byte the load reads; on a partial overlap it waits for those stores to retire and reads the bus. A store retiring in the clock a load reads the cache passes its bytes into that read. Regression 165/165 with default and 2-line caches; B cross-check passes. Unlogged Dhrystone 0.9428 DMIPS/MHz (from 0.7888, +19.5%; the model predicted about +20% for this ordering change)",
+     "kind": "output"
+    },
+    {
+     "time": "01:41 to 01:45",
+     "text": "New test `store_load_forwarding` (full, partial, narrower and wider overlaps, the younger of two stores, a dependent chain; run twice): all three cores pass, 56 programs x 3 = 168 runs each, and the out-of-order core with 2-line caches. Mutation check: with forwarding disabled in the out-of-order core, 5 programs fail including the new test; the RTL was restored and checked",
+     "kind": "output"
+    },
+    {
+     "time": "01:47 to 01:53",
+     "text": "Logged runs, out-of-order 0.9.1 (`-Core ooo -Record`): `rv64imb` reference **0.9428 DMIPS/MHz**, fast runtime **1.0684**; [devlog-f1f94c4.md](devlog/devlog-f1f94c4.md)",
+     "kind": "record"
+    },
+    {
+     "time": "01:55:04",
+     "text": "Commit `7bf8f3d`, store-to-load forwarding (0.9.1); tagged `cpu-v0.9.1`, local only",
+     "kind": "git"
+    },
+    {
+     "time": "01:56 to 02:01",
+     "text": "0.9.2 written: the out-of-order core made two-wide (body rewritten, 1,280 lines): two-instruction fetch from an aligned beat with a second BTB lookup (none after a predicted-taken transfer, call or return), 8-entry fetch queue without the F-to-D bypass, two D slots each checking its prediction, rename and dispatch of two per clock (the second may read the first's result), a second integer port using the multicycle core's `simple_alu` for simple integer and B operations, retirement of two per clock (the second never a store, `fence.i`, mispredicted branch or trap, and not two control transfers at once)",
+     "kind": "output"
+    },
+    {
+     "time": "02:01 to 02:03",
+     "text": "First run: 55 of 56 programs pass; `store_load_forwarding` hung. The load/store port's second stage held a load waiting (partial overlap) for older stores to retire, while an older memory instruction at the ROB head, still in the issue queue, could not enter the port. Fixed by issuing memory instructions in program order (the port takes the oldest one, when ready)",
+     "kind": "output"
+    },
+    {
+     "time": "02:03 to 02:05",
+     "text": "0.9.2: regression 168/168 with default and 2-line caches; B cross-check passes. Unlogged Dhrystone (`rv64imb`, reference): **1.2768 DMIPS/MHz** (from 0.9428, +35%). The model's point for this width (ROB 32, IQ 16, 2 ALUs, checkpoint recovery, store-queue ordering, load latency 2) is 1.733; this design has IQ 8, load latency 3, no checkpoint recovery, in-order memory issue and one more front-end stage",
+     "kind": "output"
+    },
+    {
+     "time": "02:08 to 02:14",
+     "text": "Logged runs, out-of-order 0.9.2: `rv64imb` reference **1.2768 DMIPS/MHz**, fast runtime **1.4419**; [devlog-7bf8f3d.md](devlog/devlog-7bf8f3d.md)",
+     "kind": "record"
+    },
+    {
+     "time": "02:14",
+     "text": "ECP5 run of out-of-order stage A (0.9.0, 512-line caches): **does not fit**. Yosys maps it to 107,072 LUT4 (part: 83,640), 31,302 PFUMX, 13,414 L6MUX21, 17,976 flip-flops, 2,133 CCU2C, 388 DPR16X4, 12 DP16KD, 16 MULT18X18D (624.6 s); nextpnr: \"Unable to find legal placement for all cells, design is probably at utilisation limit\" (1,212.6 s in all). The physical register file and the reorder-buffer fields are flip-flops with many read and write ports. The out-of-order results so far are simulation results only; fitting the design is a separate task",
+     "kind": "output"
+    },
+    {
+     "time": "02:16:03",
+     "text": "Commit `11acc17`, two-wide out-of-order core (0.9.2); tagged `cpu-v0.9.2`, local only",
+     "kind": "git"
+    },
+    {
+     "time": "02:16 to 02:18",
+     "text": "A 16-entry issue queue tried: 1.2913 DMIPS/MHz (+1.1%, as the model predicted); not kept, because the design already does not fit and the queue's area doubles. Index widths now follow `IQ_N`",
+     "kind": "output"
+    },
+    {
+     "time": "02:18 to 02:26",
+     "text": "Stall statistics for the two-wide core on Dhrystone (debug bench `build/cpu/ooo-debug/tb_ostat.sv`, timed region, 222,875 clocks): retire 2 in 50% of clocks, 1 in 23%, none in 27%; issue queue with fewer than two free slots in 43%; a store waiting at the head in 9% (all of it the one-clock-ahead tag read not ready: 20,525 clocks); oldest memory instruction not ready in 38%; memory port used in 45%",
+     "kind": "output"
+    },
+    {
+     "time": "02:26 to 02:29",
+     "text": "Pending store update: a retiring store writes the bus at once; its data-cache update and instruction-cache invalidation follow one clock later from a register (loads reading that line merge it; fetch treats that index as a miss for that clock). Store wait at the head fell to 11 clocks but Dhrystone stayed at 1.2768: the head now waited for unfinished instructions instead (56,197 clocks, half of them loads). The single in-order memory port is the limit",
+     "kind": "output"
+    },
+    {
+     "time": "02:30 to 02:36",
+     "text": "Stores split into address and data: a store issues once its address is known and reads its data register at retirement; forwarding reads that register and waits until it is written; loads wait only for older store addresses. Regression 168/168 (default and 2-line caches), B cross-check passes",
+     "kind": "output"
+    },
+    {
+     "time": "02:37 to 02:40",
+     "text": "WSL crashed during the next run (`Wsl/Service/E_UNEXPECTED`), most likely from memory pressure: several Yosys syntheses (the area study and the 0.7.x ECP5 runs) were running at once on the 15 GB VM. The 0.7.0/0.7.1 ECP5 job (in Yosys since 23:36) ended with exit code 15 and never produced a result; the area study's runs were lost. WSL restarted with `wsl --shutdown`; agents told to run at most two syntheses at a time",
+     "kind": "output"
+    },
+    {
+     "time": "02:41 to 02:51",
+     "text": "Dhrystone on the split-store core: reference runtime 1.5648 DMIPS/MHz (from 1.2768, +22.6%) with all checks passing; a logged reference run at 02:54:13 used this RTL. The fast-runtime run then failed its differential check at event 8169 (`lw` at 0xa34 read 0xb, reference 0xc). A cache-line watch (`tb_dbg3.sv`) showed the cause: the data-cache write was `if (fill) ... else if (pending store)`, so a fill to any other line in the same clock dropped the store's update. Fixed so both write (the store's update is skipped only for a fill to its own line). Also changed: a load that waited in its second stage reads the bus afterwards",
+     "kind": "output"
+    },
+    {
+     "time": "07:13 to 07:15",
+     "text": "After a session restart: regression 168/168 (default and 2-line caches), B cross-check passes; the 0.9.3 history row and rubric hashes were re-recorded for the fixed RTL",
+     "kind": "output"
+    },
+    {
+     "time": "07:15 to 07:21",
+     "text": "Logged runs, out-of-order 0.9.3: `rv64imb` reference **1.5648 DMIPS/MHz**, fast runtime **1.5777**; [devlog-11acc17.md](devlog/devlog-11acc17.md). (The 02:54:13 reference row in the run index is the same result on the RTL before the fill fix)",
+     "kind": "record"
+    },
+    {
+     "time": "07:21:45",
+     "text": "Commit `8f207a0`, split stores and deferred store cache update (0.9.3); tagged `cpu-v0.9.3`, local only",
+     "kind": "git"
+    },
+    {
+     "time": "07:22",
+     "text": "Stall statistics on 0.9.3 (181,861 clocks): retire 2 in 62% of clocks, 1 in 28%, none in 11%; rename 2 in 65%; fetch delivered about 1.63 instructions per clock (two only from the start of a beat); memory port used in 55%",
+     "kind": "output"
+    },
+    {
+     "time": "07:23 to 07:28",
+     "text": "0.9.4: fetch also reads the next beat, so the second instruction can come from it. Regression 168/168 (default and 2-line caches). Dhrystone `rv64imb` reference 1.5778 DMIPS/MHz (+0.8%), fast runtime 1.6180 (+2.6%): two-wide rename and retirement are now the ceiling",
+     "kind": "output"
+    },
+    {
+     "time": "07:30 to 07:35",
+     "text": "Logged runs, out-of-order 0.9.4: reference **1.5778**, fast runtime **1.6180**; [devlog-8f207a0.md](devlog/devlog-8f207a0.md)",
+     "kind": "record"
+    },
+    {
+     "time": "07:25",
+     "text": "User direction: size the core after the Apple M5 (FPGA fit later) and raise IPC. M5 P-core figures from the one independent study (useless-husband/m5-uarch): 10 NOPs per clock, 8 integer ALUs, 3 multipliers, 3 loads and 2 stores per clock, 2 taken branches per clock, about 1,334 instructions in flight for an ordinary mix, 396 integer rename registers, L1I 192 KiB, L1D 128 KiB, 3-clock load-to-use, 16.7-clock mispredict",
+     "kind": "output"
+    },
+    {
+     "time": "07:39:24",
+     "text": "Commit `af0a3a1`, cross-beat fetch (0.9.4); tagged `cpu-v0.9.4`, local only",
+     "kind": "git"
+    },
+    {
+     "time": "07:40 to 07:48",
+     "text": "M5 detail from the study's results file (`results/apple-m5/apple-m5.json`, read by a side agent): integer add 1 clock at 6.7 to 7.7 per clock; multiply 3 per clock, 3 clocks; divide 0.5 per clock, 7 clocks; loads 3 per clock, 3 clocks (pointer chase); stores 2 per clock; branches 3 not-taken or 2 taken per clock; store queue 137, load queue 486, unresolved branches 194; move elimination at rename; store-to-load forwarding as low as 0.66 clocks (no explanation given); constant-value load prediction (P core only). BTB, return-stack and scheduler sizes are not measured",
+     "kind": "output"
+    },
+    {
+     "time": "07:48 to 08:12",
+     "text": "0.10.0 written: `rtl/cpu/rv64_ooo.sv` replaced by a wide behavioural model sized after those figures (8 instructions per clock fetched, renamed and retired; 128-entry ROB; 160 physical registers; 64-entry issue queue; 8 ALUs, 3 of them full ports for branches, system and M; 3 load and 2 store-address ports, oldest first; loads replay from the issue queue; a rename-map snapshot per branch for recovery in the clock it executes; 128 KiB caches). New outputs `rt_valid`, `rt_pc`, `rt_insn`, `rt_rd`, `rt_data`, `rt_next` (8 slots); `tb_core.sv` and `tb_bench.sv` log them under `WIDE_TRACE`, and a store's write is logged just before that store's own retirement in whatever slot. `test_cpu.py`, `check_bitmanip.py` and `run_bench.py` pass `-DWIDE_TRACE` for `--core ooo`",
+     "kind": "output"
+    },
+    {
+     "time": "about 08:15",
+     "text": "First run: all 56 programs at 3 wait patterns pass with default caches; Dhrystone `rv64imb` reference **4.3167 DMIPS/MHz** (131.8 clocks per run, 4.17 instructions per clock; all checks pass, traces match at 0 and 7 wait cycles)",
+     "kind": "output"
+    },
+    {
+     "time": "08:15 to 08:35",
+     "text": "With 2-line caches the regression timed out: a load-miss livelock (with a 1-clock bus, the next miss was allocated as soon as a fill arrived, and its fill replaced the line before the first load replayed). Fixed with a one-entry fill buffer that loads can read after the line is replaced (retiring stores update it), the miss unit serving the oldest missing load, and the buffer reserved for that load until it completes. Also: `tb_core.sv` declared the wide trace wires after their first use (Icarus made implicit wires, then merged them); declarations moved first",
+     "kind": "output"
+    },
+    {
+     "time": "about 08:38",
+     "text": "0.10.0: regression 168/168 with default and 2-line caches; `check_bitmanip.py --core ooo` passes; the multicycle and pipelined cores still pass 168/168 with the changed testbench",
+     "kind": "output"
+    },
+    {
+     "time": "08:45 to 09:05",
+     "text": "Fast-runtime Dhrystone on 0.10.0 (`run_dhrystone.ps1 -Core ooo -Runtime fast`) never finished; the first reference logged run at 08:51 (4.3169) used this same RTL. First diagnosis: the fill-buffer lock was tested as \"owner live and not done\", and a reused ROB index held it forever; replaced by an explicit `fb_lock` flag. A reference run with that change then timed out at the old 1,800 s step limit (`vvp ... tb_bench.vvp` TimeoutExpired)",
+     "kind": "output"
+    },
+    {
+     "time": "09:05",
+     "text": "User direction: 5-minute limits for runs. `run_bench.py` steps, `check_bitmanip.py` and the debug scripts now stop after 300 s (test_cpu.py already 60 s per program)",
+     "kind": "edit"
+    },
+    {
+     "time": "09:05 to 09:30",
+     "text": "Bounded probes (`build/cpu/ooo-debug/fastprobe.sh`, `tb_wstat.sv`, `+max_cycles`) found two faults. (1) Starvation: the head load replayed every other clock while younger missing loads kept taking the one-clock miss unit; fixed by letting only the oldest unfinished load start a miss. (2) Hang at 5,328 retirements: head load `ld a3, 8(a1)` at 0xdbc waiting, miss unit and bus idle, `fb_lock=1` held by ROB 76, which had already retired, because its fill arrived after it finished (squash or completion before the fill). Fixed: the fill sets the lock only if the miss owner is still in flight (`mu_owner_v`, cleared when the owner is discarded or on a flush)",
+     "kind": "debug"
+    },
+    {
+     "time": "09:39 to 09:42",
+     "text": "With both fixes: fast-runtime probe finishes (73,947 clocks for the region, 2,000,000-clock bound); reference probe 65,933 clocks (was 65,922). Regression `test_cpu.py --core ooo` 168/168 at default and 2-line caches; `check_bitmanip.py --core ooo` passes. `dual_issue_loads` takes 52 clocks instead of 35 (misses are now served oldest first, one at a time)",
+     "kind": "output"
+    },
+    {
+     "time": "09:43 to 09:55",
+     "text": "Logged runs, uncommitted 0.10.0 on `af0a3a1` (`run_dhrystone.ps1 -Isa rv64im_zba_zbb_zbs_zifencei -Core ooo -Record`, then `-Runtime fast`; clang 23.1.5 `-O2`, Icarus Verilog in Ubuntu 24.04): reference **4.3161 DMIPS/MHz** (131.9 clocks per run), fast runtime 3.848 (147.9 clocks per run). Surprise: the word-wise fast runtime is slower than the byte-wise reference on the wide core, the reverse of every earlier core; to be explained (likely store-to-load partial overlaps or the one-store-per-clock retirement). The wide-core wait loop `pgrep -f run_bench.py` matched its own shell and always ran to its 290 s limit",
+     "kind": "output"
+    },
+    {
+     "time": "09:56:30",
+     "text": "Commit `4ee3a9a`, wide out-of-order core (0.10.0); tagged `cpu-v0.10.0`, local only",
+     "kind": "git"
+    },
+    {
+     "time": "09:57 to 10:04",
+     "text": "0.10.1, two predicted-taken transfers per fetch group (one call or return per group), from the staged scratch variant with the fill-buffer fixes. Timing probe (`fastprobe.sh`, `tb_wstat.sv`): reference region 65,933 to 60,935 clocks (-7.6%), fast runtime 73,947 to 65,944 (-10.8%); ROB near full in 15,952 of 60,935 clocks, bus busy 63%. Regression 168/168 with default and 2-line caches, `check_bitmanip.py --core ooo` passes",
+     "kind": "output"
+    },
+    {
+     "time": "10:04 to 10:16",
+     "text": "Logged runs on `4ee3a9a` plus uncommitted 0.10.1 (`run_dhrystone.ps1 -Isa rv64im_zba_zbb_zbs_zifencei -Core ooo -Record`, then `-Runtime fast`; clang 23.1.5 `-O2`): reference **4.6702 DMIPS/MHz** (121.9 clocks per run), fast runtime 4.3154 (131.9 clocks per run)",
+     "kind": "output"
+    },
+    {
+     "time": "10:06 to 10:20",
+     "text": "Trial, not committed: paired store writes (a store write carries a second store; memory applies it only if the first succeeds, `mem_*2` ports, `PAIR_WRITES` parameter; scratch copies in `build/cpu/ooo-debug/w110root/`). Dhrystone stores are 14.1% of retirements (39,798 W of 281,929 R in `trace-stall0.trace`), so one write per clock caps the core near 77 clocks per run (about 7.4 DMIPS/MHz). Probe: reference 60,935 to 60,925 clocks, fast runtime 65,944 to 66,932 (worse); bus busy 63% to 52%. Conclusion: stores are not the current limit; kept staged for later",
+     "kind": "output"
+    },
+    {
+     "time": "10:20 to 10:25",
+     "text": "New head-stall profile (`build/cpu/ooo-debug/tb_hstat.sv`, `hprobe.sh`: the first not-done entry of the 8-entry retirement window, weighted by lost slots). Reference: ALU 40,336, branch 35,869, load 17,305, multiply/divide 14,516, empty 7,206, store 1,195 lost slots; hottest are the byte loop of `strcmp` (0xd28 to 0xd50) and `divw` at 0x1e4. Fast runtime: load 74,814, ALU 77,895, branch 63,355 lost slots; hot loads follow the word-wise `memcpy`/`strcpy` stores (partial overlaps wait for the store to retire)",
+     "kind": "output"
+    },
+    {
+     "time": "10:22",
+     "text": "User direction: get a second opinion from a Codex CLI subagent (GPT 6.2 Astra) reviewing adversarially, and add that to AGENTS.md (done). Not found on PATH or in WSL at first; the user pointed to the ChatGPT desktop app: `codex-cli 0.167.0-alpha.3.2` at `%LOCALAPPDATA%\\OpenAI\\Codex\\bin\\5cb1e6583e4c030c\\codex.exe`, `~/.codex/config.toml` model `gpt-6.2-astra`, effort `xhigh`",
+     "kind": "tool"
+    },
+    {
+     "time": "10:24",
+     "text": "Commit `cdcbafc`, two taken branches per fetch group (0.10.1), and `322739e` (DEVLOG path fix); tagged `cpu-v0.10.1`, local only",
+     "kind": "git"
+    },
+    {
+     "time": "10:25 to 10:40",
+     "text": "Codex CLI (`codex-cli 0.167.0-alpha.3.2`, `gpt-6.2-astra`, effort xhigh; `codex exec -s read-only -C <repo> -`, prompt in the scratchpad file `codex_review_prompt.md`) reviewed `af0a3a1..cdcbafc` adversarially. Findings: (1) a failed fill's error outlives a squash and can fault a correct-path load; (2) a fully forwarded load skips the read access check (`fault_kind=2`); (3) `fence` does not keep a younger load behind older stores; (4) retirement pulses stay set after a store-error halt; (5) `RW>8` corrupts dispatch silently; risks: return-stack pointer not restored after a flush or rename redirect, a store write could be logged one clock before its store retires without failing the bench, regression and Dhrystone use 4 KiB caches (testbench and SoC pass 512 beats) though the core defaults to 128 KiB, the bench profile swaps the start-marker store for the stop one, dependent multiply/divide spacing is 2/6 clocks not 3/7, the oldest-miss rule lets a load without an address block a younger miss, the head-stall probe cannot see the one-store-per-clock retirement stop, and the 0.10.0 history row named the wrong RTL hash. All fixed in 0.11.0 except the bench profile and the oldest-miss rule (open); the history row is corrected",
+     "kind": "review"
+    },
+    {
+     "time": "10:20 to 10:28",
+     "text": "Mispredict profile (`tb_hstat.sv` with a per-PC count): every remaining mispredict is a loop exit, once per run per loop (`strcmp`/`strcpy` loops, `Func_2`, `main`): 3 per run on the reference runtime, 9 on the fast one",
+     "kind": "output"
+    },
+    {
+     "time": "10:22 to 10:30",
+     "text": "Loop predictor (scratch `patch_lp.py`): reference 60,935 to 54,465 clocks (-10.6%), fast runtime 65,944 to 51,521 (-21.9%); mispredicts 1,519 to 27 (reference). Regression with candidate options (`test_cpu.py --core-source --out-dir`, new) 168/168 at both cache sizes. The reference run then has the ROB near full in 50,670 of 54,465 clocks and the bus busy 70%: store-write bound",
+     "kind": "output"
+    },
+    {
+     "time": "10:18 to 10:25",
+     "text": "Trial, not kept: byte-granular forwarding alone (scratch `wfwd`) left the fast runtime at 65,944 clocks; regression passed",
+     "kind": "output"
+    },
+    {
+     "time": "10:26",
+     "text": "User direction: a separate agent for caches and memory, working at the same time, coordinated, Dhrystone runs launched together. Started; it works on its own copies (`build/cpu/ooo-debug/mem/`, scratch `mem/`) and hands off patch scripts; the lead alone writes `rtl/`, DEVLOG and commits. Its log: `build/cpu/ooo-debug/mem/NOTES.md`",
+     "kind": "process"
+    },
+    {
+     "time": "10:36 to 10:42",
+     "text": "Codex fixes on the loop-predictor build (scratch `patch_fix_0102.py`). Requiring a successful read before any forwarded load finished cost 7,000 clocks on the fast runtime (51,521 to 58,510; a variant without it 51,523; the multiply/divide latency fix costs about 2); final form: a fully forwarded load wakes consumers at once and finishes after the read, fast runtime 53,019, reference 54,465. Regression 168/168 at both cache sizes. `tb_core.sv` now fails when a successful store write is not followed by its store retiring on the same edge. `hprobe.sh` builds into a temporary file per run (two runs on the same benchmark had overwritten each other's build, invalidating one pair of probes)",
+     "kind": "output"
+    },
+    {
+     "time": "10:29 to 10:36",
+     "text": "Memory agent (from its NOTES.md): 4 KiB vs 128 KiB caches change nothing on the reference runtime; on the fast runtime conflict misses cost 3,000 clocks (0.10.1) to 5,000 (loop predictor). Hand-off 1a, 2-way set-associative data cache of the same size: fast runtime 51,521 to 46,538 (-9.7%), reference unchanged. Hand-off 1b, paired store writes (the 0.11.0 trial re-expressed): reference 54,465 to 46,010 (-15.5%), fast runtime flat. Regression passed at both cache sizes",
+     "kind": "output"
+    },
+    {
+     "time": "10:42 to 10:45",
+     "text": "Integration (fixes + 1a + 1b, `build/cpu/ooo-debug/introot`, `int_check.sh`): reference 46,010 clocks, fast runtime 46,528; regression 168/168 at both cache sizes",
+     "kind": "output"
+    },
+    {
+     "time": "10:45 to 10:49",
+     "text": "0.11.0 in the repository (`full_check.sh`): out-of-order 168/168 with default and 2-line caches, `check_bitmanip.py --core ooo` passes, multicycle and pipelined cores 168/168 with the changed `tb_core.sv` and `test_cpu.py`",
+     "kind": "output"
+    },
+    {
+     "time": "10:49 to 11:00",
+     "text": "Joint logged runs, 0.11.0 uncommitted on `322739e` (`run_dhrystone.ps1 -Isa rv64im_zba_zbb_zbs_zifencei -Core ooo -Record`, then `-Runtime fast -Record`; clang 23.1.5 `-O2`): reference **6.1851 DMIPS/MHz** (92.0 clocks per run), fast runtime **6.1162** (93.1 clocks per run)",
+     "kind": "output"
+    },
+    {
+     "time": "10:50 to 10:53",
+     "text": "ROB 256 and 512 (288 and 544 physical registers; probe only): reference 46,007 and 46,008 clocks, fast runtime 46,528 both, the same as ROB 128. The reference run fills any window: it is bound by retirement of stores, not by window size",
+     "kind": "output"
+    },
+    {
+     "time": "10:53 to 11:05",
+     "text": "Value prediction trial (scratch `patch_vp.py`): a load, multiply or divide whose last 8 results were equal gives that value to its consumers at rename; a wrong guess refetches after it retires. Probe: fast runtime 46,528 to 41,118 clocks (-11.6%), reference unchanged (46,010). Regression 168/168 at both cache sizes; new directed test `value_change_after_repeats` (a loaded value repeats 40 times, then changes; a first version with 11 repeats never made the predictor confident because the whole loop fit in the 128-entry window) forces value mispredicts on the load and the multiply (seen with an instrumented copy) and passes",
+     "kind": "output"
+    },
+    {
+     "time": "11:01:30",
+     "text": "Commit `8721ca2`, architecture 0.11.0 (loop predictor, two-way data cache, paired store writes, review fixes); tagged `cpu-v0.11.0`, local only. A second Codex review (of `322739e..8721ca2`) started in the background",
+     "kind": "git"
+    },
+    {
+     "time": "11:01 to 11:05",
+     "text": "`full_check.sh` with value prediction in `rtl/`: all three cores 171/171 (57 programs, with `value_change_after_repeats`), 2-line caches and `check_bitmanip.py` pass",
+     "kind": "output"
+    },
+    {
+     "time": "11:03 to 11:05",
+     "text": "Fetch predecode trial (scratch `patch_predecode.py`): fetch sends direct jumps and calls to their targets, returns to the return stack, and BTB-missing backward branches taken; rename trusts fetch for conditional branches. Rename-stage redirects 2,502 to 0; fast runtime 41,118 to 39,118 clocks (-4.9%), reference 46,010 to 45,990",
+     "kind": "output"
+    },
+    {
+     "time": "11:05 to 11:08",
+     "text": "`full_check.sh` with value prediction and predecode: all three cores 171/171, 2-line caches and `check_bitmanip.py` pass. Recorded as 0.11.1",
+     "kind": "output"
+    },
+    {
+     "time": "11:10 to 11:14",
+     "text": "New probe counter (`tb_hstat.sv`): retirement slots whose instructions were done but did not retire in the next clock, which is the store rule (one write request per clock, at most two stores, nothing past the second store). Fast runtime 64,510 such slots against about 25,000 lost to unfinished instructions; reference 89,040 against about 3,900. The store rule is now the main limit on both runtimes; passed to the memory agent as its top priority",
+     "kind": "output"
+    },
+    {
+     "time": "11:08 to 11:15",
+     "text": "Logged runs for the value-prediction + predecode build (`run_dhrystone.ps1 ... -Record`, reference then fast): the reference run finished at 11:14:47 with 6.1878 DMIPS/MHz (92.0 clocks per run; RTL `cc463c46fee9`, an intermediate 0.11.1 build that was not released; its record in `cpu/dhrystone-rv64imb-ooo-results.json` was reverted). The fast run failed: `rtl/cpu/rv64_ooo.sv` was edited during the run and the edit had a syntax error (a statement placed between `end` and `else`), so its compile failed (`syntax error` at line 730). Lesson: do not edit `rtl/` while a logged run is in progress",
+     "kind": "output"
+    },
+    {
+     "time": "11:05 to 11:16",
+     "text": "Second Codex review (of `322739e..8721ca2`, same command, prompt `codex_review_prompt_0110.md`): no wrong-result, lost-store or deadlock bug found. Risks: a held fetch's fault can reach a redirected fetch of the same beat; no test exercises a paired-write fault; the bench profile moves one instruction across a marker with paired stores (275,031 vs 275,030 and 223,031 vs 223,030; the tb_bench comment claiming equal counts was wrong); `--core-source` reports were hashed from `rtl/`; the return-stack fix restores the pointer only; replaying loads can hold all load ports; the loop predictor can predict an early exit at its 255 limit; documentation said 0.10.2 (never released) and one store per clock. Fixed in 0.11.1: the fetch fault, the 255 limit, report hashes (`simulated_core_sha256`) and cache labels, the comments and documentation; new tests `paired_store_fault_first`, `paired_store_fault_second`, `paired_store_overlap`, `forwarded_load_read_fault`. Open: return-stack entry repair, load-port starvation",
+     "kind": "review"
+    },
+    {
+     "time": "11:00 to 11:19",
+     "text": "Memory agent final report (its log `build/cpu/ooo-debug/mem/NOTES.md`): hand-off 2, loads wake consumers at issue and memory-dependence speculation with a 256-entry load-wait table (a store that resolves its address marks younger loads that read its bytes; a marked load flushes at the head and refetches); hand-off 3, retirement continues past the clock's store write. On 0.11.1: reference 45,990 to 44,550 clocks (-3.1%), fast runtime 39,118 to 37,609 (-3.9%); six directed memory-dependence programs. Its finding: once retirement passes the store write, most \"done but not retired\" slots turn into waits on unfinished instructions; more than two stores per write would gain about 5% at most",
+     "kind": "output"
+    },
+    {
+     "time": "11:19 to 11:27",
+     "text": "Integrated hand-offs 2 and 3 and the six memory-dependence programs into 0.11.1 (`test_cpu.py`, 67 programs). Probe 44,550 / 37,609 clocks (same as the agent's). `full_check.sh`: all three cores 201/201, 2-line caches and `check_bitmanip.py` pass",
+     "kind": "output"
+    },
+    {
+     "time": "11:05 to 11:27",
+     "text": "User direction: a GitHub Pages site in `/docs` (a Sonnet agent): a gallery of one generated artwork per architecture version (the processor's units drawn after its parameters) styled as an intimate Parisian gallery, and a journal of this log. Built by `scripts/build_site.py` into `docs/` (27 artworks, 226 timeline rows, 60 runs). Checked in the Browser pane through a local server: the lightbox works; at 375 px the gallery (396 px) and home page (430 px) scroll sideways, sent back for fixing. Not published (needs a push)",
+     "kind": "site"
+    },
+    {
+     "time": "11:22 to 11:27",
+     "text": "User direction: study the SC25 RISC-V HPC workshop slides by S. Nemawarkar (a Sonnet agent; read with `pdftotext`). They describe Condor's Cuzco core: 8-wide, 256-entry ROB, 8 ALUs, 4 load/store units, 64 KB 8-way L1 caches, TAGE-SC-L, time-based scheduling, claimed above 17.5 DMIPS/MHz (configuration and compiler not given). Usable for us: instruction fusion at decode (dependent pairs, store pairs); the scheduler is an area and power measure a behavioural model cannot show",
+     "kind": "research"
+    },
+    {
+     "time": "11:27 to 11:36",
+     "text": "Joint logged runs, 0.11.1 uncommitted on `8721ca2` (`run_dhrystone.ps1 -Isa rv64im_zba_zbb_zbs_zifencei -Core ooo -Record`, then `-Runtime fast -Record`; clang 23.1.5 `-O2`): reference **6.3878 DMIPS/MHz** (89.1 clocks per run), fast runtime **7.5667** (75.2 clocks per run)",
+     "kind": "output"
+    },
+    {
+     "time": "11:37",
+     "text": "Commit `b12c1d4`, architecture 0.11.1; tagged `cpu-v0.11.1`, local only",
+     "kind": "git"
+    },
+    {
+     "time": "11:30 to 11:38",
+     "text": "Site fixes by its agent: at 375 px no page scrolls sideways (`docs/assets/style.css`: narrower spotlight and hero glow, clipped overflow); regenerated after the 0.11.1 tag (`python -B scripts/build_site.py`: 27 artworks, 233 timeline rows, 62 runs); `check_repo.py` passes. Committed as its own change; not published",
+     "kind": "site"
+    }
+   ],
+   "commits": []
+  },
+  {
+   "date": "2026-11-20",
+   "title": "setup, review rubric, roadmap and first benchmark",
+   "findings": [
+    "**The local toolchain did not match the docs.** The README and quick start say Ubuntu 24.04 under WSL with Icarus is already installed. On this ARM64 Windows workstation WSL 2.7.10 was present but had no distribution. Installed Ubuntu 24.04, Icarus Verilog 12.0 and Python 3.12.3. Windows has Python 3.12.10 (ARM64) and LLVM 23.1.5.",
+    "**The core passes its own tests.** The main regression passed 96 of 96 differential runs plus the reset and RAM-wrapper checks, in about 12 seconds. The historical PicoRV32 smoke test passed in 26 cycles.",
+    "**GitHub Pages is not enabled for the repository.** The Pages API returns 404 and there is no Pages branch or workflow. The project's pages (CPU visualizer and core explainer) are served locally by `sim/cpu/serve_visualizer.py`.",
+    "**Building the visualizer lessons rewrites two tracked files.** `cpu/programs-verification.json` and `cpu/visualizer-verification.json` change on every lesson build, and again when **Run simulation** is clicked in the viewer. Both are modified and uncommitted; the decision is tracked in [TODO.md](TODO.md).",
+    "**The core cannot yet be called \"good\" or \"performant\".** A review rubric was written ([cpu/review-rubric.md](cpu/review-rubric.md)). The author's gate reading at commit `0483d99`: external-model check, lint and synthesis, known-issue list and independent review are not met, and no performance gate can be met without synthesis or a board.",
+    "**V8 is not a usable benchmark.** It needs an operating system, an MMU, RV64GC-class hardware and hundreds of megabytes of memory, and would take many hours per billion instructions in RTL simulation. Chosen instead: CoreMark (primary) and Dhrystone (secondary), with the riscv-tests benchmark programs as the next small set.",
+    "**RISC-V has a ratified vector extension but no ratified matrix extension** (as of mid-2026). Integrated (IME) and attached (AME) matrix approaches are recorded as research in the to-do list.",
+    "**The core has no caches.** Main memory is a 16 KiB RAM that answers in one clock, so caches cannot speed up today's simulation. A staged plan (slow memory model, then L1, then L2, measured at each step) is in the to-do list.",
+    "**Dhrystone runs on the unchanged core: 0.260 DMIPS/MHz** in simulation (non-compliant run, rubric evidence class E1). Details below.",
+    "**Benchmark scores depend heavily on the compiler.** The same Dhrystone source scores 0.260 DMIPS/MHz with clang 23.1.5, 0.249 with clang 21.1.6 (the CI runner) and 0.217 with Ubuntu's clang 18.1.3. All three pass every check.",
+    "**Clocks per instruction follow from the memory timing.** The RAM acknowledges one clock after each request, so a fetch takes 2 clocks and execution 1. Most instructions take 3 clocks; loads and stores take 5. Dhrystone averages 3.65; the earlier C demo, with fewer memory operations, averages about 3.05.",
+    "**The simulator is faster than first estimated.** The C demo record implies about 17,000 instructions per second. The Dhrystone timing run retired 307,336 instructions over 1,120,105 clocks in 9.0 seconds: about 34,000 instructions or 124,000 clocks per second, including process start-up.",
+    "**This LLVM installation has no RISC-V runtime library.** Bare-metal programs that multiply or divide need their own helper routines; the benchmark runtime now provides them.",
+    "**Existing verification records contain local user paths.** `cpu/verification.json` and `cpu/c-demo-results.json` include absolute paths from the machine that produced them. The new Dhrystone record stores repository-relative paths instead. The older records are unchanged.",
+    "**The repository check script could not be run locally** in this session because the assistant's permission settings blocked it. CI runs it on every push, and it passed for each commit below.",
+    "**First rubric scorecard: 37.1 of 100, the lowest (\"foundation\") band, no claims granted.** Strongest: traps and reset (R2) and reproducibility (R9), both 62%. Weakest: FPGA implementation (R5) at 0%, performance (R4) at 22% and verification depth (R3) at 25%. It is an automated self-assessment, recomputed on every Dhrystone run from `cpu/rubric-evidence.json`.",
+    "**Correction to the rubric's section 11 reading.** That reading listed HG1 (scope label) as met, but the scope label has no performance target, which rubric section 2 requires. The evidence file records HG1 as not met until a target is declared. Section 11 is left as written, since it is a dated reading.",
+    "**The CPU architecture is now versioned: 0.1.0.** The unchanged C0 core, called \"revision 0\" until now, becomes 0.1.0. Before 1.0.0, MINOR changes for any change to the architectural contract and PATCH for any other RTL change. Proposed criteria for 1.0.0: C1 complete, an external-model check (rubric HG3) and a first exact-part synthesis. Rules and history: [cpu/architecture.md](cpu/architecture.md) section 9.",
+    "**Profile of Dhrystone: fetching is 54.8% of all clocks.** Each instruction spends 2 clocks being fetched and 1 executing; loads and stores add 2. The per-instruction clock model reproduces the measured timed region exactly (1,094,103 clocks); the whole-program counts differ by 3 clocks, the final `ebreak`.",
+    "**The byte-at-a-time string routines dominate.** `strcpy` and `strcmp` from `sim/cpu/bench/runtime.c` execute 47% of all instructions (281 of 600 per run). Software divide is only 5% of clocks (one `__divdi3` call per run); multiplication never reaches `__muldi3` because the compiler uses shifts. This corrects advice given earlier in the session that hardware multiply and divide would be the biggest gain for Dhrystone: the profile estimates only 1.05x.",
+    "**40% of instructions could reuse the previous fetch.** 241 of 600 instructions per run are the second half of an 8-byte fetch beat that was just read. Model estimates: a one-entry fetch buffer gives 1.12x to 1.28x (2,188 down to 1,947 or 1,706 clocks per run); an ideal pipeline gives at most 3.65x. These are estimates from the trace, not measured RTL.",
+    "**Run logs are now split by commit.** The two runs previously logged at the end of this file were moved unchanged to [devlog/devlog-3110337.md](devlog/devlog-3110337.md).",
+    "**The optimization loop took Dhrystone from 2,188.2 to 555.7 clocks per run, 3.94x** (0.260 to 1.024 DMIPS/MHz, simulation). Order of gains: instruction fetch first (fetch buffer 1.28x, then a 4 KiB instruction cache 1.73x), then memory waits (early issue 1.24x, same-clock writes 1.11x, a data cache 1.20x), then instruction count (M, 1.08x on the `rv64im` build).",
+    "**The loop stopped at about one instruction per clock.** On 0.4.0 only 2.6 of 555.7 clocks per run are not instruction execution: two divide steps, 0.6 fetch and 0.1 memory. Lower needs fewer instructions (compiler or runtime, not the core) or more than one instruction per clock (a superscalar redesign, not a refinement).",
+    "**The gains depend on assumptions not yet tested.** Both 4 KiB caches hold all of Dhrystone, and the RAM answers in one clock. The cache lookups use the just-computed next PC and data address in the same clock, which may lower the clock frequency; nothing has been synthesized. A slow-memory model and a first synthesis are the checks that matter next.",
+    "**Two tooling problems found and fixed during the loop.** The visualizer testbench detected writes in a way that stopped working at 0.2.2. The profiler's \"issue loads and stores in EXECUTE\" estimate overstated the gain for 0.3.0 and 0.4.0; the run logs [devlog-90ee1ea.md](devlog/devlog-90ee1ea.md) and [devlog-88db627.md](devlog/devlog-88db627.md) still show the old figure and are left as written.",
+    "**The core contract changed in three MINOR steps.** `ICACHE_BEATS` (0.2.0) and `DCACHE_BEATS` (0.3.0) are new parameters, every address is now treated as cacheable, and 0.4.0 adds M. Each version has a history row in [cpu/architecture.md](cpu/architecture.md) and a local `cpu-vX.Y.Z` tag."
+   ],
+   "timeline": [
+    {
+     "time": "19:58:44",
+     "text": "Initial commit `0483d99` (from an earlier session)",
+     "kind": "git"
+    },
+    {
+     "time": "19:59:44 to 20:00:07",
+     "text": "CI for `0483d99`: passed",
+     "kind": "CI"
+    },
+    {
+     "time": "20:00:41, 20:00:46",
+     "text": "Dependabot opens [PR 1](https://github.com/monstercameron/RISC-V-FPGA-CPU-Research/pull/1) (`actions/checkout` 7.0.1) and [PR 2](https://github.com/monstercameron/RISC-V-FPGA-CPU-Research/pull/2) (`actions/setup-python` 7.1.0); both pass CI and remain open",
+     "kind": "CI"
+    },
+    {
+     "time": "before 20:04",
+     "text": "Repository cloned to the Desktop; docs, RTL, tests and CI reviewed",
+     "kind": "approx."
+    },
+    {
+     "time": "20:04:55",
+     "text": "Ubuntu 24.04 installed in WSL; Icarus Verilog 12.0 and Python 3 installed",
+     "kind": "apt"
+    },
+    {
+     "time": "about 20:05",
+     "text": "Main regression: 96/96 pass; PicoRV32 smoke test passes",
+     "kind": "approx."
+    },
+    {
+     "time": "20:06:49 to 20:07:07",
+     "text": "Seven visualizer lessons rebuilt and verified; local page server started",
+     "kind": "record"
+    },
+    {
+     "time": "20:08:03",
+     "text": "\"Decisions\" lesson re-run from the viewer's **Run simulation** button",
+     "kind": "record"
+    },
+    {
+     "time": "about 20:10",
+     "text": "Main regression re-run on request: 96/96 pass in 11.8 s",
+     "kind": "approx."
+    },
+    {
+     "time": "20:24:24",
+     "text": "Review rubric written",
+     "kind": "file"
+    },
+    {
+     "time": "20:29:09",
+     "text": "Commit `55727ca`, review rubric; pushed",
+     "kind": "git"
+    },
+    {
+     "time": "20:29:25 to 20:29:44",
+     "text": "CI for `55727ca`: all six jobs pass",
+     "kind": "CI"
+    },
+    {
+     "time": "20:33:04",
+     "text": "Commit `aaa3693`, to-do list with RV64GC milestone; pushed",
+     "kind": "git"
+    },
+    {
+     "time": "20:33:08 to 20:33:34",
+     "text": "CI for `aaa3693`: all six jobs pass",
+     "kind": "CI"
+    },
+    {
+     "time": "20:40:02",
+     "text": "Commit `2b29966`, benchmark, memory-hierarchy and matrix to-dos; pushed",
+     "kind": "git"
+    },
+    {
+     "time": "20:40:06 to 20:40:29",
+     "text": "CI for `2b29966`: all six jobs pass",
+     "kind": "CI"
+    },
+    {
+     "time": "20:41",
+     "text": "Dhrystone sources and license downloaded from riscv-tests commit `3df703c`",
+     "kind": "file"
+    },
+    {
+     "time": "20:43:19",
+     "text": "Sources and license copied into the repository",
+     "kind": "file"
+    },
+    {
+     "time": "20:45:30",
+     "text": "Benchmark runtime written",
+     "kind": "file"
+    },
+    {
+     "time": "about 20:47",
+     "text": "First Dhrystone run on the RTL: all checks pass, 0.260 DMIPS/MHz",
+     "kind": "approx."
+    },
+    {
+     "time": "20:48:58",
+     "text": "Main regression after the trace-testbench change: 96/96 pass",
+     "kind": "file"
+    },
+    {
+     "time": "20:49:05 to 20:49:18",
+     "text": "clang 18.1.3, lld and LLVM tools installed in Ubuntu",
+     "kind": "apt"
+    },
+    {
+     "time": "20:50:03",
+     "text": "Dhrystone built and run entirely in Ubuntu: all checks pass, 0.217 DMIPS/MHz",
+     "kind": "record"
+    },
+    {
+     "time": "20:52:51",
+     "text": "Dhrystone result recorded in `cpu/dhrystone-results.json`",
+     "kind": "record"
+    },
+    {
+     "time": "20:54:20",
+     "text": "To-do list updated with the Dhrystone results",
+     "kind": "file"
+    },
+    {
+     "time": "20:55",
+     "text": "Development log written",
+     "kind": "approx."
+    },
+    {
+     "time": "20:57:06",
+     "text": "Commit `3110337`, Dhrystone benchmark and development log; pushed",
+     "kind": "git"
+    },
+    {
+     "time": "20:57:13 to 20:58:25",
+     "text": "CI for `3110337`: all seven jobs pass, including the new Dhrystone job. Built with clang 21.1.6: 2,281.2 clocks per run, CPI 3.615, 0.2495 DMIPS/MHz",
+     "kind": "CI"
+    },
+    {
+     "time": "about 21:00",
+     "text": "AGENTS.md now requires every experiment to be recorded in this log",
+     "kind": "approx."
+    },
+    {
+     "time": "21:02:41",
+     "text": "Scorer dry run on the recorded Dhrystone result, nothing written: 37.1/100",
+     "kind": "output"
+    },
+    {
+     "time": "21:04:14",
+     "text": "Dhrystone rerun through the launcher, scorecard appended to the run log below: unchanged 2,188.2 clocks per run; 37.1/100, foundation band, no claims granted",
+     "kind": "record"
+    },
+    {
+     "time": "about 21:06",
+     "text": "Semantic versioning adopted for the CPU architecture; existing C0 core declared version 0.1.0",
+     "kind": "approx."
+    },
+    {
+     "time": "21:08:12",
+     "text": "Dhrystone rerun to check the version reaches results and scorecards: version 0.1.0 recorded; +0.00% clocks per run against the 21:04 run; 37.1/100",
+     "kind": "record"
+    },
+    {
+     "time": "21:09:20",
+     "text": "Commit `699ad6c`, rubric scorecards, devlog rule and architecture versioning; pushed",
+     "kind": "git"
+    },
+    {
+     "time": "about 21:09",
+     "text": "Annotated tag `cpu-v0.1.0` created on `0483d99`, where the 0.1.0 RTL first landed, and pushed",
+     "kind": "approx."
+    },
+    {
+     "time": "21:09:28 to 21:10:39",
+     "text": "CI for `699ad6c`: all seven jobs pass. Repository check passes with the new version check; Dhrystone in CI (clang 21.1.6) scores 0.2495 DMIPS/MHz and 37.1/100",
+     "kind": "CI"
+    },
+    {
+     "time": "21:11:34",
+     "text": "Commit `35565c0`, records the 0.1.0 release in this log; pushed",
+     "kind": "git"
+    },
+    {
+     "time": "21:11:38 to 21:13:05",
+     "text": "CI for `35565c0`: all seven jobs pass",
+     "kind": "CI"
+    },
+    {
+     "time": "about 21:18",
+     "text": "Trace profiler written; dry run on the 21:08 trace: model matches the measured timed region exactly",
+     "kind": "approx."
+    },
+    {
+     "time": "21:21:17",
+     "text": "First profiled Dhrystone run, logged to [devlog/devlog-35565c0.md](devlog/devlog-35565c0.md): unchanged 2,188.2 clocks per run, 37.1/100",
+     "kind": "record"
+    },
+    {
+     "time": "about 21:25",
+     "text": "Optimization loop started (user goal: optimize from the profile, re-benchmark, repeat until clocks stop dropping, record every change and run). Commit `04b19db` (profiler and per-commit logs), local only",
+     "kind": "approx."
+    },
+    {
+     "time": "21:27:12",
+     "text": "Baseline run on `04b19db`, 0.1.0 core: 2,188.2 clocks per run; [devlog-04b19db.md](devlog/devlog-04b19db.md)",
+     "kind": "record"
+    },
+    {
+     "time": "before 21:31",
+     "text": "0.1.1 fetch buffer written; main regression 96/96 pass plus reset and RAM-wrapper checks",
+     "kind": "approx."
+    },
+    {
+     "time": "before 21:31",
+     "text": "Profiler switched from a fixed clock model to measured per-state clocks from the benchmark testbench. Unlogged tooling check on the uncommitted 0.1.1 tree: 1,706.2 clocks per run, per-instruction clocks equal the timed region exactly",
+     "kind": "output"
+    },
+    {
+     "time": "21:31:14",
+     "text": "Commit `df7f489`, fetch buffer (0.1.1); tagged `cpu-v0.1.1`, local only",
+     "kind": "git"
+    },
+    {
+     "time": "21:32:24",
+     "text": "0.1.1 run: 1,706.2 clocks per run, 0.3336 DMIPS/MHz, 1.28x over 0.1.0; [devlog-df7f489.md](devlog/devlog-df7f489.md). Profile: instruction-cache replay predicts 988.8 clocks per run with 512 beats (4 KiB), since Dhrystone's code is about 4 KB",
+     "kind": "record"
+    },
+    {
+     "time": "after 21:32",
+     "text": "0.2.0 instruction cache written. Main regression 96/96 pass with the default 512-beat cache and 96/96 with a 2-beat cache; a 3-beat cache is rejected at elaboration",
+     "kind": "output"
+    },
+    {
+     "time": "21:34:58",
+     "text": "Commit `7197bd1`, instruction cache (0.2.0); tagged `cpu-v0.2.0`, local only",
+     "kind": "git"
+    },
+    {
+     "time": "21:35:53",
+     "text": "0.2.0 run: 988.7 clocks per run, 0.5756 DMIPS/MHz, 2.21x over 0.1.0, matching the 988.8 estimate; [devlog-7197bd1.md](devlog/devlog-7197bd1.md). Fetch is now 0.1% of clocks; EXECUTE 61%, MEMORY 39%",
+     "kind": "record"
+    },
+    {
+     "time": "after 21:36",
+     "text": "0.2.1 early data-request issue written. Main regression 96/96 pass with 512-beat and 2-beat caches",
+     "kind": "output"
+    },
+    {
+     "time": "21:37:44",
+     "text": "Commit `f18223e`, loads and stores issue from EXECUTE (0.2.1); tagged `cpu-v0.2.1`, local only",
+     "kind": "git"
+    },
+    {
+     "time": "21:38:42",
+     "text": "0.2.1 run: 794.7 clocks per run, 0.7162 DMIPS/MHz, 2.75x over 0.1.0, as estimated; [devlog-f18223e.md](devlog/devlog-f18223e.md). Every load and store still spends 1 clock in MEMORY because the RAM wrapper acknowledges a clock late",
+     "kind": "record"
+    },
+    {
+     "time": "after 21:39",
+     "text": "0.2.2 same-clock write acknowledge in the RAM wrapper written. Main regression 96/96 pass with 512-beat and 2-beat caches",
+     "kind": "output"
+    },
+    {
+     "time": "21:39:58",
+     "text": "Commit `0573f1a`, same-clock write acknowledge (0.2.2); tagged `cpu-v0.2.2`, local only",
+     "kind": "git"
+    },
+    {
+     "time": "21:40:59",
+     "text": "0.2.2 run: 718.7 clocks per run, CPI 1.198, 0.7919 DMIPS/MHz, 3.04x over 0.1.0, as estimated; [devlog-0573f1a.md](devlog/devlog-0573f1a.md). Remaining waits: 118 loads per run, 1 MEMORY clock each",
+     "kind": "record"
+    },
+    {
+     "time": "after 21:41",
+     "text": "0.3.0 data cache written. Main regression 96/96 pass with default 512-beat caches and with 2-beat instruction and data caches",
+     "kind": "output"
+    },
+    {
+     "time": "21:42:29",
+     "text": "Commit `90ee1ea`, data cache (0.3.0); tagged `cpu-v0.3.0`, local only",
+     "kind": "git"
+    },
+    {
+     "time": "21:43:28",
+     "text": "0.3.0 run: 600.8 clocks per run, CPI 1.001, 0.9473 DMIPS/MHz, 3.64x over 0.1.0; [devlog-90ee1ea.md](devlog/devlog-90ee1ea.md). The core now completes about one instruction per clock, the floor for a design that executes one instruction at a time; only fewer instructions can lower clocks further without executing several instructions per clock",
+     "kind": "record"
+    },
+    {
+     "time": "after 21:44",
+     "text": "0.4.0 M extension written: core, reference model and regression (directed M tests over zero divisors, overflow, extremes; two random programs with M). Reference M results checked against hand-computed spec values. Main regression 108/108 pass, 66 instruction names, with default and 2-beat caches. Benchmark build gains `--isa rv64im_zifencei`",
+     "kind": "output"
+    },
+    {
+     "time": "21:47:46",
+     "text": "Commit `88db627`, M extension (0.4.0); tagged `cpu-v0.4.0`, local only",
+     "kind": "git"
+    },
+    {
+     "time": "21:48:47",
+     "text": "0.4.0 run, Dhrystone built for `rv64im`: 555.7 clocks per run, 553.1 instructions, CPI 1.005, 1.0242 DMIPS/MHz, 3.94x over 0.1.0; [devlog-88db627.md](devlog/devlog-88db627.md)",
+     "kind": "record"
+    },
+    {
+     "time": "21:49:53",
+     "text": "0.4.0 run, Dhrystone built for `rv64i`: unchanged 600.8 clocks per run, as expected since that build has no M instructions; same log",
+     "kind": "record"
+    },
+    {
+     "time": "after 21:50",
+     "text": "Loop stopped: only 2.6 of 555.7 clocks per run are not instruction execution. Profiler fix: the \"issue loads and stores in EXECUTE\" estimate counted every load and store, even those that no longer wait; it now counts only loads and stores that waited, and gives 555.6 instead of 361.7 for 0.4.0",
+     "kind": "output"
+    },
+    {
+     "time": "after 21:50",
+     "text": "Visualizer testbench fixed: it recognized RAM writes as \"accepted but not yet acknowledged\", which no longer happens since 0.2.2. All seven lessons rebuilt and verified on 0.4.0 at 21:51:24; the C demo takes 22,859 clocks instead of 69,157",
+     "kind": "record"
+    },
+    {
+     "time": "21:51:40",
+     "text": "Expanded regression with compiled C firmware on 0.4.0: 111/111 runs, 37 programs, 66 instruction names, reset and both RAM-wrapper checks pass; saved as `cpu/verification.json` with local paths removed",
+     "kind": "file"
+    },
+    {
+     "time": "21:42:14",
+     "text": "Found afterwards: `main` on GitHub had been pushed to `0573f1a` by a push outside the assistant's commands; CI for it passed",
+     "kind": "CI"
+    },
+    {
+     "time": "21:48:08",
+     "text": "Found afterwards: a second outside push moved `main` on GitHub to `88db627`; CI passed all jobs, including Dhrystone",
+     "kind": "CI"
+    },
+    {
+     "time": "21:54",
+     "text": "Commit `186e8ca`, loop results and records, local only. The commit rows above that say \"local only\" were true when written; the two outside pushes later published every loop commit up to `88db627`. Tags after `cpu-v0.1.0` are still local",
+     "kind": "git"
+    },
+    {
+     "time": "before 21:57",
+     "text": "Dual-issue estimate from the 0.4.0 `rv64im` profile trace, pairing an instruction with the next one in the same 8-byte beat when they are independent: ALU after ALU or load saves 82.9 clocks per run (472.8, 1.175x); also allowing a branch second and a store first saves 120.9 (434.8, 1.278x, about 1.31 DMIPS/MHz). Estimate only; not built",
+     "kind": "output"
+    },
+    {
+     "time": "before 21:57",
+     "text": "New user goal: 20 DMIPS/MHz. Needs 28.5 clocks per Dhrystone run, about 19.4 instructions per clock on this 553-instruction build; an ideal 2-wide core reaches 2.06 and an ideal 4-wide core 4.12. Not reachable by core changes without breaking Dhrystone's rules; reported to the user instead of attempted",
+     "kind": "output"
+    },
+    {
+     "time": "after 21:57",
+     "text": "Pushed `ec2ff65` and tags `cpu-v0.1.1` to `cpu-v0.4.0` on request; CI passed all seven jobs",
+     "kind": "CI"
+    },
+    {
+     "time": "after 21:57",
+     "text": "New user goal: aim for 20 DMIPS/MHz and keep optimizing and documenting. Plan: dual issue (0.5.0), a labelled word-at-a-time runtime, the B extension, then whatever the profile shows",
+     "kind": "approx."
+    },
+    {
+     "time": "before 22:18",
+     "text": "0.5.0 dual issue written. First regression failed on `random_m_404`: `sraw` on the second slot gave 1 instead of -1, because a Verilog `?:` mixing a signed and an unsigned arm is evaluated unsigned. Fixed by using `if`/`else` as the first slot does; the differential check caught it",
+     "kind": "output"
+    },
+    {
+     "time": "before 22:18",
+     "text": "Added `dual_issue_store_pairs`: a store rewriting the next instruction in its own beat must not pair and the new instruction must run (it did: x20 = 42), and a store followed by an ALU instruction pairs. Regression 111/111 with default and 2-line caches. Visualizer carries the second retirement slot; all seven lessons verify; C demo 22,859 to 16,755 clocks",
+     "kind": "output"
+    },
+    {
+     "time": "22:18:19",
+     "text": "Commit `ba03c09`, limited dual issue (0.5.0); tagged `cpu-v0.5.0`, local only",
+     "kind": "git"
+    },
+    {
+     "time": "22:19:24, 22:20:37",
+     "text": "0.5.0 runs: `rv64im` 435.7 clocks per run, CPI 0.788, 1.3062 DMIPS/MHz (estimate 434.8); `rv64i` 471.8 clocks, 1.2063 DMIPS/MHz; [devlog-ba03c09.md](devlog/devlog-ba03c09.md)",
+     "kind": "record"
+    },
+    {
+     "time": "after 22:20",
+     "text": "Issue-width model on the 0.5.0 stream (matches 0.5.0 within 0.4%): pairing across beats 417.1; plus branch second 395.1; plus load or store second 391.1; two memory ports 367.1; 3-wide 317.0; 4-wide 293.0; even 8-wide in-order 283.0 clocks per run, about 2.0 DMIPS/MHz. In-order issue saturates near 2.0 on Dhrystone because dependencies and branches end issue groups",
+     "kind": "output"
+    },
+    {
+     "time": "before 22:23",
+     "text": "0.5.1 written: second slot from the next beat, and conditional branches in it. Regression 117/117 with default and 2-line caches, with new tests `misaligned_branch_after_alu` and `branch_depends_on_alu`",
+     "kind": "output"
+    },
+    {
+     "time": "22:23:14",
+     "text": "Commit `4ca8908`, pair across beats and pair branches (0.5.1); tagged `cpu-v0.5.1`, local only",
+     "kind": "git"
+    },
+    {
+     "time": "22:24:21, 22:25:39",
+     "text": "0.5.1 runs: `rv64im` 397.8 clocks per run, CPI 0.719, 1.4309 DMIPS/MHz (estimate 395.1); `rv64i` 424.9 clocks, 1.3396 DMIPS/MHz; [devlog-4ca8908.md](devlog/devlog-4ca8908.md)",
+     "kind": "record"
+    },
+    {
+     "time": "after 22:25",
+     "text": "Fast-runtime option added (`--runtime fast`, a separate labelled configuration). First version handled only strings with equal alignment: unlogged run 413.8 clocks per run, slower than the reference 397.8. A trace replay showed why: every call is misaligned against the other string (`strcpy` from `0x11f5` to `0xfe4e`, `strcmp` of `0xfe6d` with `0xfe4e`), so the word path never ran",
+     "kind": "output"
+    },
+    {
+     "time": "after 22:25",
+     "text": "Second version reads aligned words and shifts neighbours together, as C libraries do: unlogged run 360.8 clocks per run, 470.1 instructions, 1.5773 DMIPS/MHz with `rv64im` on 0.5.1",
+     "kind": "output"
+    },
+    {
+     "time": "22:30:06",
+     "text": "Commit `5db3914`, fast runtime option; logged fast-runtime run on 0.5.1: 360.8 clocks per run, 1.5773 DMIPS/MHz; [devlog-5db3914.md](devlog/devlog-5db3914.md)",
+     "kind": "record"
+    },
+    {
+     "time": "after 22:31",
+     "text": "Zba/Zbb check: compiling Dhrystone and the fast runtime for `rv64im_zba_zbb` changes only a few instructions (`sh2add`, `add.uw`, `max`); the compiler never emits `orc.b` from portable C. Estimated 5 to 7% on the fast runtime, about 1% on the reference. Deferred",
+     "kind": "output"
+    },
+    {
+     "time": "after 22:31",
+     "text": "Issue-width model on the fast-runtime stream: a second memory port for loads in the second slot gives 318.1 clocks per run (about 1.79 DMIPS/MHz); 3-wide 275.0; 8-wide in-order 241.0 (2.36)",
+     "kind": "output"
+    },
+    {
+     "time": "before 22:33",
+     "text": "0.5.2 written: data-cache-hit loads in the second slot. New test `dual_issue_loads` (two hits pair, dependent address waits, store then load sees the store). Regression 120/120 with default and 2-line caches",
+     "kind": "output"
+    },
+    {
+     "time": "22:33:28",
+     "text": "Commit `c05a1ce`, second-slot loads (0.5.2); tagged `cpu-v0.5.2`. Runs: `rv64im` reference 388.8 clocks per run, 1.4640 DMIPS/MHz; `rv64im` fast runtime 348.9, 1.6315; `rv64i` reference 416.9, 1.3653; [devlog-c05a1ce.md](devlog/devlog-c05a1ce.md). Less than the model predicted (318.1 fast), because the model also let a load pair after any store",
+     "kind": "record"
+    },
+    {
+     "time": "after 22:37",
+     "text": "Pairing-blocker analysis on the 0.5.2 fast-runtime stream (clocks per run issued alone, by reason): branch first 40.0, store second 37.1, ALU-to-ALU dependency 32.0, JALR first 32.0, JALR second 22.1, load after store 14.0, ALU-to-branch dependency 14.0",
+     "kind": "output"
+    },
+    {
+     "time": "before 22:39",
+     "text": "0.5.3 written: not-taken branch first, JAL/JALR second, load after a store to another beat. New tests `dual_issue_jumps` and `misaligned_jalr_after_alu`. Regression 126/126 with default and 2-line caches",
+     "kind": "output"
+    },
+    {
+     "time": "22:39:39",
+     "text": "Commit `73c1fbc`, branches first and jumps second (0.5.3); tagged `cpu-v0.5.3`. Runs: `rv64im` reference 366.8 clocks per run, 1.5518 DMIPS/MHz; fast runtime 310.9, 1.8309; `rv64i` reference 391.9, 1.4524; [devlog-73c1fbc.md](devlog/devlog-73c1fbc.md)",
+     "kind": "record"
+    },
+    {
+     "time": "after 22:43",
+     "text": "Blockers on the 0.5.3 fast-runtime stream: store second 31.1 clocks per run, ALU-to-ALU dependency 24.1, JALR first 22.0, branch first (taken) 17.0, ALU-to-branch dependency 14.0",
+     "kind": "output"
+    },
+    {
+     "time": "before 22:47",
+     "text": "0.5.4 written: second-slot stores (held in MEMORY under stalls, precise bus-error trap) and ALU forwarding into the second slot. Trace testbench and visualizer now log a second-slot store's write after the first slot's retirement, matching program order. New tests `dual_issue_store_second` and `store2_bus_fault`. Regression 132/132 with default and 2-line caches; all seven visualizer lessons verify",
+     "kind": "output"
+    },
+    {
+     "time": "before 22:47",
+     "text": "Visualizer lesson build failed (`decisionNotTaken` missing): since 0.5.1 a branch can retire on the second slot, and the lesson checkpoints only looked at the first slot. Not caught at 0.5.1 to 0.5.3 because the lessons were not rebuilt then. Checkpoints now come from both slots' retirement records; all seven lessons verify; C demo 12,990 clocks",
+     "kind": "output"
+    },
+    {
+     "time": "22:47:19",
+     "text": "Commit `241a9af`, second-slot stores and forwarding (0.5.4); tagged `cpu-v0.5.4`. Runs: `rv64im` reference 335.8 clocks per run, 1.6951 DMIPS/MHz; fast runtime 269.9, 2.1091 (first build past 2 DMIPS/MHz); `rv64i` reference 358.8, 1.5861; [devlog-241a9af.md](devlog/devlog-241a9af.md)",
+     "kind": "record"
+    },
+    {
+     "time": "after 22:51",
+     "text": "Blockers on 0.5.4: fast runtime issues 413.8 of 470.1 instructions per run in pairs (2-wide floor about 235 clocks); remaining: JALR first 18.0, taken branch first 15.0, store second 10.1 clocks per run. Reference runtime: taken branch first 55.0, load-to-branch dependency 23.0, JALR first 20.0",
+     "kind": "output"
+    },
+    {
+     "time": "before 22:57",
+     "text": "0.5.5 branch folding written. Regression 135/135 passed, but the visualizer lesson build failed: when a fetch completed, the next instruction was captured from `pc2`, which since 0.5.5 is the folding target computed from the stale previous instruction. In the lesson it captured `j .` from 0x10 instead of the instruction at 0x30. Fixed (use pc+4 in FETCH). New test `fetch_after_stale_jump` reproduces it: with the bug put back it fails (x5 = 7 at 0x30 instead of x7 = 2); with the fix it passes. Regression 138/138 with default and 2-line caches; all lessons verify; C demo 11,568 clocks. Lesson rebuilds are now part of every step",
+     "kind": "output"
+    },
+    {
+     "time": "about 22:57",
+     "text": "Commit `5f1f6b1`, branch folding (0.5.5); tagged `cpu-v0.5.5`. Runs: `rv64im` reference 287.8 clocks per run, 1.9777 DMIPS/MHz (7.60x over 0.1.0); fast runtime 251.9, 2.2598; `rv64i` reference 308.9, 1.8428; [devlog-5f1f6b1.md](devlog/devlog-5f1f6b1.md)",
+     "kind": "record"
+    },
+    {
+     "time": "about 22:59",
+     "text": "Second issue model, with folding, forwarding depth and port limits, calibrated against 0.5.5 (287.0 modelled against 287.8 measured, reference runtime). 3-wide with one level of forwarding: 213 clocks per run reference (2.67 DMIPS/MHz), 182 fast (3.13). 4-wide with two taken branches and three levels of forwarding: 144 reference (3.95), 123 fast (4.63). 8-wide with forwarding chains of seven: 73 and 63 (7.8 and 9.0)",
+     "kind": "output"
+    },
+    {
+     "time": "about 22:59",
+     "text": "Caution recorded: forwarding chains raise DMIPS/MHz by doing more work per clock, which lengthens the clock; at the extreme a whole program fits in one very long clock. DMIPS/MHz gains from deeper logic are not real performance unless synthesis shows the clock survives. Decided to measure logic depth before going wider",
+     "kind": "output"
+    },
+    {
+     "time": "23:02:08",
+     "text": "Yosys 0.33 installed in Ubuntu; `sim/cpu/synth_depth.py` written to map the core to 6-input LUTs and report the longest path in LUT levels",
+     "kind": "apt"
+    },
+    {
+     "time": "after 23:02",
+     "text": "First depth synthesis of 0.5.5 stopped after a long run without finishing: the 0.4.0 multiply logic built three 128x128-bit products. Replaced by one signed 65x65 product with a sign or zero bit per operand (same results; M tests pass). Depth synthesis restarted in the background",
+     "kind": "output"
+    },
+    {
+     "time": "after 23:02",
+     "text": "0.6.0 B extension written: one `bitmanip` function used by both slots; encodings taken from LLVM's assembler; reference model extended. New tests: `b_extension` (all 40 instructions over extreme operands) and `random_b_606`/`random_b_707`. Regression 147/147, 106 instruction names, with default and 2-line caches; all seven lessons verify",
+     "kind": "output"
+    },
+    {
+     "time": "after 23:02",
+     "text": "Independent B check (`sim/cpu/check_bitmanip.py`): the same C built without B and with Zba/Zbb/Zbs gives identical results on the RTL in all 12 groups; the B build uses 28 distinct B instructions; both traces match the reference. Benchmark builds gain `rv64imb` (`rv64im_zba_zbb_zbs_zifencei`), and the fast runtime uses `orc.b` when Zbb is available",
+     "kind": "output"
+    },
+    {
+     "time": "23:08:47",
+     "text": "Commit `f78d62a`, B extension and single multiplier (0.6.0); tagged `cpu-v0.6.0`, local only",
+     "kind": "git"
+    },
+    {
+     "time": "after 23:08",
+     "text": "First `rv64imb` run failed a consistency check: timing run and trace disagreed by one instruction on the timed region. Both retire the same instructions in the same order; the difference is at the region's edges, where a marker store can retire in the same clock as the next instruction. The runner now requires exact totals, allows the region edges to differ by up to two, and takes the region's instruction count from the trace in program order. Earlier results are unaffected (their counts matched exactly)",
+     "kind": "output"
+    },
+    {
+     "time": "23:12:36 to 23:16:18",
+     "text": "0.6.0 runs: `rv64imb` reference 285.8 clocks per run, 1.9916 DMIPS/MHz; `rv64imb` fast 247.8, 2.2964; `rv64im` reference unchanged 287.8; `rv64im` fast unchanged 251.9; [devlog-f78d62a.md](devlog/devlog-f78d62a.md). B gains 0.7% (reference) and 1.6% (fast), as the static check predicted",
+     "kind": "record"
+    },
+    {
+     "time": "before 23:15",
+     "text": "Depth synthesis of 0.6.0 completed but recorded nothing: Yosys quiet mode hid the reports. The script now saves them to files; 0.3.0 and 0.6.0 are being measured",
+     "kind": "output"
+    },
+    {
+     "time": "23:17:11",
+     "text": "Commit `c281389`: 0.6.0 benchmark records and runner fix",
+     "kind": "git"
+    },
+    {
+     "time": "after 23:17",
+     "text": "Third-slot sizing on the 0.6.0 streams (issue model, calibrated on the measured 2-wide results): an ALU-only third slot that never uses the second slot's result saves about 12% (reference) to 16% (fast); a direct count of ALU instructions issued alone suggested zero, because the gain comes from regrouping, not from single issues",
+     "kind": "output"
+    },
+    {
+     "time": "before 23:21",
+     "text": "0.7.0 third slot written, with a third retirement port carried through the RAM wrapper, testbenches and visualizer. New test `triple_issue` (forwarding from slot one, a third that depends on the second, three writes to one register). Regression 150/150 with default and 2-line caches; B cross-check passes; all lessons verify; C demo 8,756 clocks",
+     "kind": "output"
+    },
+    {
+     "time": "23:21:28",
+     "text": "Commit `a6e3f87`, third issue slot (0.7.0); tagged `cpu-v0.7.0`. Runs: `rv64imb` reference 256.8 clocks per run, CPI 0.467, 2.2163 DMIPS/MHz (8.52x over 0.1.0); `rv64imb` fast 216.9, 2.6243; `rv64im` reference 258.8, 2.1991; [devlog-a6e3f87.md](devlog/devlog-a6e3f87.md)",
+     "kind": "record"
+    },
+    {
+     "time": "23:17 to 23:24",
+     "text": "First logic-depth results (generic Yosys + ABC, 6-input LUTs, 4-line caches): 0.3.0 has a longest path of 30 LUT levels, 6,309 LUTs, 3,662 flip-flops; the run started on 0.6.0 reports 78 levels, 33,046 LUTs, 4,250 flip-flops. That report was stamped \"0.7.0\" because the script read the version and hash at the end, after the working copy had moved on; the RTL it synthesized was read at the start (0.6.0). The script now snapshots and hashes its source first",
+     "kind": "output"
+    },
+    {
+     "time": "about 23:25",
+     "text": "Finding: depth grew 2.6x from 0.3.0 while DMIPS/MHz grew about 2.1x. If clock frequency fell in proportion to depth, absolute performance would not have improved. Three variants of 0.7.0 are being synthesized (as built, multiplier removed, multiplier removed with forwarding and folding off) to find what the deep path is",
+     "kind": "output"
+    },
+    {
+     "time": "about 23:25",
+     "text": "Both syntheses contain only flip-flops and LUTs: no latches (part of rubric gate HG7; a dedicated lint run is still missing). Size note: up to three instructions per clock needs six register-file read ports and three write ports, which an FPGA builds from flip-flops and wide multiplexers rather than LUT RAM; LUTs grew from 6,309 to 33,046",
+     "kind": "output"
+    },
+    {
+     "time": "23:26",
+     "text": "First variant-synthesis attempt did nothing: PowerShell passed an escaped shell variable through literally. Rerun from a script file",
+     "kind": "output"
+    },
+    {
+     "time": "23:28 to 23:32",
+     "text": "Candidate 0.7.1, registered multiplier: operands registered in EXECUTE, product taken in a new MULTIPLY state one clock later. Regression 150/150 with default and 2-line caches; B cross-check passes. Unlogged Dhrystone run (`rv64imb`, reference runtime): unchanged 256.8 clocks per run, because this build never multiplies at run time",
+     "kind": "output"
+    },
+    {
+     "time": "23:34",
+     "text": "Correction to earlier rows: from \"before 21:57\" to \"23:28 to 23:32\", 41 rows had estimated times 20 to 60 minutes later than the events (some later than the time of writing). They now use the commit author times and the run-table times, or a bound from them",
+     "kind": "git"
+    },
+    {
+     "time": "about 23:35",
+     "text": "Variant `v070-nomul-nofwd` (0.7.0 with the multiplier removed, and with folding (`control0`) and slot-1-to-slot-2 forwarding (`slot0_forward`) forced off): 40 LUT levels, 28,149 LUTs, 4,483 flip-flops, 442.4 s. Its longest path runs from the register file through about 20 single-LUT steps in a row, the pattern of a 64-bit adder carry built from generic LUTs. A generic LUT mapping has no carry chain, so LUT levels overstate adder delay compared with an FPGA, which has dedicated carry logic",
+     "kind": "output"
+    },
+    {
+     "time": "23:35:50",
+     "text": "`nextpnr-ecp5` 0.6-3build5 (arm64) installed in Ubuntu with `apt-get install nextpnr-ecp5`, to get post-route clock estimates on a real FPGA family (Lattice ECP5) instead of LUT levels. New script `sim/cpu/synth_fmax.py` (Yosys `synth_ecp5`, then nextpnr out of context, 4-line caches); first runs on 0.3.0, 0.7.0 and the 0.7.1 candidate started",
+     "kind": "apt"
+    },
+    {
+     "time": "23:49",
+     "text": "Variant results (same flow, 4-line caches, run three at a time): 0.7.0 as built 80 LUT levels, 37,991 LUTs, 4,473 flip-flops, 1,266.6 s; multiplier removed 54 levels, 30,188 LUTs, 1,199.3 s; multiplier removed with folding and forwarding off 40 levels, 28,149 LUTs. The multiplier (a 65x65 product after register read and decode in the same clock) accounts for 26 levels and folding plus slot-1-to-slot-2 forwarding for 14 more. (The 0.7.0 RTL gives 80 levels against the 78 of the 0.6.0 run; ABC results vary a little with the design)",
+     "kind": "output"
+    },
+    {
+     "time": "23:50",
+     "text": "Candidate 0.7.1 (registered multiplier) depth: 52 LUT levels against 80 for 0.7.0, 40,187 LUTs (+2,196, from holding the 130-bit product's operands and selecting its result), 4,606 flip-flops (+133), 1,252.4 s. The deepest path no longer goes through the multiplier: it runs from the register file to a register-file write (the issue and forwarding logic). Adopted as 0.7.1 (PATCH: a multiply takes two clocks and no longer pairs; the ISA and ports do not change). Dhrystone does not multiply at run time, so its clocks do not change (256.8, unlogged run at 23:28 to 23:32)",
+     "kind": "output"
+    },
+    {
+     "time": "23:51:50",
+     "text": "Commit `129e37e`, registered multiplier (0.7.1); tagged `cpu-v0.7.1`, local only",
+     "kind": "git"
+    },
+    {
+     "time": "23:52:42",
+     "text": "First ECP5 place and route (0.3.0, LFE5U-85F, CABGA381, speed 6, seed 1, 4-line caches, target 50 MHz): routed, **22.49 MHz** achieved; 23,911 of 83,640 logic cells, 3,662 flip-flops; 945.2 s. Critical path 44.5 ns, of which 9.2 ns logic and 35.3 ns routing: instruction register, load address, data-cache hit, result select, register-file write. nextpnr exits 1 when the target is missed, so the script reported \"nextpnr exit 1\"; the report was corrected from the log and the script now passes `--timing-allow-fail` and records the critical path",
+     "kind": "output"
+    },
+    {
+     "time": "23:52 to 23:58",
+     "text": "0.7.1 runs: `rv64imb` reference 256.8 clocks per run, 2.2163 DMIPS/MHz (unchanged); `rv64imb` fast 216.9, 2.6243 (unchanged); `rv64im` 261.8, 2.1739 (+3.0 clocks per run against 0.7.0: that build multiplies at run time, and each multiply now takes an extra clock and no longer pairs); `rv64i` 273.9, 2.0780 (first `rv64i` record since 0.5.5's 308.9); [devlog-129e37e.md](devlog/devlog-129e37e.md)",
+     "kind": "record"
+    },
+    {
+     "time": "23:58",
+     "text": "Absolute-performance estimate for 0.3.0: 0.9473 DMIPS/MHz x 22.49 MHz = 21.3 DMIPS on this part (one seed, open timing model, not hardware). The 0.7.0 and 0.7.1 routes are running; their DMIPS/MHz gain (2.34x) is real only if their clock stays above 22.49 / 2.34 = 9.6 MHz",
+     "kind": "output"
+    }
+   ],
+   "commits": [
+    {
+     "hash": "0483d99",
+     "date": "2026-11-20",
+     "time": "19:58:44",
+     "author": "Claude",
+     "subject": "Initial commit: RV64I multicycle core, simulation suite, and research"
+    },
+    {
+     "hash": "55727ca",
+     "date": "2026-11-20",
+     "time": "20:29:09",
+     "author": "earl cameron",
+     "subject": "Add CPU review rubric for good and performant claims"
+    },
+    {
+     "hash": "aaa3693",
+     "date": "2026-11-20",
+     "time": "20:33:04",
+     "author": "earl cameron",
+     "subject": "Add CPU to-do list with an RV64GC milestone"
+    },
+    {
+     "hash": "2b29966",
+     "date": "2026-11-20",
+     "time": "20:40:02",
+     "author": "earl cameron",
+     "subject": "Expand to-do list: benchmarks, memory hierarchy, matrix research"
+    },
+    {
+     "hash": "3110337",
+     "date": "2026-11-20",
+     "time": "20:57:06",
+     "author": "earl cameron",
+     "subject": "Add Dhrystone benchmark and development log"
+    },
+    {
+     "hash": "699ad6c",
+     "date": "2026-11-20",
+     "time": "21:09:20",
+     "author": "earl cameron",
+     "subject": "Add rubric scorecards, devlog rule and architecture versioning"
+    },
+    {
+     "hash": "35565c0",
+     "date": "2026-11-20",
+     "time": "21:11:34",
+     "author": "earl cameron",
+     "subject": "Record the 0.1.0 release in the devlog"
+    },
+    {
+     "hash": "04b19db",
+     "date": "2026-11-20",
+     "time": "21:25:53",
+     "author": "earl cameron",
+     "subject": "Profile every Dhrystone run and split run logs by commit"
+    },
+    {
+     "hash": "df7f489",
+     "date": "2026-11-20",
+     "time": "21:31:14",
+     "author": "earl cameron",
+     "subject": "Add a one-entry fetch buffer (architecture 0.1.1)"
+    },
+    {
+     "hash": "7197bd1",
+     "date": "2026-11-20",
+     "time": "21:34:58",
+     "author": "earl cameron",
+     "subject": "Replace the fetch buffer with an instruction cache (architecture 0.2.0)"
+    },
+    {
+     "hash": "f18223e",
+     "date": "2026-11-20",
+     "time": "21:37:44",
+     "author": "earl cameron",
+     "subject": "Issue loads and stores from EXECUTE (architecture 0.2.1)"
+    },
+    {
+     "hash": "0573f1a",
+     "date": "2026-11-20",
+     "time": "21:39:58",
+     "author": "earl cameron",
+     "subject": "Acknowledge RAM writes in the same clock (architecture 0.2.2)"
+    },
+    {
+     "hash": "90ee1ea",
+     "date": "2026-11-20",
+     "time": "21:42:29",
+     "author": "earl cameron",
+     "subject": "Add a write-through data cache for loads (architecture 0.3.0)"
+    },
+    {
+     "hash": "88db627",
+     "date": "2026-11-20",
+     "time": "21:47:46",
+     "author": "earl cameron",
+     "subject": "Add the M extension (architecture 0.4.0)"
+    }
+   ]
+  }
+ ],
+ "runs": [
+  {
+   "time": "2026-11-20 21:04:14 -0500",
+   "commit": "3110337",
+   "uncommitted": "yes",
+   "version": "unrecorded",
+   "compiler": "clang version 23.1.5 -O2",
+   "clocks": 2188.2,
+   "dmips_mhz": 0.2601,
+   "fast": false
+  },
+  {
+   "time": "2026-11-20 21:08:12 -0500",
+   "commit": "3110337",
+   "uncommitted": "yes",
+   "version": "0.1.0",
+   "compiler": "clang version 23.1.5 -O2",
+   "clocks": 2188.2,
+   "dmips_mhz": 0.2601,
+   "fast": false
+  },
+  {
+   "time": "2026-11-20 21:21:17 -0500",
+   "commit": "35565c0",
+   "uncommitted": "yes",
+   "version": "0.1.0",
+   "compiler": "clang version 23.1.5 -O2",
+   "clocks": 2188.2,
+   "dmips_mhz": 0.2601,
+   "fast": false
+  },
+  {
+   "time": "2026-11-20 21:27:12 -0500",
+   "commit": "04b19db",
+   "uncommitted": "yes",
+   "version": "0.1.0",
+   "compiler": "clang version 23.1.5 -O2",
+   "clocks": 2188.2,
+   "dmips_mhz": 0.2601,
+   "fast": false
+  },
+  {
+   "time": "2026-11-20 21:32:24 -0500",
+   "commit": "df7f489",
+   "uncommitted": "yes",
+   "version": "0.1.1",
+   "compiler": "clang version 23.1.5 -O2",
+   "clocks": 1706.2,
+   "dmips_mhz": 0.3336,
+   "fast": false
+  },
+  {
+   "time": "2026-11-20 21:35:53 -0500",
+   "commit": "7197bd1",
+   "uncommitted": "yes",
+   "version": "0.2.0",
+   "compiler": "clang version 23.1.5 -O2",
+   "clocks": 988.7,
+   "dmips_mhz": 0.5756,
+   "fast": false
+  },
+  {
+   "time": "2026-11-20 21:38:42 -0500",
+   "commit": "f18223e",
+   "uncommitted": "yes",
+   "version": "0.2.1",
+   "compiler": "clang version 23.1.5 -O2",
+   "clocks": 794.7,
+   "dmips_mhz": 0.7162,
+   "fast": false
+  },
+  {
+   "time": "2026-11-20 21:40:59 -0500",
+   "commit": "0573f1a",
+   "uncommitted": "yes",
+   "version": "0.2.2",
+   "compiler": "clang version 23.1.5 -O2",
+   "clocks": 718.7,
+   "dmips_mhz": 0.7919,
+   "fast": false
+  },
+  {
+   "time": "2026-11-20 21:43:28 -0500",
+   "commit": "90ee1ea",
+   "uncommitted": "yes",
+   "version": "0.3.0",
+   "compiler": "clang version 23.1.5 -O2",
+   "clocks": 600.8,
+   "dmips_mhz": 0.9473,
+   "fast": false
+  },
+  {
+   "time": "2026-11-20 21:48:47 -0500",
+   "commit": "88db627",
+   "uncommitted": "yes",
+   "version": "0.4.0",
+   "compiler": "clang version 23.1.5 -O2",
+   "clocks": 555.7,
+   "dmips_mhz": 1.0242,
+   "fast": false
+  },
+  {
+   "time": "2026-11-20 21:49:53 -0500",
+   "commit": "88db627",
+   "uncommitted": "yes",
+   "version": "0.4.0",
+   "compiler": "clang version 23.1.5 -O2",
+   "clocks": 600.8,
+   "dmips_mhz": 0.9473,
+   "fast": false
+  },
+  {
+   "time": "2026-11-20 22:19:24 -0500",
+   "commit": "ba03c09",
+   "uncommitted": "yes",
+   "version": "0.5.0",
+   "compiler": "clang version 23.1.5 -O2",
+   "clocks": 435.7,
+   "dmips_mhz": 1.3062,
+   "fast": false
+  },
+  {
+   "time": "2026-11-20 22:20:37 -0500",
+   "commit": "ba03c09",
+   "uncommitted": "yes",
+   "version": "0.5.0",
+   "compiler": "clang version 23.1.5 -O2",
+   "clocks": 471.8,
+   "dmips_mhz": 1.2063,
+   "fast": false
+  },
+  {
+   "time": "2026-11-20 22:24:21 -0500",
+   "commit": "4ca8908",
+   "uncommitted": "yes",
+   "version": "0.5.1",
+   "compiler": "clang version 23.1.5 -O2",
+   "clocks": 397.8,
+   "dmips_mhz": 1.4309,
+   "fast": false
+  },
+  {
+   "time": "2026-11-20 22:25:39 -0500",
+   "commit": "4ca8908",
+   "uncommitted": "yes",
+   "version": "0.5.1",
+   "compiler": "clang version 23.1.5 -O2",
+   "clocks": 424.9,
+   "dmips_mhz": 1.3396,
+   "fast": false
+  },
+  {
+   "time": "2026-11-20 22:31:05 -0500",
+   "commit": "5db3914",
+   "uncommitted": "yes",
+   "version": "0.5.1",
+   "compiler": "clang version 23.1.5 -O2 rv64im fast runtime",
+   "clocks": 360.8,
+   "dmips_mhz": 1.5773,
+   "fast": true
+  },
+  {
+   "time": "2026-11-20 22:34:43 -0500",
+   "commit": "c05a1ce",
+   "uncommitted": "yes",
+   "version": "0.5.2",
+   "compiler": "clang version 23.1.5 -O2 rv64im",
+   "clocks": 388.8,
+   "dmips_mhz": 1.464,
+   "fast": false
+  },
+  {
+   "time": "2026-11-20 22:35:51 -0500",
+   "commit": "c05a1ce",
+   "uncommitted": "yes",
+   "version": "0.5.2",
+   "compiler": "clang version 23.1.5 -O2 rv64im fast runtime",
+   "clocks": 348.9,
+   "dmips_mhz": 1.6315,
+   "fast": true
+  },
+  {
+   "time": "2026-11-20 22:37:10 -0500",
+   "commit": "c05a1ce",
+   "uncommitted": "yes",
+   "version": "0.5.2",
+   "compiler": "clang version 23.1.5 -O2 rv64i",
+   "clocks": 416.9,
+   "dmips_mhz": 1.3653,
+   "fast": false
+  },
+  {
+   "time": "2026-11-20 22:40:50 -0500",
+   "commit": "73c1fbc",
+   "uncommitted": "yes",
+   "version": "0.5.3",
+   "compiler": "clang version 23.1.5 -O2 rv64im",
+   "clocks": 366.8,
+   "dmips_mhz": 1.5518,
+   "fast": false
+  },
+  {
+   "time": "2026-11-20 22:41:52 -0500",
+   "commit": "73c1fbc",
+   "uncommitted": "yes",
+   "version": "0.5.3",
+   "compiler": "clang version 23.1.5 -O2 rv64im fast runtime",
+   "clocks": 310.9,
+   "dmips_mhz": 1.8309,
+   "fast": true
+  },
+  {
+   "time": "2026-11-20 22:43:07 -0500",
+   "commit": "73c1fbc",
+   "uncommitted": "yes",
+   "version": "0.5.3",
+   "compiler": "clang version 23.1.5 -O2 rv64i",
+   "clocks": 391.9,
+   "dmips_mhz": 1.4524,
+   "fast": false
+  },
+  {
+   "time": "2026-11-20 22:48:39 -0500",
+   "commit": "241a9af",
+   "uncommitted": "yes",
+   "version": "0.5.4",
+   "compiler": "clang version 23.1.5 -O2 rv64im",
+   "clocks": 335.8,
+   "dmips_mhz": 1.6951,
+   "fast": false
+  },
+  {
+   "time": "2026-11-20 22:49:50 -0500",
+   "commit": "241a9af",
+   "uncommitted": "yes",
+   "version": "0.5.4",
+   "compiler": "clang version 23.1.5 -O2 rv64im fast runtime",
+   "clocks": 269.9,
+   "dmips_mhz": 2.1091,
+   "fast": true
+  },
+  {
+   "time": "2026-11-20 22:51:16 -0500",
+   "commit": "241a9af",
+   "uncommitted": "yes",
+   "version": "0.5.4",
+   "compiler": "clang version 23.1.5 -O2 rv64i",
+   "clocks": 358.8,
+   "dmips_mhz": 1.5861,
+   "fast": false
+  },
+  {
+   "time": "2026-11-20 22:58:24 -0500",
+   "commit": "5f1f6b1",
+   "uncommitted": "yes",
+   "version": "0.5.5",
+   "compiler": "clang version 23.1.5 -O2 rv64im",
+   "clocks": 287.8,
+   "dmips_mhz": 1.9777,
+   "fast": false
+  },
+  {
+   "time": "2026-11-20 22:59:36 -0500",
+   "commit": "5f1f6b1",
+   "uncommitted": "yes",
+   "version": "0.5.5",
+   "compiler": "clang version 23.1.5 -O2 rv64im fast runtime",
+   "clocks": 251.9,
+   "dmips_mhz": 2.2598,
+   "fast": true
+  },
+  {
+   "time": "2026-11-20 23:01:05 -0500",
+   "commit": "5f1f6b1",
+   "uncommitted": "yes",
+   "version": "0.5.5",
+   "compiler": "clang version 23.1.5 -O2 rv64i",
+   "clocks": 308.9,
+   "dmips_mhz": 1.8428,
+   "fast": false
+  },
+  {
+   "time": "2026-11-20 23:12:36 -0500",
+   "commit": "f78d62a",
+   "uncommitted": "yes",
+   "version": "0.6.0",
+   "compiler": "clang version 23.1.5 -O2 rv64imb",
+   "clocks": 285.8,
+   "dmips_mhz": 1.9916,
+   "fast": false
+  },
+  {
+   "time": "2026-11-20 23:13:45 -0500",
+   "commit": "f78d62a",
+   "uncommitted": "yes",
+   "version": "0.6.0",
+   "compiler": "clang version 23.1.5 -O2 rv64imb fast runtime",
+   "clocks": 247.8,
+   "dmips_mhz": 2.2964,
+   "fast": true
+  },
+  {
+   "time": "2026-11-20 23:15:11 -0500",
+   "commit": "f78d62a",
+   "uncommitted": "yes",
+   "version": "0.6.0",
+   "compiler": "clang version 23.1.5 -O2 rv64im",
+   "clocks": 287.8,
+   "dmips_mhz": 1.9777,
+   "fast": false
+  },
+  {
+   "time": "2026-11-20 23:16:18 -0500",
+   "commit": "f78d62a",
+   "uncommitted": "yes",
+   "version": "0.6.0",
+   "compiler": "clang version 23.1.5 -O2 rv64im fast runtime",
+   "clocks": 251.9,
+   "dmips_mhz": 2.2598,
+   "fast": true
+  },
+  {
+   "time": "2026-11-20 23:23:03 -0500",
+   "commit": "a6e3f87",
+   "uncommitted": "yes",
+   "version": "0.7.0",
+   "compiler": "clang version 23.1.5 -O2 rv64imb",
+   "clocks": 256.8,
+   "dmips_mhz": 2.2163,
+   "fast": false
+  },
+  {
+   "time": "2026-11-20 23:24:16 -0500",
+   "commit": "a6e3f87",
+   "uncommitted": "yes",
+   "version": "0.7.0",
+   "compiler": "clang version 23.1.5 -O2 rv64imb fast runtime",
+   "clocks": 216.9,
+   "dmips_mhz": 2.6243,
+   "fast": true
+  },
+  {
+   "time": "2026-11-20 23:25:56 -0500",
+   "commit": "a6e3f87",
+   "uncommitted": "yes",
+   "version": "0.7.0",
+   "compiler": "clang version 23.1.5 -O2 rv64im",
+   "clocks": 258.8,
+   "dmips_mhz": 2.1991,
+   "fast": false
+  },
+  {
+   "time": "2026-11-20 23:53:49 -0500",
+   "commit": "129e37e",
+   "uncommitted": "yes",
+   "version": "0.7.1",
+   "compiler": "clang version 23.1.5 -O2 rv64imb",
+   "clocks": 256.8,
+   "dmips_mhz": 2.2163,
+   "fast": false
+  },
+  {
+   "time": "2026-11-20 23:55:03 -0500",
+   "commit": "129e37e",
+   "uncommitted": "yes",
+   "version": "0.7.1",
+   "compiler": "clang version 23.1.5 -O2 rv64imb fast runtime",
+   "clocks": 216.9,
+   "dmips_mhz": 2.6243,
+   "fast": true
+  },
+  {
+   "time": "2026-11-20 23:56:41 -0500",
+   "commit": "129e37e",
+   "uncommitted": "yes",
+   "version": "0.7.1",
+   "compiler": "clang version 23.1.5 -O2 rv64im",
+   "clocks": 261.8,
+   "dmips_mhz": 2.1739,
+   "fast": false
+  },
+  {
+   "time": "2026-11-20 23:58:24 -0500",
+   "commit": "129e37e",
+   "uncommitted": "yes",
+   "version": "0.7.1",
+   "compiler": "clang version 23.1.5 -O2 rv64i",
+   "clocks": 273.9,
+   "dmips_mhz": 2.078,
+   "fast": false
+  },
+  {
+   "time": "2026-11-21 00:41:58 -0500",
+   "commit": "53c6772",
+   "uncommitted": "yes",
+   "version": "0.8.0",
+   "compiler": "clang version 23.1.5 -O2 rv64imb pipelined core",
+   "clocks": 588.6,
+   "dmips_mhz": 0.967,
+   "fast": false
+  },
+  {
+   "time": "2026-11-21 00:43:03 -0500",
+   "commit": "53c6772",
+   "uncommitted": "yes",
+   "version": "0.8.0",
+   "compiler": "clang version 23.1.5 -O2 rv64imb fast runtime pipelined core",
+   "clocks": 484.6,
+   "dmips_mhz": 1.1744,
+   "fast": true
+  },
+  {
+   "time": "2026-11-21 01:33:28 -0500",
+   "commit": "251ac29",
+   "uncommitted": "yes",
+   "version": "0.9.0",
+   "compiler": "clang version 23.1.5 -O2 rv64imb out-of-order core",
+   "clocks": 721.6,
+   "dmips_mhz": 0.7888,
+   "fast": false
+  },
+  {
+   "time": "2026-11-21 01:36:43 -0500",
+   "commit": "251ac29",
+   "uncommitted": "yes",
+   "version": "0.9.0",
+   "compiler": "clang version 23.1.5 -O2 rv64imb fast runtime out-of-order core",
+   "clocks": 611.6,
+   "dmips_mhz": 0.9306,
+   "fast": true
+  },
+  {
+   "time": "2026-11-21 01:51:24 -0500",
+   "commit": "f1f94c4",
+   "uncommitted": "yes",
+   "version": "0.9.1",
+   "compiler": "clang version 23.1.5 -O2 rv64imb out-of-order core",
+   "clocks": 603.7,
+   "dmips_mhz": 0.9428,
+   "fast": false
+  },
+  {
+   "time": "2026-11-21 01:54:41 -0500",
+   "commit": "f1f94c4",
+   "uncommitted": "yes",
+   "version": "0.9.1",
+   "compiler": "clang version 23.1.5 -O2 rv64imb fast runtime out-of-order core",
+   "clocks": 532.7,
+   "dmips_mhz": 1.0684,
+   "fast": true
+  },
+  {
+   "time": "2026-11-21 02:12:10 -0500",
+   "commit": "7bf8f3d",
+   "uncommitted": "yes",
+   "version": "0.9.2",
+   "compiler": "clang version 23.1.5 -O2 rv64imb out-of-order core",
+   "clocks": 445.8,
+   "dmips_mhz": 1.2768,
+   "fast": false
+  },
+  {
+   "time": "2026-11-21 02:15:12 -0500",
+   "commit": "7bf8f3d",
+   "uncommitted": "yes",
+   "version": "0.9.2",
+   "compiler": "clang version 23.1.5 -O2 rv64imb fast runtime out-of-order core",
+   "clocks": 394.7,
+   "dmips_mhz": 1.4419,
+   "fast": true
+  },
+  {
+   "time": "2026-11-21 02:54:13 -0500",
+   "commit": "11acc17",
+   "uncommitted": "yes",
+   "version": "0.9.3",
+   "compiler": "clang version 23.1.5 -O2 rv64imb out-of-order core",
+   "clocks": 363.7,
+   "dmips_mhz": 1.5648,
+   "fast": false
+  },
+  {
+   "time": "2026-11-21 07:18:38 -0500",
+   "commit": "11acc17",
+   "uncommitted": "yes",
+   "version": "0.9.3",
+   "compiler": "clang version 23.1.5 -O2 rv64imb out-of-order core",
+   "clocks": 363.7,
+   "dmips_mhz": 1.5648,
+   "fast": false
+  },
+  {
+   "time": "2026-11-21 07:21:14 -0500",
+   "commit": "11acc17",
+   "uncommitted": "yes",
+   "version": "0.9.3",
+   "compiler": "clang version 23.1.5 -O2 rv64imb fast runtime out-of-order core",
+   "clocks": 360.7,
+   "dmips_mhz": 1.5777,
+   "fast": true
+  },
+  {
+   "time": "2026-11-21 07:33:22 -0500",
+   "commit": "8f207a0",
+   "uncommitted": "yes",
+   "version": "0.9.4",
+   "compiler": "clang version 23.1.5 -O2 rv64imb out-of-order core",
+   "clocks": 360.7,
+   "dmips_mhz": 1.5778,
+   "fast": false
+  },
+  {
+   "time": "2026-11-21 07:36:09 -0500",
+   "commit": "8f207a0",
+   "uncommitted": "yes",
+   "version": "0.9.4",
+   "compiler": "clang version 23.1.5 -O2 rv64imb fast runtime out-of-order core",
+   "clocks": 351.8,
+   "dmips_mhz": 1.618,
+   "fast": true
+  },
+  {
+   "time": "2026-11-21 08:51:11 -0500",
+   "commit": "af0a3a1",
+   "uncommitted": "yes",
+   "version": "0.10.0",
+   "compiler": "clang version 23.1.5 -O2 rv64imb out-of-order core",
+   "clocks": 131.8,
+   "dmips_mhz": 4.3169,
+   "fast": false
+  },
+  {
+   "time": "2026-11-21 09:49:20 -0500",
+   "commit": "af0a3a1",
+   "uncommitted": "yes",
+   "version": "0.10.0",
+   "compiler": "clang version 23.1.5 -O2 rv64imb out-of-order core",
+   "clocks": 131.9,
+   "dmips_mhz": 4.3161,
+   "fast": false
+  },
+  {
+   "time": "2026-11-21 09:54:57 -0500",
+   "commit": "af0a3a1",
+   "uncommitted": "yes",
+   "version": "0.10.0",
+   "compiler": "clang version 23.1.5 -O2 rv64imb fast runtime out-of-order core",
+   "clocks": 147.9,
+   "dmips_mhz": 3.8484,
+   "fast": true
+  },
+  {
+   "time": "2026-11-21 10:10:26 -0500",
+   "commit": "4ee3a9a",
+   "uncommitted": "yes",
+   "version": "0.10.1",
+   "compiler": "clang version 23.1.5 -O2 rv64imb out-of-order core",
+   "clocks": 121.9,
+   "dmips_mhz": 4.6702,
+   "fast": false
+  },
+  {
+   "time": "2026-11-21 10:15:57 -0500",
+   "commit": "4ee3a9a",
+   "uncommitted": "yes",
+   "version": "0.10.1",
+   "compiler": "clang version 23.1.5 -O2 rv64imb fast runtime out-of-order core",
+   "clocks": 131.9,
+   "dmips_mhz": 4.3154,
+   "fast": true
+  },
+  {
+   "time": "2026-11-21 10:55:26 -0500",
+   "commit": "322739e",
+   "uncommitted": "yes",
+   "version": "0.11.0",
+   "compiler": "clang version 23.1.5 -O2 rv64imb out-of-order core",
+   "clocks": 92.0,
+   "dmips_mhz": 6.1851,
+   "fast": false
+  },
+  {
+   "time": "2026-11-21 11:00:22 -0500",
+   "commit": "322739e",
+   "uncommitted": "yes",
+   "version": "0.11.0",
+   "compiler": "clang version 23.1.5 -O2 rv64imb fast runtime out-of-order core",
+   "clocks": 93.1,
+   "dmips_mhz": 6.1162,
+   "fast": true
+  },
+  {
+   "time": "2026-11-21 11:14:47 -0500",
+   "commit": "8721ca2",
+   "uncommitted": "yes",
+   "version": "0.11.1",
+   "compiler": "clang version 23.1.5 -O2 rv64imb out-of-order core",
+   "clocks": 92.0,
+   "dmips_mhz": 6.1878,
+   "fast": false
+  },
+  {
+   "time": "2026-11-21 11:32:21 -0500",
+   "commit": "8721ca2",
+   "uncommitted": "yes",
+   "version": "0.11.1",
+   "compiler": "clang version 23.1.5 -O2 rv64imb out-of-order core",
+   "clocks": 89.1,
+   "dmips_mhz": 6.3878,
+   "fast": false
+  },
+  {
+   "time": "2026-11-21 11:36:23 -0500",
+   "commit": "8721ca2",
+   "uncommitted": "yes",
+   "version": "0.11.1",
+   "compiler": "clang version 23.1.5 -O2 rv64imb fast runtime out-of-order core",
+   "clocks": 75.2,
+   "dmips_mhz": 7.5667,
+   "fast": true
+  }
+ ]
+}

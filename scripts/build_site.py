@@ -1,0 +1,1246 @@
+#!/usr/bin/env python3
+"""Generate the static gallery site in docs/ from the repository's own records.
+
+Reads (never writes): cpu/VERSION, cpu/architecture.md (section 9 history table),
+DEVLOG.md (days, findings, timeline, commits, run index) and `git tag -l "cpu-v*"`
+(read-only). Writes only generated files under docs/:
+
+    docs/data/versions.json, docs/data/journal.json
+    docs/art/v<version>.svg            one generated artwork per architecture version
+    docs/index.html, docs/gallery.html, docs/journal.html
+
+docs/assets/ (style.css, site.js) is hand-written and is not touched.
+
+Usage: python -B scripts/build_site.py
+The output is deterministic: no clock, no randomness beyond seeded generators.
+"""
+from __future__ import annotations
+
+import html
+import json
+import math
+import random
+import re
+import subprocess
+import sys
+from pathlib import Path
+
+ROOT = Path(__file__).resolve().parent.parent
+SITE = ROOT / "docs"
+REPO_URL = "https://github.com/monstercameron/RISC-V-FPGA-CPU-Research"
+BLOB = REPO_URL + "/blob/main/"
+
+# Palette (also in docs/assets/style.css)
+PAPER, INK = "#f3ead7", "#1f1b17"
+OCHRE, OXBLOOD, SLATE, SAGE, GOLD = "#c58f2c", "#7a2430", "#3f5a73", "#7f9168", "#b8923a"
+
+MONTHS_FR = ["janvier", "février", "mars", "avril", "mai", "juin", "juillet",
+             "août", "septembre", "octobre", "novembre", "décembre"]
+
+
+def e(s) -> str:
+    return html.escape(str(s), quote=True)
+
+
+def fr_date(iso: str) -> str:
+    y, m, d = (int(x) for x in iso.split("-"))
+    return f"{d}{'er' if d == 1 else ''} {MONTHS_FR[m - 1]} {y}"
+
+
+# ---------------------------------------------------------------------------
+# Inline markdown to HTML (enough for the log's own style)
+# ---------------------------------------------------------------------------
+
+def link_target(u: str) -> str:
+    if re.match(r"https?://", u):
+        return u
+    if u.startswith("#run-logs") or u == "#run-logs":
+        return "journal.html#runs"
+    if u.startswith("#"):
+        return BLOB + "DEVLOG.md" + u
+    return BLOB + u.lstrip("./").replace("\\", "/")
+
+
+def md_inline(s: str) -> str:
+    s = s.replace("\\|", "|")
+    out, pos = [], 0
+    for m in re.finditer(r"`([^`]+)`", s):
+        out.append(("t", s[pos:m.start()]))
+        out.append(("c", m.group(1)))
+        pos = m.end()
+    out.append(("t", s[pos:]))
+    res = []
+    for kind, txt in out:
+        if kind == "c":
+            res.append(f"<code>{e(txt)}</code>")
+            continue
+        t = e(txt)
+        t = re.sub(r"\[([^\]]+)\]\(([^)\s]+)\)",
+                   lambda m: f'<a href="{e(link_target(html.unescape(m.group(2))))}" rel="noopener">{m.group(1)}</a>', t)
+        t = re.sub(r"\*\*([^*]+)\*\*", r"<strong>\1</strong>", t)
+        res.append(t)
+    return "".join(res)
+
+
+def md_plain(s: str) -> str:
+    s = re.sub(r"\[([^\]]+)\]\([^)]*\)", r"\1", s)
+    s = s.replace("`", "").replace("**", "").replace("\\|", "|")
+    return s
+
+
+def shorten(s: str, n: int) -> str:
+    if len(s) <= n:
+        return s
+    cut = s[:n].rsplit(" ", 1)[0].rstrip(",;:. ")
+    return cut + "…"
+
+
+# ---------------------------------------------------------------------------
+# Reading the repository
+# ---------------------------------------------------------------------------
+
+def split_row(line: str) -> list[str]:
+    cells, cur, tick, i = [], "", False, 0
+    line = line.strip()
+    if line.startswith("|"):
+        line = line[1:]
+    if line.endswith("|") and not line.endswith("\\|"):
+        line = line[:-1]
+    while i < len(line):
+        ch = line[i]
+        if ch == "\\" and i + 1 < len(line) and line[i + 1] == "|":
+            cur += "|"
+            i += 2
+            continue
+        if ch == "`":
+            tick = not tick
+        if ch == "|" and not tick:
+            cells.append(cur.strip())
+            cur = ""
+        else:
+            cur += ch
+        i += 1
+    cells.append(cur.strip())
+    return cells
+
+
+def git_tags() -> set[str]:
+    try:
+        r = subprocess.run(["git", "tag", "-l", "cpu-v*"], cwd=ROOT, capture_output=True,
+                           text=True, check=True, timeout=30)
+        return {t.strip()[len("cpu-v"):] for t in r.stdout.splitlines() if t.strip()}
+    except Exception:
+        return set()
+
+
+def read_history() -> list[dict]:
+    text = (ROOT / "cpu" / "architecture.md").read_text(encoding="utf-8")
+    start = text.index("### History")
+    rows = []
+    for line in text[start:].splitlines()[1:]:
+        if not line.startswith("|"):
+            if rows:
+                break
+            continue
+        cells = split_row(line)
+        if len(cells) < 6 or not re.match(r"^\d+\.\d+\.\d+$", cells[0]):
+            continue
+        dates = re.findall(r"\d{4}-\d{2}-\d{2}", cells[1])
+        rows.append({
+            "version": cells[0],
+            "date": dates[-1] if dates else "",
+            "date_text": cells[1],
+            "summary": md_plain(cells[3]),
+            "summary_html": md_inline(cells[3]),
+            "breaking": md_plain(cells[4]),
+        })
+    return rows
+
+
+def read_runs() -> list[dict]:
+    text = (ROOT / "DEVLOG.md").read_text(encoding="utf-8")
+    i = text.find("## Run logs")
+    runs = []
+    if i < 0:
+        return runs
+    for line in text[i:].splitlines():
+        if not line.startswith("|"):
+            continue
+        c = split_row(line)
+        if len(c) < 9 or not re.match(r"^\d{4}-\d{2}-\d{2}", c[0]):
+            continue
+        try:
+            clocks = float(c[5].replace(",", ""))
+            dm = float(c[6])
+        except ValueError:
+            continue
+        comp = md_plain(c[4])
+        runs.append({
+            "time": c[0], "commit": md_plain(c[1]), "uncommitted": c[2], "version": c[3],
+            "compiler": comp, "clocks": clocks, "dmips_mhz": dm,
+            "fast": "fast runtime" in comp,
+        })
+    return runs
+
+
+def read_journal() -> list[dict]:
+    lines = (ROOT / "DEVLOG.md").read_text(encoding="utf-8").splitlines()
+    days, cur, section = [], None, None
+    in_code = False
+    commit = None
+    for ln in lines:
+        if ln.startswith("```"):
+            in_code = not in_code
+            if in_code and commit is not None and cur is not None and "subject" not in commit:
+                commit["_want"] = True
+            continue
+        if in_code:
+            if commit is not None and commit.get("_want") and ln.strip():
+                commit["subject"] = ln.strip()
+                commit.pop("_want", None)
+            continue
+        m = re.match(r"^## (\d{4}-\d{2}-\d{2}): (.*)$", ln)
+        if m:
+            cur = {"date": m.group(1), "title": md_plain(m.group(2)), "findings": [],
+                   "timeline": [], "commits": []}
+            days.append(cur)
+            section, commit = None, None
+            continue
+        if ln.startswith("## "):
+            cur, section, commit = None, None, None
+            continue
+        if cur is None:
+            continue
+        if ln.startswith("### "):
+            section = ln[4:].strip()
+            commit = None
+            continue
+        if section == "Findings":
+            m = re.match(r"^(?:\d+\.|-)\s+(.*)$", ln)
+            if m:
+                cur["findings"].append(m.group(1).strip())
+            elif ln.strip() and cur["findings"] and ln.startswith("  "):
+                cur["findings"][-1] += " " + ln.strip()
+        elif section == "Timeline":
+            if ln.startswith("|") and not ln.startswith("|---") and not ln.startswith("| Time"):
+                c = split_row(ln)
+                if len(c) >= 3:
+                    cur["timeline"].append({"time": md_plain(c[0]),
+                                            "text": "|".join(c[1:-1]).strip(),
+                                            "kind": md_plain(c[-1])})
+        elif section == "Commits":
+            m = re.match(r"^#### `([0-9a-f]{7,40})`, (\d{4}-\d{2}-\d{2}) (\d{2}:\d{2}:\d{2}), (.*)$", ln)
+            if m:
+                commit = {"hash": m.group(1), "date": m.group(2), "time": m.group(3),
+                          "author": m.group(4).strip()}
+                cur["commits"].append(commit)
+            elif ln.startswith("#### "):
+                commit = None
+    for d in days:
+        for c in d["commits"]:
+            c.pop("_want", None)
+            c.setdefault("subject", "")
+    return days
+
+
+# ---------------------------------------------------------------------------
+# What each version drew from the sources. Every number below is from the
+# architecture history rows (cpu/architecture.md section 9), section 1's table,
+# or the RTL's own parameters at that tag. Anything else is left qualitative.
+# ---------------------------------------------------------------------------
+
+DEFAULTS = dict(
+    kind="mc", fetch_w=2, fetch_buf=False, icache_kb=None, dcache_kb=None, dc_ways=1,
+    issue=1, retire=1, slot2=[], folding=False, mul=False, div=False, bext=False,
+    states=["FETCH", "EXECUTE", "MEMORY"], stages=[], btb=0, ras=0, fq=False,
+    rob=0, prf=0, iq=0, decode_w=0, alus=0, full=0, loads=0, stores=0, ldst_shared=False,
+    fwd=False, snapshots=False, taken=0, loop=False, vp=False, predecode=False, paired=False,
+    marks=[],
+)
+
+# (version, era, French title, caption, medium, overrides)
+WORKS = [
+    ("0.1.0", "Le Premier Souffle",
+     "One instruction at a time, drawn in three breaths: fetch, execute, remember. No cache, no predictor.",
+     dict()),
+    ("0.1.1", "Le Tampon",
+     "The last beat fetched is kept, and the next instruction often finds it already there.",
+     dict(fetch_buf=True, marks=["a one-beat fetch buffer"])),
+    ("0.2.0", "La Bibliothèque",
+     "A small library of instructions replaces the buffer: 4 KiB, direct-mapped, 8-byte lines.",
+     dict(fetch_buf=False, icache_kb=4)),
+    ("0.2.1", "L'Impatience",
+     "Loads and stores send their request from EXECUTE instead of waiting a clock.",
+     dict(marks=["requests issue from EXECUTE"])),
+    ("0.2.2", "L'Accusé",
+     "The memory acknowledges a write in the clock it is offered; stores now retire at once.",
+     dict(marks=["writes acknowledged in the same clock"])),
+    ("0.3.0", "Le Miroir",
+     "A data cache for loads, 4 KiB and write-through, answers what the bus used to.",
+     dict(dcache_kb=4)),
+    ("0.4.0", "L'Arithmétique",
+     "The M extension arrives: multiply and a divider that steps once per clock.",
+     dict(mul=True, div=True, states=["FETCH", "EXECUTE", "MEMORY", "DIVIDE"])),
+    ("0.5.0", "Le Duo",
+     "Two instructions in one clock: a second slot and a second retirement port.",
+     dict(issue=2, retire=2, slot2=["simple integer"])),
+    ("0.5.1", "Le Pont",
+     "The second slot may reach into the next beat, and may be a conditional branch.",
+     dict(fetch_w=4, slot2=["simple integer", "branch"], marks=["second slot across beats"])),
+    ("0.5.2", "Deux Lectures",
+     "A second data-cache port lets an aligned load ride in the second slot.",
+     dict(slot2=["simple integer", "branch", "load"], marks=["second data-cache port"])),
+    ("0.5.3", "Le Saut",
+     "Jumps may take the second slot; a not-taken branch may lead the pair.",
+     dict(slot2=["simple integer", "branch", "load", "jump"], marks=["jump in the second slot"])),
+    ("0.5.4", "Le Relais",
+     "Stores join the second slot, and results are passed hand to hand within the clock.",
+     dict(slot2=["simple integer", "branch", "load", "jump", "store"], marks=["slot-to-slot forwarding"])),
+    ("0.5.5", "Le Repli",
+     "Branch folding: a jump and the instruction at its target execute together.",
+     dict(folding=True, marks=["branch folding"])),
+    ("0.6.0", "La Grammaire des Bits",
+     "The B extension (Zba, Zbb, Zbs) enters both slots; three multipliers become one.",
+     dict(bext=True)),
+    ("0.7.0", "Le Trio",
+     "A third, ALU-only slot and a third retirement port: three instructions in a clock.",
+     dict(issue=3, retire=3)),
+    ("0.7.1", "Le Temps Compté",
+     "The multiplier is registered: one clock longer, and the longest path shortens from 80 to 52 LUT levels.",
+     dict(states=["FETCH", "EXECUTE", "MEMORY", "DIVIDE", "MULTIPLY"], marks=["registered multiplier"])),
+    ("0.8.0", "La Chaîne",
+     "A second implementation: a four-stage single-issue pipeline with a 256-entry branch target buffer.",
+     dict(kind="pipe", states=[], stages=["F", "D", "E", "M"], btb=256, ras=4, fetch_w=1,
+          issue=1, retire=1, slot2=[], folding=False)),
+    ("0.8.1", "L'Antichambre",
+     "A fetch queue between F and D, split redirects, and an extra stage for slow bus accesses.",
+     dict(stages=["F", "D", "E", "M", "X"], fq=True, marks=["fetch queue and X stage"])),
+    ("0.9.0", "Le Désordre",
+     "A third implementation, out of order: rename, a 32-entry reorder buffer and an 8-entry issue queue.",
+     dict(kind="ooo", stages=[], rob=32, prf=64, iq=8, decode_w=1, fetch_w=1, alus=1, full=0,
+          loads=1, stores=0, ldst_shared=True, retire=1)),
+    ("0.9.1", "Le Passage des Valeurs",
+     "A load may take its value straight from an older store still waiting to retire.",
+     dict(fwd=True, marks=["store-to-load forwarding"])),
+    ("0.9.2", "Les Jumeaux",
+     "Two-wide: two fetched, two renamed, two integer ports, two retired per clock.",
+     dict(fetch_w=2, decode_w=2, alus=2, retire=2, issue=2)),
+    ("0.9.3", "Le Dernier Mot",
+     "Stores read their data at retirement and no longer make the head of the line wait.",
+     dict(marks=["stores finish at retirement"])),
+    ("0.9.4", "Par-dessus la Frontière",
+     "Fetch reads the next beat too, so a pair may straddle a boundary.",
+     dict(marks=["cross-beat fetch"])),
+    ("0.10.0", "L'Octuple",
+     "Eight wide, sized after published measurements of the Apple M5 performance core: "
+     "128-entry reorder buffer, 160 physical registers, 64-entry issue queue, 8 ALUs (3 full), 3 load and 2 store ports.",
+     dict(fetch_w=8, decode_w=8, retire=8, issue=8, rob=128, prf=160, iq=64, alus=8, full=3,
+          loads=3, stores=2, ldst_shared=False, icache_kb=128, dcache_kb=128, snapshots=True, taken=1)),
+    ("0.10.1", "Le Double Saut",
+     "Fetch follows two predicted-taken transfers in one clock.",
+     dict(taken=2)),
+    ("0.11.0", "La Boucle",
+     "A loop predictor, a two-way data cache and paired store writes on the bus.",
+     dict(loop=True, dc_ways=2, paired=True)),
+    ("0.11.1", "Le Pressentiment",
+     "Value prediction for loads, multiplies and divides; fetch predecode of direct jumps, calls and returns.",
+     dict(vp=True, predecode=True)),
+]
+
+ERAS = [
+    ("I", "Salle I", "Les Premiers Pas", "One instruction at a time: a multicycle core finds its memory.", "0.1.0", "0.4.0"),
+    ("II", "Salle II", "Le Duo et le Trio", "Two, then three instructions in the same clock.", "0.5.0", "0.7.1"),
+    ("III", "Salle III", "La Chaîne", "The same contract, drawn again as a pipeline.", "0.8.0", "0.8.1"),
+    ("IV", "Salle IV", "Le Désordre", "Out of order: instructions run when ready, retire in order.", "0.9.0", "0.9.4"),
+    ("V", "Salle V", "L'Octuple", "Eight wide, and learning to guess.", "0.10.0", "0.11.1"),
+]
+
+
+def build_specs() -> list[dict]:
+    specs, cur = [], dict(DEFAULTS)
+    for ver, title, cap, ov in WORKS:
+        nxt = dict(cur)
+        for k, v in ov.items():
+            if k == "marks":
+                nxt["marks"] = list(cur["marks"]) + v
+            else:
+                nxt[k] = v
+        nxt["version"], nxt["title"], nxt["caption"] = ver, title, cap
+        specs.append(nxt)
+        cur = nxt
+    return specs
+
+
+def unit_lines(s: dict) -> list[tuple[str, str]]:
+    """Human-readable unit list: only values the sources give; the rest is qualitative."""
+    u = []
+    if s["kind"] == "mc":
+        u.append(("Organisation", "Multicycle core (rtl/cpu/rv64_core.sv)"))
+        u.append(("Control states", ", ".join(s["states"]).title().replace(", ", " · ")))
+        u.append(("Issue", f"{s['issue']} per clock"))
+        u.append(("Retirement", f"{s['retire']} per clock"))
+        if s["fetch_buf"]:
+            u.append(("Fetch", "one-beat fetch buffer (8 bytes)"))
+        if s["icache_kb"]:
+            u.append(("Instruction cache", f"{s['icache_kb']} KiB, direct-mapped, 8-byte lines"))
+        if s["dcache_kb"]:
+            u.append(("Data cache", f"{s['dcache_kb']} KiB, direct-mapped, write-through"))
+        if s["slot2"]:
+            u.append(("Second slot", ", ".join(s["slot2"])))
+        if s["folding"]:
+            u.append(("Branch folding", "yes"))
+        if s["mul"]:
+            u.append(("Multiply / divide", "M extension; divide one step per clock"))
+        if s["bext"]:
+            u.append(("Bit manipulation", "Zba, Zbb, Zbs"))
+    elif s["kind"] == "pipe":
+        u.append(("Organisation", "Pipelined, single issue (rtl/cpu/rv64_pipe.sv)"))
+        u.append(("Stages", " · ".join(s["stages"])))
+        u.append(("Branch target buffer", f"{s['btb']} entries"))
+        u.append(("Return stack", f"{s['ras']} entries"))
+        u.append(("Caches", "4 KiB each, block-RAM style"))
+        if s["fq"]:
+            u.append(("Fetch queue", "between F and D"))
+        u.append(("Retirement", "1 per clock"))
+    else:
+        u.append(("Organisation", "Out of order (rtl/cpu/rv64_ooo.sv)"))
+        u.append(("Fetch / rename / retire", f"{s['fetch_w']} / {s['decode_w']} / {s['retire']} per clock"))
+        u.append(("Reorder buffer", f"{s['rob']} entries"))
+        u.append(("Physical registers", str(s["prf"])))
+        u.append(("Issue queue", f"{s['iq']} entries"))
+        if s["full"]:
+            u.append(("ALUs", f"{s['alus']}, of which {s['full']} full (branch, multiply, divide)"))
+        else:
+            u.append(("Integer ports", str(s["alus"])))
+        if s["ldst_shared"]:
+            u.append(("Memory port", "one load/store port, memory issued in program order"))
+        else:
+            u.append(("Memory ports", f"{s['loads']} load, {s['stores']} store-address"))
+        u.append(("Branch target buffer", "256 entries, with return stack"))
+        u.append(("Caches", f"{s['icache_kb'] or 4} KiB instruction, {s['dcache_kb'] or 4} KiB data"
+                  + (", two-way data cache" if s["dc_ways"] == 2 else "")))
+        if s["taken"]:
+            u.append(("Taken transfers per fetch", str(s["taken"])))
+        if s["loop"]:
+            u.append(("Loop predictor", "yes"))
+        if s["paired"]:
+            u.append(("Store writes", "paired on the bus"))
+        if s["vp"]:
+            u.append(("Value prediction", "loads, multiplies, divides"))
+        if s["predecode"]:
+            u.append(("Fetch predecode", "direct jumps, calls, returns, backward branches"))
+    return u
+
+
+# ---------------------------------------------------------------------------
+# SVG artwork
+# ---------------------------------------------------------------------------
+
+W, H = 800, 1000
+
+
+class Art:
+    def __init__(self, spec: dict):
+        self.s = spec
+        self.rng = random.Random("rv64-" + spec["version"])
+        self.back: list[str] = []
+        self.parts: list[str] = []
+
+    # primitives -----------------------------------------------------------
+    def a(self, x: str):
+        self.parts.append(x)
+
+    def box(self, x, y, w, h, fill=None, sw=2.0, dash=None, op=1.0, off=3.0, rx=0):
+        if fill:
+            self.a(f'<rect x="{x:.1f}" y="{y:.1f}" width="{w:.1f}" height="{h:.1f}" rx="{rx}" fill="{fill}" fill-opacity="{op}"/>')
+        d = f' stroke-dasharray="{dash}"' if dash else ""
+        self.a(f'<rect x="{x - off * (1 if fill else 0):.1f}" y="{y - off * (1 if fill else 0):.1f}" width="{w:.1f}" height="{h:.1f}" rx="{rx}" fill="none" stroke="{INK}" stroke-width="{sw}"{d}/>')
+
+    def disc(self, cx, cy, r, fill=None, sw=2.0, op=1.0, off=2.5, dash=None):
+        if fill:
+            self.a(f'<circle cx="{cx:.1f}" cy="{cy:.1f}" r="{r:.1f}" fill="{fill}" fill-opacity="{op}"/>')
+        d = f' stroke-dasharray="{dash}"' if dash else ""
+        o = off if fill else 0
+        self.a(f'<circle cx="{cx - o:.1f}" cy="{cy - o:.1f}" r="{r:.1f}" fill="none" stroke="{INK}" stroke-width="{sw}"{d}/>')
+
+    def line(self, x1, y1, x2, y2, sw=1.4, col=INK, op=1.0, dash=None, g=False):
+        d = f' stroke-dasharray="{dash}"' if dash else ""
+        (self.back if g else self.parts).append(
+            f'<line x1="{x1:.1f}" y1="{y1:.1f}" x2="{x2:.1f}" y2="{y2:.1f}" stroke="{col}" stroke-width="{sw}" stroke-opacity="{op}"{d} stroke-linecap="round"/>')
+
+    def path(self, d, sw=1.6, col=INK, fill="none", op=1.0, dash=None):
+        dd = f' stroke-dasharray="{dash}"' if dash else ""
+        self.a(f'<path d="{d}" fill="{fill}" stroke="{col}" stroke-width="{sw}" stroke-opacity="{op}"{dd} stroke-linecap="round" stroke-linejoin="round"/>')
+
+    def arc(self, cx, cy, r, a0, a1, col, sw=26, op=0.95):
+        x0, y0 = cx + r * math.cos(math.radians(a0)), cy + r * math.sin(math.radians(a0))
+        x1, y1 = cx + r * math.cos(math.radians(a1)), cy + r * math.sin(math.radians(a1))
+        large = 1 if (a1 - a0) % 360 > 180 else 0
+        self.a(f'<path d="M{x0:.1f} {y0:.1f} A{r} {r} 0 {large} 1 {x1:.1f} {y1:.1f}" fill="none" stroke="{col}" stroke-width="{sw}" stroke-opacity="{op}"/>')
+        for rr in (r - sw / 2, r + sw / 2):
+            xa, ya = cx + rr * math.cos(math.radians(a0)), cy + rr * math.sin(math.radians(a0))
+            xb, yb = cx + rr * math.cos(math.radians(a1)), cy + rr * math.sin(math.radians(a1))
+            self.a(f'<path d="M{xa:.1f} {ya:.1f} A{rr:.1f} {rr:.1f} 0 {large} 1 {xb:.1f} {yb:.1f}" fill="none" stroke="{INK}" stroke-width="1.4"/>')
+
+    def text(self, x, y, t, size=18, anchor="middle", col=INK, italic=True, op=1.0):
+        st = "italic" if italic else "normal"
+        self.a(f'<text x="{x:.1f}" y="{y:.1f}" text-anchor="{anchor}" font-family="Cormorant Garamond, Georgia, serif" font-size="{size}" font-style="{st}" fill="{col}" fill-opacity="{op}">{e(t)}</text>')
+
+    def dots(self, x, y, cols, rows, pitch, r, fill, first_off=None):
+        for j in range(rows):
+            for i in range(cols):
+                self.a(f'<circle cx="{x + i * pitch:.1f}" cy="{y + j * pitch:.1f}" r="{r}" fill="{fill}" stroke="{INK}" stroke-width="0.8"/>')
+
+    # composition ----------------------------------------------------------
+    def complexity(self) -> int:
+        s = self.s
+        c = 3 + s["issue"] + s["retire"] + len(s["marks"]) + (s["rob"] // 16) + (s["alus"] // 2)
+        c += 2 * (s["kind"] != "mc") + (s["icache_kb"] is not None) + (s["dcache_kb"] is not None)
+        return c
+
+    def air(self):
+        """Kandinsky-like free marks behind the plan; more of them as the machine grows."""
+        n = 2 + self.complexity() // 3
+        cols = [OCHRE, OXBLOOD, SLATE, SAGE, GOLD]
+        r = self.rng
+        # blueprint grid
+        for x in range(60, W, 40):
+            self.line(x, 40, x, H - 40, sw=0.5, col=SLATE, op=0.10, g=True)
+        for y in range(40, H - 39, 40):
+            self.line(60, y, W - 60, y, sw=0.5, col=SLATE, op=0.10, g=True)
+        for i in range(n):
+            t = r.random()
+            c = cols[r.randrange(len(cols))]
+            if t < 0.4:
+                self.back.append(f'<circle cx="{r.uniform(80, 720):.0f}" cy="{r.uniform(60, 940):.0f}" r="{r.uniform(10, 70):.0f}" fill="none" stroke="{c}" stroke-width="{r.uniform(0.8, 2):.1f}" stroke-opacity="0.55"/>')
+            elif t < 0.75:
+                x, y = r.uniform(60, 740), r.uniform(60, 940)
+                a = math.radians(r.choice([-35, -20, 15, 30, 60, 75]))
+                L = r.uniform(60, 200)
+                self.line(x, y, x + L * math.cos(a), y + L * math.sin(a), sw=r.uniform(0.8, 2), col=c, op=0.5, g=True)
+            else:
+                self.back.append(f'<circle cx="{r.uniform(80, 720):.0f}" cy="{r.uniform(60, 940):.0f}" r="{r.uniform(3, 8):.0f}" fill="{c}" fill-opacity="0.7"/>')
+
+    def predictor(self, cx, cy):
+        s = self.s
+        if not s["btb"]:
+            return
+        rings = 4  # log2(256) - 4: a 256-entry buffer
+        for i in range(rings):
+            self.a(f'<circle cx="{cx}" cy="{cy}" r="{14 * (i + 1)}" fill="none" stroke="{INK}" stroke-width="{1.6 if i % 2 == 0 else 0.8}"/>')
+        self.disc(cx, cy, 9, OXBLOOD, off=2)
+        if s["ras"]:
+            for i in range(4):
+                self.box(cx - 30 + i * 4, cy + 74 - i * 7, 60, 6, SAGE, sw=1, off=0)
+        if s["loop"]:
+            pts = []
+            for i in range(0, 260, 12):
+                rr = 4 + i * 0.07
+                pts.append(f"{cx + 78 + rr * math.cos(math.radians(i)):.1f},{cy + 12 + rr * math.sin(math.radians(i)):.1f}")
+            self.path("M" + " L".join(pts), sw=1.8, col=GOLD)
+        if s["predecode"]:
+            self.line(cx + 60, cy + 40, cx + 130, cy - 6, sw=3, col=GOLD)
+
+    def retire_col(self, y0, y1, x=725):
+        n = self.s["retire"]
+        self.line(x, y0 - 14, x, y1 + 14, sw=2.2, col=GOLD)
+        step = (y1 - y0) / max(n, 1)
+        for i in range(n):
+            self.disc(x, y0 + step * (i + 0.5), 10, GOLD, off=2)
+        self.text(x, y1 + 40, "retire", 17, col=INK, op=0.7)
+
+    def marks(self):
+        ms = self.s["marks"]
+        x0 = W - 60 - 18 * len(ms)
+        for i, _ in enumerate(ms):
+            x = x0 + 18 * i + 9
+            self.a(f'<path d="M{x} 50 l7 7 l-7 7 l-7 -7z" fill="{GOLD}" stroke="{INK}" stroke-width="1"/>')
+
+    def caches(self, top):
+        s = self.s
+        ic, dc = s["icache_kb"], s["dcache_kb"]
+
+        def side(kb):
+            return 80 + 20 * math.log2(kb)
+        if ic or s["kind"] != "mc":
+            kb = ic or 4
+            w = side(kb)
+            self.box(70, top, w, w * 0.62, SLATE, op=0.85)
+            self.line(70, top + w * 0.31, 70 + w, top + w * 0.31, sw=0.8)
+            for i in range(1, int(w // 20)):
+                self.line(70 + i * 20, top, 70 + i * 20, top + w * 0.62, sw=0.6, op=0.6)
+            self.text(70 + w / 2, top + w * 0.62 + 24, "instructions", 18, op=0.8)
+        if dc or s["kind"] != "mc":
+            kb = dc or 4
+            w = side(kb)
+            x = 730 - w
+            h = w * 0.62
+            self.box(x, top, w, h, OCHRE, op=0.85)
+            if s["dc_ways"] == 2:
+                self.line(x + w / 2, top, x + w / 2, top + h, sw=2.2)
+                self.box(x + w / 2, top, w / 2, h, OXBLOOD, op=0.45, off=0)
+            for i in range(1, int(w // 20)):
+                self.line(x + i * 20, top, x + i * 20, top + h, sw=0.6, op=0.5)
+            self.text(x + w / 2, top + h + 24, "data", 18, op=0.8)
+        if s["kind"] == "mc" and not ic and s["fetch_buf"]:
+            self.box(70, top + 20, 70, 38, SLATE, op=0.7)
+            self.text(105, top + 80, "buffer", 18, op=0.8)
+
+    def bus(self, y):
+        lanes = 2 if self.s["paired"] else 1
+        for i in range(lanes):
+            self.line(60, y + i * 12, 740, y + i * 12, sw=5 if i == 0 else 3, col=INK)
+        self.a(f'<rect x="60" y="{y - 14}" width="680" height="{14 + 12 * lanes + 4}" fill="none"/>')
+        self.text(400, y + 12 * lanes + 36, "the bus", 18, op=0.7)
+
+    # families -------------------------------------------------------------
+    def fetch_row(self, y, n, dashed=False):
+        w, gap = 42, 6
+        tot = n * (w + gap) - gap
+        x0 = 400 - tot / 2
+        for i in range(n):
+            self.box(x0 + i * (w + gap), y, w, 34, OCHRE, dash="5 3" if dashed else None)
+        return x0, tot
+
+    def multicycle(self):
+        s = self.s
+        fx0, ft = self.fetch_row(96, s["fetch_w"], dashed=(not s["fetch_buf"] and not s["icache_kb"]))
+        self.text(400, 86, "fetch", 18, op=0.8)
+        if s["fetch_buf"]:
+            self.box(fx0 + ft + 24, 100, 34, 26, SLATE, op=0.8)
+        # the ring of control states
+        cx, cy, r = 400, 410, 128
+        n = len(s["states"])
+        cmap = {"FETCH": OCHRE, "EXECUTE": SLATE, "MEMORY": OXBLOOD, "DIVIDE": SAGE, "MULTIPLY": GOLD}
+        span = 360 / n
+        for i, st in enumerate(s["states"]):
+            a0 = -90 + i * span + 5
+            a1 = -90 + (i + 1) * span - 5
+            self.arc(cx, cy, r, a0, a1, cmap[st])
+            am = math.radians((a0 + a1) / 2)
+            self.text(cx + (r + 38) * math.cos(am), cy + (r + 38) * math.sin(am) + 5, st.lower(), 17, op=0.8)
+        # register file x0..x31: 4 rows of 8
+        for j in range(4):
+            for i in range(8):
+                fill = INK if (i == 0 and j == 0) else SAGE
+                self.box(cx - 76 + i * 20, cy - 40 + j * 20, 15, 15, fill, sw=1, off=0.8)
+        self.text(cx, cy + 62, "32 × 64", 16, op=0.7)
+        self.line(400, 134, 400, cy - r - 14, sw=1.6)
+        # issue slots / ALUs
+        k = s["issue"]
+        ys = 640
+        xs = [400 + (i - (k - 1) / 2) * 120 for i in range(k)]
+        for i, x in enumerate(xs):
+            self.disc(x, ys, 36 if i == 0 else 30, SLATE if i == 0 else OCHRE, op=0.9)
+            self.line(x, cy + r + 20, x, ys - 40, sw=1.2, op=0.7)
+            if i == 0 or i == 1:
+                pass
+        if s["bext"]:
+            for i in range(8):
+                self.box(xs[0] - 44 + i * 11, ys - 66, 9, 14, INK if i % 3 != 1 else PAPER, sw=0.8, off=0)
+        for c, cap in enumerate(s["slot2"]):
+            if k > 1:
+                self.a(f'<path d="M{xs[1] - 14 + 9 * c} {ys + 44} l5 -9 l5 9z" fill="{GOLD}" stroke="{INK}" stroke-width="0.8"/>')
+        if s["folding"] and k > 1:
+            self.path(f"M{xs[0] + 36} {ys} Q{(xs[0] + xs[1]) / 2} {ys - 70} {xs[1] - 30} {ys}", sw=2.2, col=OXBLOOD)
+        if s["mul"]:
+            mx = 640 if k < 3 else 700
+            mx = 120 if k >= 3 else 130
+            self.box(mx - 28, ys - 28, 56, 56, SAGE)
+            self.line(mx - 18, ys - 18, mx + 18, ys + 18, sw=2.4)
+            self.line(mx + 18, ys - 18, mx - 18, ys + 18, sw=2.4)
+            self.line(mx, ys - 28, mx, ys - 12, sw=0.01)
+            if s["div"]:
+                self.disc(mx, ys + 84, 20, SAGE)
+                self.line(mx - 12, ys + 84, mx + 12, ys + 84, sw=2.4)
+                self.disc(mx, ys + 76, 2.5, INK, off=0)
+                self.disc(mx, ys + 92, 2.5, INK, off=0)
+        self.retire_col(320, 520)
+        # memory port to bus
+        if s["issue"] >= 1:
+            self.line(xs[0], ys + 40, xs[0], 780, sw=1.2, op=0.7)
+        self.caches(792)
+        self.bus(935)
+        self.retire_wire = None
+
+    def pipeline(self):
+        s = self.s
+        self.fetch_row(96, 1)
+        self.text(400, 86, "fetch", 18, op=0.8)
+        self.predictor(130, 140)
+        self.path("M372 112 C300 70 200 80 150 108", sw=1.8, col=GOLD)
+        st = s["stages"]
+        cols = [OCHRE, OXBLOOD, SLATE, SAGE, GOLD]
+        hs = [210, 250, 190, 230, 150]
+        n = len(st)
+        wsl = 96
+        gap = 18
+        tot = n * wsl + (n - 1) * gap
+        x0 = 400 - tot / 2
+        for i, nm in enumerate(st):
+            x = x0 + i * (wsl + gap)
+            y = 220 + (i % 2) * 22
+            self.box(x, y, wsl, hs[i], cols[i], op=0.9)
+            self.text(x + wsl / 2, y + hs[i] / 2 + 22, nm, 66, col=PAPER, op=0.95)
+            if i:
+                self.line(x - gap, y + 40, x, y + 40, sw=1.6)
+            if nm == "D":
+                self.dots(x + 14, y + hs[i] + 18, 8, 4, 10.5, 3.2, SAGE)
+        if s["fq"]:
+            fx = x0 + wsl + 3
+            for k in range(4):
+                self.box(fx + 2, 240 + k * 14, gap - 6, 11, GOLD, sw=1, off=0)
+        # ALU and multiplier under E
+        ex = x0 + 2 * (wsl + gap) + wsl / 2
+        self.disc(ex, 600, 38, SLATE, op=0.9)
+        self.line(ex, 220 + 22 * 0 + hs[2] + 0, ex, 560, sw=1.2, op=0.7)
+        self.box(ex + 70, 572, 52, 52, SAGE)
+        self.line(ex + 78, 580, ex + 114, 616, sw=2.2)
+        self.line(ex + 114, 580, ex + 78, 616, sw=2.2)
+        self.retire_col(320, 520)
+        self.line(400, 134, 400, 220, sw=1.4)
+        mx = x0 + 3 * (wsl + gap) + wsl / 2
+        self.line(mx, 220 + 22 + hs[3], mx, 780, sw=1.2, op=0.7)
+        self.caches(792)
+        self.bus(935)
+
+    def ooo(self):
+        s = self.s
+        fx0, ft = self.fetch_row(96, s["fetch_w"])
+        self.text(400, 86, "fetch", 18, op=0.8)
+        self.predictor(120, 136)
+        for t in range(max(s["taken"], 1)):
+            self.path(f"M{fx0 + 6} {100 + t * 4} C{fx0 - 40} {60 - t * 14} 200 {58 - t * 14} 150 {104 + t * 6}",
+                      sw=1.8, col=GOLD)
+        # rename row, slot by slot under fetch
+        n = s["decode_w"]
+        dx0 = 400 - (n * 48 - 6) / 2
+        for i in range(n):
+            self.box(dx0 + i * 48, 178, 42, 28, OXBLOOD, op=0.85)
+            self.line(dx0 + i * 48 + 21, 130, dx0 + i * 48 + 21, 178, sw=0.9, op=0.7)
+            self.a(f'<line x1="{dx0 + i * 48 + 6}" y1="200" x2="{dx0 + i * 48 + 36}" y2="184" stroke="{INK}" stroke-width="0.8" stroke-opacity="0.6"/>')
+        self.text(400, 232, "rename", 18, op=0.8)
+        if s["snapshots"]:
+            self.box(dx0 - 10, 170, n * 48 + 14, 44, None, sw=1.2, dash="3 4", off=0)
+        # window: reorder buffer, register file, issue queue
+        cell = 14
+        cols = 4 if s["rob"] <= 32 else 8
+        rows = s["rob"] // cols
+        rx, ry = 70, 276
+        for j in range(rows):
+            for i in range(cols):
+                self.a(f'<rect x="{rx + i * cell}" y="{ry + j * cell}" width="{cell - 2}" height="{cell - 2}" fill="{OXBLOOD}" fill-opacity="{0.35 + 0.5 * ((i + j) % 3) / 2:.2f}" stroke="{INK}" stroke-width="0.7"/>')
+        self.text(rx + cols * cell / 2, ry + rows * cell + 22, f"{s['rob']} in order", 17, op=0.8)
+        pcols = 8 if s["prf"] <= 64 else 16
+        prow = math.ceil(s["prf"] / pcols)
+        px = 330 - (pcols * 10) / 2
+        py = 290
+        for k in range(s["prf"]):
+            i, j = k % pcols, k // pcols
+            self.a(f'<circle cx="{px + i * 10 + 5:.0f}" cy="{py + j * 10 + 5:.0f}" r="3.4" fill="{SAGE if k >= 32 else INK}" stroke="{INK}" stroke-width="0.6"/>')
+        self.text(330, py + prow * 10 + 24, f"{s['prf']} names", 17, op=0.8)
+        icols = 8
+        irows = max(s["iq"] // icols, 1)
+        ix = 520
+        iy = 290
+        self.path(f"M{ix - 6} {iy - 16} L{ix + icols * cell + 4} {iy - 16} L{ix + icols * cell / 2 - 2} {iy - 2}Z", sw=1.4, fill=SLATE, op=0.9)
+        for j in range(irows):
+            for i in range(icols):
+                self.box(ix + i * cell, iy + j * cell, cell - 2, cell - 2, SLATE, op=0.75, sw=0.8, off=0)
+        self.text(ix + icols * cell / 2, iy + irows * cell + 22, f"{s['iq']} waiting", 17, op=0.8)
+        if s["fq"] or s["fetch_w"] > 1:
+            pass
+        self.line(400, 206, 400, 262, sw=1.2, op=0.7)
+        self.line(400, 262, rx + cols * cell / 2, 262, sw=1.2, op=0.7)
+        self.line(400, 262, ix + icols * cell / 2, 262, sw=1.2, op=0.7)
+        self.retire_col(300, 500)
+        self.line(rx + cols * cell, ry + 40, 700, ry + 40, sw=0.9, col=GOLD, op=0.9)
+        # execution row
+        k = s["alus"]
+        pitch = min(78, 600 / max(k, 1))
+        y = 600
+        xs = [400 + (i - (k - 1) / 2) * pitch for i in range(k)]
+        fullset = set(range(s["full"]))
+        rad = 28 if k <= 4 else 26
+        for i, x in enumerate(xs):
+            full = i in fullset
+            self.line(ix + icols * cell / 2, iy + irows * cell + 36, x, y - rad - 6, sw=0.9, op=0.6)
+            self.disc(x, y, rad, SLATE if not full else OXBLOOD, op=0.9)
+            if full:
+                self.disc(x, y, rad + 8, None, sw=1.2)
+        # memory ports
+        ly = 722
+        if s["ldst_shared"]:
+            xsm = [600]
+            self.a(f'<path d="M{600 - 34} {ly} a34 34 0 0 1 68 0z" fill="{OCHRE}" stroke="{INK}" stroke-width="2"/>')
+            self.line(600, ly, 600, 780, sw=1.2, op=0.7)
+        else:
+            lx = [180 + 70 * i for i in range(s["loads"])]
+            sx = [560 + 70 * i for i in range(s["stores"])]
+            for x in lx:
+                self.a(f'<path d="M{x - 30} {ly} a30 30 0 0 1 60 0z" fill="{OCHRE}" stroke="{INK}" stroke-width="2"/>')
+                self.line(x, ly, x, 780, sw=1.2, op=0.7)
+                if s["vp"]:
+                    self.a(f'<circle cx="{x}" cy="{ly}" r="44" fill="none" stroke="{GOLD}" stroke-width="2" stroke-dasharray="2 5"/>')
+            for x in sx:
+                self.a(f'<path d="M{x - 30} {ly} a30 30 0 0 0 60 0z" fill="{OXBLOOD}" stroke="{INK}" stroke-width="2"/>')
+            if s["vp"]:
+                self.a(f'<circle cx="{xs[0]}" cy="{y}" r="42" fill="none" stroke="{GOLD}" stroke-width="2" stroke-dasharray="2 5"/>')
+        if s["vp"] and s["ldst_shared"]:
+            pass
+        if s["fwd"]:
+            mid = 600 if s["ldst_shared"] else 470
+            self.path(f"M{mid - 70} {ly + 18} C{mid - 40} {ly + 70} {mid + 40} {ly + 70} {mid + 70} {ly + 18}", sw=2, col=GOLD)
+            self.a(f'<path d="M{mid + 70} {ly + 18} l-9 -4 l3 10z" fill="{GOLD}" stroke="{INK}" stroke-width="0.8"/>')
+        self.caches(796)
+        self.bus(940)
+
+    def render(self) -> str:
+        s = self.s
+        self.air()
+        if s["kind"] == "mc":
+            self.multicycle()
+        elif s["kind"] == "pipe":
+            self.pipeline()
+        else:
+            self.ooo()
+        self.marks()
+        seed = abs(hash_str(s["version"])) % 90 + 1
+        title = f"No. {WORK_NO[s['version']]}, {s['title']}, version {s['version']}"
+        sig = f'<text x="64" y="{H - 24}" font-family="Cormorant Garamond, Georgia, serif" font-size="20" font-style="italic" fill="{INK}" fill-opacity="0.75">{e(s["version"])}</text>'
+        sig2 = f'<text x="{W - 64}" y="{H - 24}" text-anchor="end" font-family="Cormorant Garamond, Georgia, serif" font-size="15" font-style="italic" fill="{INK}" fill-opacity="0.55">{e(s["title"])}</text>'
+        defs = (f'<defs><filter id="ink" x="-2%" y="-2%" width="104%" height="104%"><feTurbulence type="fractalNoise" baseFrequency="0.018" numOctaves="2" seed="{seed}" result="n"/>'
+                f'<feDisplacementMap in="SourceGraphic" in2="n" scale="2.6"/></filter>'
+                f'<filter id="grain" x="0" y="0" width="100%" height="100%"><feTurbulence type="fractalNoise" baseFrequency="0.85" numOctaves="2" seed="{seed}"/>'
+                f'<feColorMatrix values="0 0 0 0 0.35  0 0 0 0 0.27  0 0 0 0 0.16  0 0 0 0.22 -0.03"/></filter></defs>')
+        body = "".join(self.back) + "".join(self.parts)
+        return (f'<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 {W} {H}" width="{W}" height="{H}" role="img" aria-label="{e(title)}">'
+                f'<title>{e(title)}</title>{defs}<rect width="{W}" height="{H}" fill="{PAPER}"/>'
+                f'<g filter="url(#ink)">{body}</g><rect width="{W}" height="{H}" filter="url(#grain)"/>'
+                f'<rect x="14" y="14" width="{W - 28}" height="{H - 28}" fill="none" stroke="{INK}" stroke-opacity="0.35" stroke-width="1"/>{sig}{sig2}</svg>\n')
+
+
+def hash_str(s: str) -> int:
+    h = 0
+    for ch in s:
+        h = (h * 131 + ord(ch)) % 1000003
+    return h
+
+
+WORK_NO = {w[0]: i + 1 for i, w in enumerate(WORKS)}
+
+
+# ---------------------------------------------------------------------------
+# Data assembly
+# ---------------------------------------------------------------------------
+
+def assemble() -> tuple[list[dict], list[dict], list[dict]]:
+    current = (ROOT / "cpu" / "VERSION").read_text(encoding="utf-8").strip()
+    hist = {h["version"]: h for h in read_history()}
+    tags = git_tags()
+    runs = read_runs()
+    specs = build_specs()
+    missing = [s["version"] for s in specs if s["version"] not in hist]
+    if missing:
+        sys.exit(f"history rows missing for {missing}")
+    known = {s["version"] for s in specs}
+    extra = [v for v in hist if v not in known]
+    if extra:
+        print("note: history has versions with no artwork spec yet:", ", ".join(extra), file=sys.stderr)
+    versions = []
+    for i, s in enumerate(specs):
+        v = s["version"]
+        h = hist[v]
+        ref = [r for r in runs if r["version"] == v and not r["fast"]]
+        fast = [r for r in runs if r["version"] == v and r["fast"]]
+        best = max(ref, key=lambda r: r["dmips_mhz"]) if ref else None
+        bestf = max(fast, key=lambda r: r["dmips_mhz"]) if fast else None
+        if v == current and v not in tags:
+            status = "in progress"
+        elif v in tags or not tags:
+            status = "tagged"
+        else:
+            status = "untagged"
+        versions.append({
+            "no": i + 1, "version": v, "title": s["title"], "caption": s["caption"],
+            "date": h["date"], "date_fr": fr_date(h["date"]) if h["date"] else "",
+            "kind": s["kind"], "status": status, "tag": f"cpu-v{v}",
+            "register": h["summary"], "register_html": h["summary_html"], "breaking": h["breaking"],
+            "units": unit_lines(s), "marks": s["marks"],
+            "dmips_ref": best["dmips_mhz"] if best else None,
+            "clocks_ref": best["clocks"] if best else None,
+            "dmips_fast": bestf["dmips_mhz"] if bestf else None,
+            "ref_run": best["time"] if best else None,
+            "art": f"art/v{v}.svg",
+        })
+    return versions, specs, runs
+
+
+# ---------------------------------------------------------------------------
+# HTML
+# ---------------------------------------------------------------------------
+
+FONTS = ('<link rel="preconnect" href="https://fonts.googleapis.com">'
+         '<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>'
+         '<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,400;0,500;0,600;1,400;1,500&amp;family=Jost:wght@300;400;500&amp;display=swap">')
+
+
+def page(title: str, desc: str, body: str, active: str, extra_head: str = "", body_class: str = "") -> str:
+    def nav(href, label, key):
+        cur = ' aria-current="page"' if key == active else ""
+        return f'<a href="{href}"{cur}>{label}</a>'
+    return f"""<!doctype html>
+<html lang="en" class="no-js">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>{e(title)}</title>
+<meta name="description" content="{e(desc)}">
+<meta name="color-scheme" content="light dark">
+{FONTS}
+<link rel="stylesheet" href="assets/style.css">
+{extra_head}
+<script>document.documentElement.className = 'js';</script>
+</head>
+<body class="{body_class}">
+<a class="skip" href="#main">Skip to content</a>
+<header class="masthead">
+  <a class="brand" href="index.html"><span class="brand-mark" aria-hidden="true"></span><span>Atelier RV64</span></a>
+  <nav aria-label="Main">{nav("index.html", "Accueil", "home")}{nav("gallery.html", "La Galerie", "gallery")}{nav("journal.html", "Le Journal", "journal")}</nav>
+</header>
+<main id="main">
+{body}
+</main>
+<footer class="colophon">
+  <p class="ornament" aria-hidden="true">· · ·</p>
+  <p>Art and science over time. Every figure on this site comes from simulation of the design in
+  <a href="{REPO_URL}" rel="noopener">the repository</a>; nothing here is a hardware measurement.
+  The drawings are generated from the architecture history, not photographs of silicon.</p>
+  <p class="small">Generated by <code>scripts/build_site.py</code>. Fonts from Google Fonts; no scripts from elsewhere, no trackers.</p>
+</footer>
+<script src="assets/site.js" defer></script>
+</body>
+</html>
+"""
+
+
+def fmt_dm(x) -> str:
+    return f"{x:.2f}" if x is not None else ""
+
+
+def perf_html(v: dict) -> str:
+    if v["dmips_ref"] is None:
+        return ('<p class="perf none">Dhrystone: no run logged for this version yet. '
+                'Simulated results are recorded in the journal as they are measured.</p>')
+    extra = ""
+    if v["dmips_fast"] is not None:
+        extra = f' <span class="aside">(fast runtime: {v["dmips_fast"]:.2f})</span>'
+    return (f'<p class="perf"><span class="num">{v["dmips_ref"]:.2f}</span> DMIPS/MHz'
+            f'<span class="tag">simulated, reference runtime</span>{extra}</p>')
+
+
+def medium(kind: str) -> str:
+    return {"mc": "ink and ochre on vellum; simulated",
+            "pipe": "ink, slate and ochre on vellum; simulated",
+            "ooo": "ink, oxblood and gold leaf on vellum; simulated"}[kind]
+
+
+def slug(v: str) -> str:
+    return "v" + v.replace(".", "-")
+
+
+def alt_text(v: dict, s: dict) -> str:
+    kinds = {"mc": "a multicycle core", "pipe": "a pipelined core", "ooo": "an out-of-order core"}
+    parts = [f"Abstract ink drawing of the processor at version {v['version']}, {kinds[v['kind']]}."]
+    if s["kind"] == "ooo":
+        parts.append(f"Blocks for a {s['rob']}-entry reorder buffer, {s['prf']} physical registers, a {s['iq']}-entry issue queue, "
+                     f"{s['alus']} integer units, and instruction and data caches above a bus.")
+    elif s["kind"] == "pipe":
+        parts.append(f"{len(s['stages'])} pipeline stages as coloured slabs, a branch target buffer drawn as rings, and two caches above a bus.")
+    else:
+        parts.append(f"A ring of {len(s['states'])} control states around the register file, {s['issue']} execution slot"
+                     f"{'s' if s['issue'] > 1 else ''}, and the bus below.")
+    return " ".join(parts)
+
+
+def gallery_page(versions, specs) -> str:
+    byv = {v["version"]: (v, s) for v, s in zip(versions, specs)}
+    rooms = []
+    for roman, label, name, blurb, a, b in ERAS:
+        vs = [v for v in versions if a <= v["version"] or True]
+        ia = next(i for i, v in enumerate(versions) if v["version"] == a)
+        ib = next(i for i, v in enumerate(versions) if v["version"] == b)
+        works = []
+        for v in versions[ia:ib + 1]:
+            s = byv[v["version"]][1]
+            cur = ' <span class="badge">newest, in progress</span>' if v["status"] == "in progress" else ""
+            marks = "".join(f"<li>{e(m)}</li>" for m in v["marks"][-3:])
+            units = "".join(f"<tr><th scope='row'>{e(k)}</th><td>{e(val)}</td></tr>" for k, val in v["units"])
+            brk = v["breaking"]
+            works.append(f"""
+<figure class="work" id="{slug(v['version'])}" data-index="{v['no'] - 1}" data-kind="{v['kind']}">
+  <button class="frame" type="button" aria-label="View No. {v['no']}, {e(v['title'])}, version {v['version']}, enlarged">
+    <span class="mat"><img src="{v['art']}" width="800" height="1000" loading="lazy" alt="{e(alt_text(v, s))}"></span>
+  </button>
+  <figcaption class="placard">
+    <span class="no">No. {v['no']}</span>
+    <h3>{e(v['title'])}</h3>
+    <p class="ver">Version {v['version']}<span class="sep"> · </span>{e(v['date_fr'])}{cur}</p>
+    <p class="medium">{medium(v['kind'])}</p>
+    <p class="cap">{e(v['caption'])}</p>
+    {perf_html(v)}
+  </figcaption>
+  <div class="detail" hidden>
+    <h4>From the register</h4>
+    <p>{v['register_html']}</p>
+    <h4>The units</h4>
+    <table class="units"><tbody>{units}</tbody></table>
+    {('<h4>Marginalia</h4><ul class="marks">' + "".join(f"<li>{e(m)}</li>" for m in v["marks"]) + '</ul>') if v["marks"] else ''}
+    <p class="small">Compatibility: {e(brk)}. <a href="{REPO_URL}/releases/tag/{v['tag']}" rel="noopener">Tag {e(v['tag'])}</a>{' (not yet tagged)' if v['status'] == 'in progress' else ''}.
+    Areas and sizes are symbolic; counts follow the history row. Simulated, not a hardware measurement.</p>
+  </div>
+</figure>""")
+        rooms.append(f"""
+<section class="room" id="salle-{roman.lower()}" aria-labelledby="h-{roman.lower()}">
+  <header class="room-head">
+    <p class="room-no">{label}</p>
+    <h2 id="h-{roman.lower()}">{e(name)}</h2>
+    <p class="room-blurb">{e(blurb)}</p>
+  </header>
+  <div class="wall">
+    <div class="rail" aria-hidden="true"></div>
+    <div class="hang">{"".join(works)}</div>
+    <div class="floor" aria-hidden="true"></div>
+  </div>
+</section>""")
+    n = len(versions)
+    intro = f"""
+<section class="page-head">
+  <p class="eyebrow">La Galerie</p>
+  <h1>{n} portraits of a processor</h1>
+  <p class="lede">Each drawing is generated from the architecture history: one canvas per version, its units sized and arranged by their recorded counts.
+  Walk the rooms in order and the machine learns to fetch, to pair, to pipeline, to run out of order. Select a work to see it enlarged.</p>
+  <p class="legend small"><span class="sw" style="--c:#c58f2c"></span>fetch, loads
+     <span class="sw" style="--c:#7a2430"></span>rename, reorder buffer, stores
+     <span class="sw" style="--c:#3f5a73"></span>execution, caches
+     <span class="sw" style="--c:#7f9168"></span>registers, multiply
+     <span class="sw" style="--c:#b8923a"></span>retirement, prediction</p>
+</section>
+<nav class="rooms-nav" aria-label="Rooms">{"".join(f'<a href="#salle-{r[0].lower()}"><span>{r[1]}</span> {e(r[2])}</a>' for r in ERAS)}</nav>
+"""
+    dialog = """
+<dialog id="lightbox" aria-labelledby="lb-title">
+  <div class="lb-inner">
+    <button class="lb-close" type="button" aria-label="Close">&times;</button>
+    <div class="lb-art"><img id="lb-img" alt=""></div>
+    <div class="lb-text">
+      <p class="no" id="lb-no"></p>
+      <h2 id="lb-title"></h2>
+      <p class="ver" id="lb-ver"></p>
+      <p class="medium" id="lb-medium"></p>
+      <p class="cap" id="lb-cap"></p>
+      <div id="lb-perf"></div>
+      <div id="lb-detail"></div>
+      <div class="lb-nav"><button type="button" id="lb-prev">&larr; Previous</button><button type="button" id="lb-next">Next &rarr;</button></div>
+    </div>
+  </div>
+</dialog>"""
+    return page("La Galerie · Atelier RV64", "A gallery of generated drawings, one for each version of the RV64 CPU architecture.",
+                intro + "".join(rooms) + dialog, "gallery", body_class="gallery")
+
+
+def chart_svg(versions) -> str:
+    Wc, Hc = 1000, 460
+    l, r, t, b = 70, 30, 40, 70
+    pts = [v for v in versions if v["dmips_ref"] is not None]
+    n = len(versions)
+    xs = {v["version"]: l + (Wc - l - r) * (i + 0.5) / n for i, v in enumerate(versions)}
+    lo, hi = math.log2(0.2), math.log2(8)
+
+    def Y(val):
+        return t + (Hc - t - b) * (1 - (math.log2(val) - lo) / (hi - lo))
+    out = [f'<svg class="chart" viewBox="0 0 {Wc} {Hc}" role="img" aria-labelledby="ch-t ch-d" xmlns="http://www.w3.org/2000/svg">',
+           '<title id="ch-t">Dhrystone DMIPS per MHz by architecture version, simulated</title>',
+           f'<desc id="ch-d">Best reference-runtime Dhrystone result in simulation for each version, on a logarithmic scale, rising from {pts[0]["dmips_ref"]:.2f} at version {pts[0]["version"]} to {pts[-1]["dmips_ref"]:.2f} at version {pts[-1]["version"]}. Simulation, not hardware.</desc>']
+    # eras as washed bands
+    bands = [("mc", "multicycle", OCHRE), ("pipe", "pipeline", SLATE), ("ooo", "out of order", OXBLOOD)]
+    for kind, label, col in bands:
+        idx = [i for i, v in enumerate(versions) if v["kind"] == kind]
+        x0 = l + (Wc - l - r) * idx[0] / n
+        x1 = l + (Wc - l - r) * (idx[-1] + 1) / n
+        out.append(f'<rect x="{x0:.1f}" y="{t}" width="{x1 - x0:.1f}" height="{Hc - t - b}" fill="{col}" fill-opacity="0.09"/>')
+        out.append(f'<text x="{(x0 + x1) / 2:.1f}" y="{t + 22}" text-anchor="middle" class="ct-era">{label}</text>')
+    for val in (0.25, 0.5, 1, 2, 4, 8):
+        y = Y(val)
+        out.append(f'<line x1="{l}" y1="{y:.1f}" x2="{Wc - r}" y2="{y:.1f}" class="ct-grid"/>')
+        out.append(f'<text x="{l - 10}" y="{y + 5:.1f}" text-anchor="end" class="ct-lab">{val:g}</text>')
+    out.append(f'<text x="18" y="{(t + Hc - b) / 2:.0f}" transform="rotate(-90 18 {(t + Hc - b) / 2:.0f})" text-anchor="middle" class="ct-lab">DMIPS per MHz, simulated (log scale)</text>')
+    for i, v in enumerate(versions):
+        if i % 2 == 0 or i == n - 1:
+            x = xs[v["version"]]
+            out.append(f'<text x="{x:.1f}" y="{Hc - b + 26}" text-anchor="end" transform="rotate(-50 {x:.1f} {Hc - b + 26})" class="ct-lab">{v["version"]}</text>')
+    fast = [v for v in versions if v["dmips_fast"] is not None]
+    if len(fast) > 1:
+        d = " ".join(("M" if i == 0 else "L") + f"{xs[v['version']]:.1f} {Y(v['dmips_fast']):.1f}" for i, v in enumerate(fast))
+        out.append(f'<path d="{d}" class="ct-fast"/>')
+    d = " ".join(("M" if i == 0 else "L") + f"{xs[v['version']]:.1f} {Y(v['dmips_ref']):.1f}" for i, v in enumerate(pts))
+    out.append(f'<path d="{d}" class="ct-line"/>')
+    for v in pts:
+        out.append(f'<a href="gallery.html#{slug(v["version"])}"><circle cx="{xs[v["version"]]:.1f}" cy="{Y(v["dmips_ref"]):.1f}" r="6.5" class="ct-dot"><title>No. {v["no"]}, {e(v["title"])} (version {v["version"]}): {v["dmips_ref"]:.2f} DMIPS/MHz, simulated</title></circle></a>')
+    last = pts[-1]
+    out.append(f'<text x="{xs[last["version"]] - 12:.1f}" y="{Y(last["dmips_ref"]) - 14:.1f}" text-anchor="end" class="ct-note">{last["dmips_ref"]:.2f}</text>')
+    first = pts[0]
+    out.append(f'<text x="{xs[first["version"]] + 12:.1f}" y="{Y(first["dmips_ref"]) + 26:.1f}" class="ct-note">{first["dmips_ref"]:.2f}</text>')
+    out.append("</svg>")
+    return "".join(out)
+
+
+def journal_page(versions, days, runs) -> str:
+    chart = chart_svg(versions)
+    nruns = len(runs)
+    body = [f"""
+<section class="page-head">
+  <p class="eyebrow">Le Journal</p>
+  <h1>The notebook, day by day</h1>
+  <p class="lede">The development log, set as an exhibition catalogue: findings, the timeline of each day, the commits, and every Dhrystone run. Text follows the
+  <a href="{BLOB}DEVLOG.md" rel="noopener">DEVLOG.md</a> in the repository, which remains the full record. The small tag on each entry names where its time came from.</p>
+</section>
+<section class="plate" aria-labelledby="chart-h">
+  <h2 id="chart-h">Instructions, per beat of the clock</h2>
+  <p class="small">Best Dhrystone result per version with the reference runtime, in simulation (ink line, gold dots; each dot opens its portrait).
+  The thin sage line is the fast runtime where it was run. {nruns} logged runs. No FPGA hardware was measured.</p>
+  <div class="chart-wrap">{chart}</div>
+</section>
+<nav class="day-nav" aria-label="Days">{"".join(f'<a href="#d-{d["date"]}">{e(fr_date(d["date"]))}</a>' for d in days)}<a href="#runs">Les Essais</a></nav>
+"""]
+    for d in days:
+        findings = "".join(f"<li>{md_inline(f)}</li>" for f in d["findings"])
+        rows = []
+        for r in d["timeline"]:
+            full = r["text"]
+            plain = md_plain(full)
+            long = len(plain) > 260
+            tagc = re.sub(r"[^a-z]", "", r["kind"].lower()) or "other"
+            rows.append(f"""<li class="entry{' long' if long else ''}">
+  <span class="when">{e(r['time'])}</span>
+  <div class="what"><p class="txt">{md_inline(full)}</p>{'<button type="button" class="more" aria-expanded="false">Read on</button>' if long else ''}</div>
+  <span class="kind k-{tagc}" title="source of this timestamp">{e(r['kind'])}</span>
+</li>""")
+        commits = "".join(f"""<li><a class="hash" href="{REPO_URL}/commit/{c['hash']}" rel="noopener">{c['hash']}</a>
+  <span class="when">{c['time'][:5]}</span> <span class="who">{e(c['author'])}</span>
+  <span class="subj">{e(shorten(c['subject'], 140))}</span></li>""" for c in d["commits"])
+        body.append(f"""
+<section class="day" id="d-{d['date']}" aria-labelledby="h-{d['date']}">
+  <header class="day-head">
+    <p class="eyebrow">{e(d['date'])}</p>
+    <h2 id="h-{d['date']}">{e(fr_date(d['date']))}</h2>
+    <p class="day-title">{e(d['title'])}</p>
+  </header>
+  {('<h3 class="sub">Findings</h3><ol class="findings">' + findings + '</ol>') if findings else ''}
+  {('<h3 class="sub">Timeline</h3><ol class="timeline">' + "".join(rows) + '</ol>') if rows else ''}
+  {('<h3 class="sub">Commits</h3><ul class="commits">' + commits + '</ul>') if commits else ''}
+</section>""")
+    # run index
+    vorder = {v["version"]: i for i, v in enumerate(versions)}
+    run_rows = []
+    for r in runs:
+        run_rows.append(f"<tr><td>{e(r['time'][:16])}</td><td>{e(r['version'])}</td><td class='num'>{r['clocks']:,.1f}</td>"
+                        f"<td class='num'>{r['dmips_mhz']:.4f}</td><td>{e(shorten(r['compiler'].replace('clang version 23.1.5 ', ''), 60))}</td></tr>")
+    body.append(f"""
+<section class="day runs" id="runs" aria-labelledby="h-runs">
+  <header class="day-head"><p class="eyebrow">Index</p><h2 id="h-runs">Les Essais</h2>
+  <p class="day-title">Every logged Dhrystone run, oldest first. Simulation results; compiler clang 23.1.5 at -O2. Per-run records are in the repository's <a href="{REPO_URL}/tree/main/devlog" rel="noopener">devlog folder</a>.</p></header>
+  <div class="table-wrap"><table class="runs-table"><thead><tr><th>Run (US Eastern)</th><th>Version</th><th>Clocks / run</th><th>DMIPS/MHz</th><th>Build</th></tr></thead>
+  <tbody>{"".join(run_rows)}</tbody></table></div>
+</section>
+<p class="more-link"><a href="{BLOB}DEVLOG.md" rel="noopener">Read the full DEVLOG.md on GitHub &rarr;</a></p>""")
+    return page("Le Journal · Atelier RV64", "The development log of the RV64 CPU project, set as a timeline of dated entries, commits and runs.",
+                "".join(body), "journal", body_class="journal")
+
+
+def index_page(versions) -> str:
+    n = len(versions)
+    newest = versions[-1]
+    best = max((v for v in versions if v["dmips_ref"]), key=lambda v: v["dmips_ref"])
+    first = versions[0]
+    strip = "".join(f'<a href="gallery.html#{slug(v["version"])}" title="No. {v["no"]}, {e(v["title"])} ({v["version"]})"><img src="{v["art"]}" alt="" loading="lazy" width="800" height="1000"></a>'
+                    for v in versions)
+    hero = best
+    body = f"""
+<section class="hero">
+  <div class="hero-text">
+    <p class="eyebrow">Art and science over time</p>
+    <h1>The shape of a processor, one version at a time</h1>
+    <p class="lede">An original 64-bit RISC-V core for FPGAs, built in public. Here its architecture is hung as a gallery: {n} drawings, from a core that fetched one instruction at a time to one that
+    renames, reorders and retires eight, and a notebook that keeps the dated record of how it got there.</p>
+    <p class="cta"><a class="btn" href="gallery.html">Enter the gallery</a><a class="btn ghost" href="journal.html">Read the journal</a></p>
+  </div>
+  <figure class="hero-art">
+    <a class="frame static" href="gallery.html#{slug(hero['version'])}" aria-label="See No. {hero['no']}, {e(hero['title'])}, in the gallery">
+      <span class="mat"><img src="{hero['art']}" width="800" height="1000" alt="Ink drawing of the 8-wide out-of-order processor, version {hero['version']}: blocks for the reorder buffer, register names, issue queue, eight execution units, caches and bus."></span>
+    </a>
+    <figcaption class="placard small-card"><span class="no">No. {hero['no']}</span> <strong>{e(hero['title'])}</strong>, version {hero['version']}
+    <br><span class="medium">{medium(hero['kind'])}</span></figcaption>
+  </figure>
+</section>
+
+<section class="strip-section" aria-labelledby="strip-h">
+  <h2 id="strip-h" class="eyebrow">{n} versions, in the order they were made</h2>
+  <div class="strip">{strip}</div>
+</section>
+
+<section class="triptych">
+  <article>
+    <p class="eyebrow">I.</p><h2>La Galerie</h2>
+    <p>One generated drawing for every architecture version: the fetch unit, predictor, reorder buffer, execution units, caches and bus drawn in proportion to their recorded sizes, with a placard for each.</p>
+    <p><a href="gallery.html">Walk the rooms &rarr;</a></p>
+  </article>
+  <article>
+    <p class="eyebrow">II.</p><h2>Le Journal</h2>
+    <p>The development log as a catalogue: findings, timelines and commits by day, and a chart of simulated Dhrystone performance from {fmt_dm(first['dmips_ref'])} to {fmt_dm(best['dmips_ref'])} DMIPS/MHz.</p>
+    <p><a href="journal.html">Open the notebook &rarr;</a></p>
+  </article>
+  <article>
+    <p class="eyebrow">III.</p><h2>The method</h2>
+    <p>The target is RVA23U64, in stages. The current design implements RV64I with M, Zba, Zbb and Zbs, in three implementations of one contract. Results are simulated, labelled as such, and never presented as hardware.</p>
+    <p><a href="{REPO_URL}" rel="noopener">The repository &rarr;</a></p>
+  </article>
+</section>
+
+<section class="now">
+  <p class="eyebrow">Newest on the wall</p>
+  <h2>No. {newest['no']}, {e(newest['title'])}</h2>
+  <p>Version {newest['version']}, {e(newest['date_fr'])}{' (in progress, not yet tagged)' if newest['status'] == 'in progress' else ''}. {e(newest['caption'])}</p>
+</section>
+"""
+    return page("Atelier RV64 · Art and science over time",
+                "A gallery of generated drawings and a development journal for an original RV64 FPGA CPU, one version at a time.",
+                body, "home", body_class="home")
+
+
+# ---------------------------------------------------------------------------
+
+def write(path: Path, text: str):
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with open(path, "w", encoding="utf-8", newline="\n") as f:
+        f.write(text)
+
+
+def main():
+    versions, specs, runs = assemble()
+    days = read_journal()
+    for v, s in zip(versions, specs):
+        write(SITE / v["art"], Art(s).render())
+    pub_versions = [{k: v[k] for k in v if k != "register_html"} for v in versions]
+    write(SITE / "data" / "versions.json", json.dumps(pub_versions, indent=1, ensure_ascii=False) + "\n")
+    write(SITE / "data" / "journal.json",
+          json.dumps({"source": "DEVLOG.md", "days": days, "runs": runs}, indent=1, ensure_ascii=False) + "\n")
+    write(SITE / "index.html", index_page(versions))
+    write(SITE / "gallery.html", gallery_page(versions, specs))
+    write(SITE / "journal.html", journal_page(versions, days, runs))
+    print(f"site: {len(versions)} artworks, {len(days)} days, "
+          f"{sum(len(d['timeline']) for d in days)} timeline rows, {len(runs)} runs")
+
+
+if __name__ == "__main__":
+    main()

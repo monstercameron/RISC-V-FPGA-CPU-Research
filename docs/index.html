@@ -1,0 +1,78 @@
+<!doctype html>
+<html lang="en" class="no-js">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Atelier RV64 · Art and science over time</title>
+<meta name="description" content="A gallery of generated drawings and a development journal for an original RV64 FPGA CPU, one version at a time.">
+<meta name="color-scheme" content="light dark">
+<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin><link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,400;0,500;0,600;1,400;1,500&amp;family=Jost:wght@300;400;500&amp;display=swap">
+<link rel="stylesheet" href="assets/style.css">
+
+<script>document.documentElement.className = 'js';</script>
+</head>
+<body class="home">
+<a class="skip" href="#main">Skip to content</a>
+<header class="masthead">
+  <a class="brand" href="index.html"><span class="brand-mark" aria-hidden="true"></span><span>Atelier RV64</span></a>
+  <nav aria-label="Main"><a href="index.html" aria-current="page">Accueil</a><a href="gallery.html">La Galerie</a><a href="journal.html">Le Journal</a></nav>
+</header>
+<main id="main">
+
+<section class="hero">
+  <div class="hero-text">
+    <p class="eyebrow">Art and science over time</p>
+    <h1>The shape of a processor, one version at a time</h1>
+    <p class="lede">An original 64-bit RISC-V core for FPGAs, built in public. Here its architecture is hung as a gallery: 27 drawings, from a core that fetched one instruction at a time to one that
+    renames, reorders and retires eight, and a notebook that keeps the dated record of how it got there.</p>
+    <p class="cta"><a class="btn" href="gallery.html">Enter the gallery</a><a class="btn ghost" href="journal.html">Read the journal</a></p>
+  </div>
+  <figure class="hero-art">
+    <a class="frame static" href="gallery.html#v0-11-1" aria-label="See No. 27, Le Pressentiment, in the gallery">
+      <span class="mat"><img src="art/v0.11.1.svg" width="800" height="1000" alt="Ink drawing of the 8-wide out-of-order processor, version 0.11.1: blocks for the reorder buffer, register names, issue queue, eight execution units, caches and bus."></span>
+    </a>
+    <figcaption class="placard small-card"><span class="no">No. 27</span> <strong>Le Pressentiment</strong>, version 0.11.1
+    <br><span class="medium">ink, oxblood and gold leaf on vellum; simulated</span></figcaption>
+  </figure>
+</section>
+
+<section class="strip-section" aria-labelledby="strip-h">
+  <h2 id="strip-h" class="eyebrow">27 versions, in the order they were made</h2>
+  <div class="strip"><a href="gallery.html#v0-1-0" title="No. 1, Le Premier Souffle (0.1.0)"><img src="art/v0.1.0.svg" alt="" loading="lazy" width="800" height="1000"></a><a href="gallery.html#v0-1-1" title="No. 2, Le Tampon (0.1.1)"><img src="art/v0.1.1.svg" alt="" loading="lazy" width="800" height="1000"></a><a href="gallery.html#v0-2-0" title="No. 3, La Bibliothèque (0.2.0)"><img src="art/v0.2.0.svg" alt="" loading="lazy" width="800" height="1000"></a><a href="gallery.html#v0-2-1" title="No. 4, L&#x27;Impatience (0.2.1)"><img src="art/v0.2.1.svg" alt="" loading="lazy" width="800" height="1000"></a><a href="gallery.html#v0-2-2" title="No. 5, L&#x27;Accusé (0.2.2)"><img src="art/v0.2.2.svg" alt="" loading="lazy" width="800" height="1000"></a><a href="gallery.html#v0-3-0" title="No. 6, Le Miroir (0.3.0)"><img src="art/v0.3.0.svg" alt="" loading="lazy" width="800" height="1000"></a><a href="gallery.html#v0-4-0" title="No. 7, L&#x27;Arithmétique (0.4.0)"><img src="art/v0.4.0.svg" alt="" loading="lazy" width="800" height="1000"></a><a href="gallery.html#v0-5-0" title="No. 8, Le Duo (0.5.0)"><img src="art/v0.5.0.svg" alt="" loading="lazy" width="800" height="1000"></a><a href="gallery.html#v0-5-1" title="No. 9, Le Pont (0.5.1)"><img src="art/v0.5.1.svg" alt="" loading="lazy" width="800" height="1000"></a><a href="gallery.html#v0-5-2" title="No. 10, Deux Lectures (0.5.2)"><img src="art/v0.5.2.svg" alt="" loading="lazy" width="800" height="1000"></a><a href="gallery.html#v0-5-3" title="No. 11, Le Saut (0.5.3)"><img src="art/v0.5.3.svg" alt="" loading="lazy" width="800" height="1000"></a><a href="gallery.html#v0-5-4" title="No. 12, Le Relais (0.5.4)"><img src="art/v0.5.4.svg" alt="" loading="lazy" width="800" height="1000"></a><a href="gallery.html#v0-5-5" title="No. 13, Le Repli (0.5.5)"><img src="art/v0.5.5.svg" alt="" loading="lazy" width="800" height="1000"></a><a href="gallery.html#v0-6-0" title="No. 14, La Grammaire des Bits (0.6.0)"><img src="art/v0.6.0.svg" alt="" loading="lazy" width="800" height="1000"></a><a href="gallery.html#v0-7-0" title="No. 15, Le Trio (0.7.0)"><img src="art/v0.7.0.svg" alt="" loading="lazy" width="800" height="1000"></a><a href="gallery.html#v0-7-1" title="No. 16, Le Temps Compté (0.7.1)"><img src="art/v0.7.1.svg" alt="" loading="lazy" width="800" height="1000"></a><a href="gallery.html#v0-8-0" title="No. 17, La Chaîne (0.8.0)"><img src="art/v0.8.0.svg" alt="" loading="lazy" width="800" height="1000"></a><a href="gallery.html#v0-8-1" title="No. 18, L&#x27;Antichambre (0.8.1)"><img src="art/v0.8.1.svg" alt="" loading="lazy" width="800" height="1000"></a><a href="gallery.html#v0-9-0" title="No. 19, Le Désordre (0.9.0)"><img src="art/v0.9.0.svg" alt="" loading="lazy" width="800" height="1000"></a><a href="gallery.html#v0-9-1" title="No. 20, Le Passage des Valeurs (0.9.1)"><img src="art/v0.9.1.svg" alt="" loading="lazy" width="800" height="1000"></a><a href="gallery.html#v0-9-2" title="No. 21, Les Jumeaux (0.9.2)"><img src="art/v0.9.2.svg" alt="" loading="lazy" width="800" height="1000"></a><a href="gallery.html#v0-9-3" title="No. 22, Le Dernier Mot (0.9.3)"><img src="art/v0.9.3.svg" alt="" loading="lazy" width="800" height="1000"></a><a href="gallery.html#v0-9-4" title="No. 23, Par-dessus la Frontière (0.9.4)"><img src="art/v0.9.4.svg" alt="" loading="lazy" width="800" height="1000"></a><a href="gallery.html#v0-10-0" title="No. 24, L&#x27;Octuple (0.10.0)"><img src="art/v0.10.0.svg" alt="" loading="lazy" width="800" height="1000"></a><a href="gallery.html#v0-10-1" title="No. 25, Le Double Saut (0.10.1)"><img src="art/v0.10.1.svg" alt="" loading="lazy" width="800" height="1000"></a><a href="gallery.html#v0-11-0" title="No. 26, La Boucle (0.11.0)"><img src="art/v0.11.0.svg" alt="" loading="lazy" width="800" height="1000"></a><a href="gallery.html#v0-11-1" title="No. 27, Le Pressentiment (0.11.1)"><img src="art/v0.11.1.svg" alt="" loading="lazy" width="800" height="1000"></a></div>
+</section>
+
+<section class="triptych">
+  <article>
+    <p class="eyebrow">I.</p><h2>La Galerie</h2>
+    <p>One generated drawing for every architecture version: the fetch unit, predictor, reorder buffer, execution units, caches and bus drawn in proportion to their recorded sizes, with a placard for each.</p>
+    <p><a href="gallery.html">Walk the rooms &rarr;</a></p>
+  </article>
+  <article>
+    <p class="eyebrow">II.</p><h2>Le Journal</h2>
+    <p>The development log as a catalogue: findings, timelines and commits by day, and a chart of simulated Dhrystone performance from 0.26 to 6.39 DMIPS/MHz.</p>
+    <p><a href="journal.html">Open the notebook &rarr;</a></p>
+  </article>
+  <article>
+    <p class="eyebrow">III.</p><h2>The method</h2>
+    <p>The target is RVA23U64, in stages. The current design implements RV64I with M, Zba, Zbb and Zbs, in three implementations of one contract. Results are simulated, labelled as such, and never presented as hardware.</p>
+    <p><a href="https://github.com/monstercameron/RISC-V-FPGA-CPU-Research" rel="noopener">The repository &rarr;</a></p>
+  </article>
+</section>
+
+<section class="now">
+  <p class="eyebrow">Newest on the wall</p>
+  <h2>No. 27, Le Pressentiment</h2>
+  <p>Version 0.11.1, 21 novembre 2026. Value prediction for loads, multiplies and divides; fetch predecode of direct jumps, calls and returns.</p>
+</section>
+
+</main>
+<footer class="colophon">
+  <p class="ornament" aria-hidden="true">· · ·</p>
+  <p>Art and science over time. Every figure on this site comes from simulation of the design in
+  <a href="https://github.com/monstercameron/RISC-V-FPGA-CPU-Research" rel="noopener">the repository</a>; nothing here is a hardware measurement.
+  The drawings are generated from the architecture history, not photographs of silicon.</p>
+  <p class="small">Generated by <code>scripts/build_site.py</code>. Fonts from Google Fonts; no scripts from elsewhere, no trackers.</p>
+</footer>
+<script src="assets/site.js" defer></script>
+</body>
+</html>

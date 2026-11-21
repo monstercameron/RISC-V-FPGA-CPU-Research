@@ -1,0 +1,715 @@
+<!doctype html>
+<html lang="en" class="no-js">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>La Galerie · Atelier RV64</title>
+<meta name="description" content="A gallery of generated drawings, one for each version of the RV64 CPU architecture.">
+<meta name="color-scheme" content="light dark">
+<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin><link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,400;0,500;0,600;1,400;1,500&amp;family=Jost:wght@300;400;500&amp;display=swap">
+<link rel="stylesheet" href="assets/style.css">
+
+<script>document.documentElement.className = 'js';</script>
+</head>
+<body class="gallery">
+<a class="skip" href="#main">Skip to content</a>
+<header class="masthead">
+  <a class="brand" href="index.html"><span class="brand-mark" aria-hidden="true"></span><span>Atelier RV64</span></a>
+  <nav aria-label="Main"><a href="index.html">Accueil</a><a href="gallery.html" aria-current="page">La Galerie</a><a href="journal.html">Le Journal</a></nav>
+</header>
+<main id="main">
+
+<section class="page-head">
+  <p class="eyebrow">La Galerie</p>
+  <h1>27 portraits of a processor</h1>
+  <p class="lede">Each drawing is generated from the architecture history: one canvas per version, its units sized and arranged by their recorded counts.
+  Walk the rooms in order and the machine learns to fetch, to pair, to pipeline, to run out of order. Select a work to see it enlarged.</p>
+  <p class="legend small"><span class="sw" style="--c:#c58f2c"></span>fetch, loads
+     <span class="sw" style="--c:#7a2430"></span>rename, reorder buffer, stores
+     <span class="sw" style="--c:#3f5a73"></span>execution, caches
+     <span class="sw" style="--c:#7f9168"></span>registers, multiply
+     <span class="sw" style="--c:#b8923a"></span>retirement, prediction</p>
+</section>
+<nav class="rooms-nav" aria-label="Rooms"><a href="#salle-i"><span>Salle I</span> Les Premiers Pas</a><a href="#salle-ii"><span>Salle II</span> Le Duo et le Trio</a><a href="#salle-iii"><span>Salle III</span> La Chaîne</a><a href="#salle-iv"><span>Salle IV</span> Le Désordre</a><a href="#salle-v"><span>Salle V</span> L&#x27;Octuple</a></nav>
+
+<section class="room" id="salle-i" aria-labelledby="h-i">
+  <header class="room-head">
+    <p class="room-no">Salle I</p>
+    <h2 id="h-i">Les Premiers Pas</h2>
+    <p class="room-blurb">One instruction at a time: a multicycle core finds its memory.</p>
+  </header>
+  <div class="wall">
+    <div class="rail" aria-hidden="true"></div>
+    <div class="hang">
+<figure class="work" id="v0-1-0" data-index="0" data-kind="mc">
+  <button class="frame" type="button" aria-label="View No. 1, Le Premier Souffle, version 0.1.0, enlarged">
+    <span class="mat"><img src="art/v0.1.0.svg" width="800" height="1000" loading="lazy" alt="Abstract ink drawing of the processor at version 0.1.0, a multicycle core. A ring of 3 control states around the register file, 1 execution slot, and the bus below."></span>
+  </button>
+  <figcaption class="placard">
+    <span class="no">No. 1</span>
+    <h3>Le Premier Souffle</h3>
+    <p class="ver">Version 0.1.0<span class="sep"> · </span>20 novembre 2026</p>
+    <p class="medium">ink and ochre on vellum; simulated</p>
+    <p class="cap">One instruction at a time, drawn in three breaths: fetch, execute, remember. No cache, no predictor.</p>
+    <p class="perf"><span class="num">0.26</span> DMIPS/MHz<span class="tag">simulated, reference runtime</span></p>
+  </figcaption>
+  <div class="detail" hidden>
+    <h4>From the register</h4>
+    <p>C0 integer foundation: multicycle RV64I and FENCE.I core, terminal laboratory trap record, unified 64-bit memory bus, retirement trace, 16 KiB synchronous RAM wrapper. Called &quot;revision 0&quot; before versioning began.</p>
+    <h4>The units</h4>
+    <table class="units"><tbody><tr><th scope='row'>Organisation</th><td>Multicycle core (rtl/cpu/rv64_core.sv)</td></tr><tr><th scope='row'>Control states</th><td>Fetch · Execute · Memory</td></tr><tr><th scope='row'>Issue</th><td>1 per clock</td></tr><tr><th scope='row'>Retirement</th><td>1 per clock</td></tr></tbody></table>
+    
+    <p class="small">Compatibility: Initial version. <a href="https://github.com/monstercameron/RISC-V-FPGA-CPU-Research/releases/tag/cpu-v0.1.0" rel="noopener">Tag cpu-v0.1.0</a>.
+    Areas and sizes are symbolic; counts follow the history row. Simulated, not a hardware measurement.</p>
+  </div>
+</figure>
+<figure class="work" id="v0-1-1" data-index="1" data-kind="mc">
+  <button class="frame" type="button" aria-label="View No. 2, Le Tampon, version 0.1.1, enlarged">
+    <span class="mat"><img src="art/v0.1.1.svg" width="800" height="1000" loading="lazy" alt="Abstract ink drawing of the processor at version 0.1.1, a multicycle core. A ring of 3 control states around the register file, 1 execution slot, and the bus below."></span>
+  </button>
+  <figcaption class="placard">
+    <span class="no">No. 2</span>
+    <h3>Le Tampon</h3>
+    <p class="ver">Version 0.1.1<span class="sep"> · </span>20 novembre 2026</p>
+    <p class="medium">ink and ochre on vellum; simulated</p>
+    <p class="cap">The last beat fetched is kept, and the next instruction often finds it already there.</p>
+    <p class="perf"><span class="num">0.33</span> DMIPS/MHz<span class="tag">simulated, reference runtime</span></p>
+  </figcaption>
+  <div class="detail" hidden>
+    <h4>From the register</h4>
+    <p>Fetch buffer: the last fetched 8-byte beat serves the next instruction when it is in the same beat, skipping FETCH. Cleared by reset, <code>fence.i</code> and stores to the beat. Dhrystone: 2,188.2 to 1,706.2 clocks per run.</p>
+    <h4>The units</h4>
+    <table class="units"><tbody><tr><th scope='row'>Organisation</th><td>Multicycle core (rtl/cpu/rv64_core.sv)</td></tr><tr><th scope='row'>Control states</th><td>Fetch · Execute · Memory</td></tr><tr><th scope='row'>Issue</th><td>1 per clock</td></tr><tr><th scope='row'>Retirement</th><td>1 per clock</td></tr><tr><th scope='row'>Fetch</th><td>one-beat fetch buffer (8 bytes)</td></tr></tbody></table>
+    <h4>Marginalia</h4><ul class="marks"><li>a one-beat fetch buffer</li></ul>
+    <p class="small">Compatibility: No. <a href="https://github.com/monstercameron/RISC-V-FPGA-CPU-Research/releases/tag/cpu-v0.1.1" rel="noopener">Tag cpu-v0.1.1</a>.
+    Areas and sizes are symbolic; counts follow the history row. Simulated, not a hardware measurement.</p>
+  </div>
+</figure>
+<figure class="work" id="v0-2-0" data-index="2" data-kind="mc">
+  <button class="frame" type="button" aria-label="View No. 3, La Bibliothèque, version 0.2.0, enlarged">
+    <span class="mat"><img src="art/v0.2.0.svg" width="800" height="1000" loading="lazy" alt="Abstract ink drawing of the processor at version 0.2.0, a multicycle core. A ring of 3 control states around the register file, 1 execution slot, and the bus below."></span>
+  </button>
+  <figcaption class="placard">
+    <span class="no">No. 3</span>
+    <h3>La Bibliothèque</h3>
+    <p class="ver">Version 0.2.0<span class="sep"> · </span>20 novembre 2026</p>
+    <p class="medium">ink and ochre on vellum; simulated</p>
+    <p class="cap">A small library of instructions replaces the buffer: 4 KiB, direct-mapped, 8-byte lines.</p>
+    <p class="perf"><span class="num">0.58</span> DMIPS/MHz<span class="tag">simulated, reference runtime</span></p>
+  </figcaption>
+  <div class="detail" hidden>
+    <h4>From the register</h4>
+    <p>Instruction cache replaces the fetch buffer: direct-mapped, <code>ICACHE_BEATS</code> 8-byte lines (default 512, 4 KiB), new parameter on <code>rv64_core</code> and <code>rv64_bram_soc</code>; same coherence rules. Dhrystone: 1,706.2 to 988.7 clocks per run.</p>
+    <h4>The units</h4>
+    <table class="units"><tbody><tr><th scope='row'>Organisation</th><td>Multicycle core (rtl/cpu/rv64_core.sv)</td></tr><tr><th scope='row'>Control states</th><td>Fetch · Execute · Memory</td></tr><tr><th scope='row'>Issue</th><td>1 per clock</td></tr><tr><th scope='row'>Retirement</th><td>1 per clock</td></tr><tr><th scope='row'>Instruction cache</th><td>4 KiB, direct-mapped, 8-byte lines</td></tr></tbody></table>
+    <h4>Marginalia</h4><ul class="marks"><li>a one-beat fetch buffer</li></ul>
+    <p class="small">Compatibility: No (new parameter). <a href="https://github.com/monstercameron/RISC-V-FPGA-CPU-Research/releases/tag/cpu-v0.2.0" rel="noopener">Tag cpu-v0.2.0</a>.
+    Areas and sizes are symbolic; counts follow the history row. Simulated, not a hardware measurement.</p>
+  </div>
+</figure>
+<figure class="work" id="v0-2-1" data-index="3" data-kind="mc">
+  <button class="frame" type="button" aria-label="View No. 4, L&#x27;Impatience, version 0.2.1, enlarged">
+    <span class="mat"><img src="art/v0.2.1.svg" width="800" height="1000" loading="lazy" alt="Abstract ink drawing of the processor at version 0.2.1, a multicycle core. A ring of 3 control states around the register file, 1 execution slot, and the bus below."></span>
+  </button>
+  <figcaption class="placard">
+    <span class="no">No. 4</span>
+    <h3>L&#x27;Impatience</h3>
+    <p class="ver">Version 0.2.1<span class="sep"> · </span>20 novembre 2026</p>
+    <p class="medium">ink and ochre on vellum; simulated</p>
+    <p class="cap">Loads and stores send their request from EXECUTE instead of waiting a clock.</p>
+    <p class="perf"><span class="num">0.72</span> DMIPS/MHz<span class="tag">simulated, reference runtime</span></p>
+  </figcaption>
+  <div class="detail" hidden>
+    <h4>From the register</h4>
+    <p>Loads and stores issue their bus request from EXECUTE; MEMORY holds the same request if needed. One clock less per data access with the synchronous RAM. Bus protocol unchanged.</p>
+    <h4>The units</h4>
+    <table class="units"><tbody><tr><th scope='row'>Organisation</th><td>Multicycle core (rtl/cpu/rv64_core.sv)</td></tr><tr><th scope='row'>Control states</th><td>Fetch · Execute · Memory</td></tr><tr><th scope='row'>Issue</th><td>1 per clock</td></tr><tr><th scope='row'>Retirement</th><td>1 per clock</td></tr><tr><th scope='row'>Instruction cache</th><td>4 KiB, direct-mapped, 8-byte lines</td></tr></tbody></table>
+    <h4>Marginalia</h4><ul class="marks"><li>a one-beat fetch buffer</li><li>requests issue from EXECUTE</li></ul>
+    <p class="small">Compatibility: No. <a href="https://github.com/monstercameron/RISC-V-FPGA-CPU-Research/releases/tag/cpu-v0.2.1" rel="noopener">Tag cpu-v0.2.1</a>.
+    Areas and sizes are symbolic; counts follow the history row. Simulated, not a hardware measurement.</p>
+  </div>
+</figure>
+<figure class="work" id="v0-2-2" data-index="4" data-kind="mc">
+  <button class="frame" type="button" aria-label="View No. 5, L&#x27;Accusé, version 0.2.2, enlarged">
+    <span class="mat"><img src="art/v0.2.2.svg" width="800" height="1000" loading="lazy" alt="Abstract ink drawing of the processor at version 0.2.2, a multicycle core. A ring of 3 control states around the register file, 1 execution slot, and the bus below."></span>
+  </button>
+  <figcaption class="placard">
+    <span class="no">No. 5</span>
+    <h3>L&#x27;Accusé</h3>
+    <p class="ver">Version 0.2.2<span class="sep"> · </span>20 novembre 2026</p>
+    <p class="medium">ink and ochre on vellum; simulated</p>
+    <p class="cap">The memory acknowledges a write in the clock it is offered; stores now retire at once.</p>
+    <p class="perf"><span class="num">0.79</span> DMIPS/MHz<span class="tag">simulated, reference runtime</span></p>
+  </figcaption>
+  <div class="detail" hidden>
+    <h4>From the register</h4>
+    <p>RAM wrapper acknowledges writes in the clock they are presented; reads unchanged. Stores now retire from EXECUTE.</p>
+    <h4>The units</h4>
+    <table class="units"><tbody><tr><th scope='row'>Organisation</th><td>Multicycle core (rtl/cpu/rv64_core.sv)</td></tr><tr><th scope='row'>Control states</th><td>Fetch · Execute · Memory</td></tr><tr><th scope='row'>Issue</th><td>1 per clock</td></tr><tr><th scope='row'>Retirement</th><td>1 per clock</td></tr><tr><th scope='row'>Instruction cache</th><td>4 KiB, direct-mapped, 8-byte lines</td></tr></tbody></table>
+    <h4>Marginalia</h4><ul class="marks"><li>a one-beat fetch buffer</li><li>requests issue from EXECUTE</li><li>writes acknowledged in the same clock</li></ul>
+    <p class="small">Compatibility: No. <a href="https://github.com/monstercameron/RISC-V-FPGA-CPU-Research/releases/tag/cpu-v0.2.2" rel="noopener">Tag cpu-v0.2.2</a>.
+    Areas and sizes are symbolic; counts follow the history row. Simulated, not a hardware measurement.</p>
+  </div>
+</figure>
+<figure class="work" id="v0-3-0" data-index="5" data-kind="mc">
+  <button class="frame" type="button" aria-label="View No. 6, Le Miroir, version 0.3.0, enlarged">
+    <span class="mat"><img src="art/v0.3.0.svg" width="800" height="1000" loading="lazy" alt="Abstract ink drawing of the processor at version 0.3.0, a multicycle core. A ring of 3 control states around the register file, 1 execution slot, and the bus below."></span>
+  </button>
+  <figcaption class="placard">
+    <span class="no">No. 6</span>
+    <h3>Le Miroir</h3>
+    <p class="ver">Version 0.3.0<span class="sep"> · </span>20 novembre 2026</p>
+    <p class="medium">ink and ochre on vellum; simulated</p>
+    <p class="cap">A data cache for loads, 4 KiB and write-through, answers what the bus used to.</p>
+    <p class="perf"><span class="num">0.95</span> DMIPS/MHz<span class="tag">simulated, reference runtime</span></p>
+  </figcaption>
+  <div class="detail" hidden>
+    <h4>From the register</h4>
+    <p>Data cache for loads: direct-mapped, write-through, <code>DCACHE_BEATS</code> 8-byte lines (default 512, 4 KiB), new parameter on <code>rv64_core</code> and <code>rv64_bram_soc</code>. Loads that hit complete in EXECUTE with no bus request; all memory treated as cacheable.</p>
+    <h4>The units</h4>
+    <table class="units"><tbody><tr><th scope='row'>Organisation</th><td>Multicycle core (rtl/cpu/rv64_core.sv)</td></tr><tr><th scope='row'>Control states</th><td>Fetch · Execute · Memory</td></tr><tr><th scope='row'>Issue</th><td>1 per clock</td></tr><tr><th scope='row'>Retirement</th><td>1 per clock</td></tr><tr><th scope='row'>Instruction cache</th><td>4 KiB, direct-mapped, 8-byte lines</td></tr><tr><th scope='row'>Data cache</th><td>4 KiB, direct-mapped, write-through</td></tr></tbody></table>
+    <h4>Marginalia</h4><ul class="marks"><li>a one-beat fetch buffer</li><li>requests issue from EXECUTE</li><li>writes acknowledged in the same clock</li></ul>
+    <p class="small">Compatibility: No (new parameter; loads that hit no longer reach the bus). <a href="https://github.com/monstercameron/RISC-V-FPGA-CPU-Research/releases/tag/cpu-v0.3.0" rel="noopener">Tag cpu-v0.3.0</a>.
+    Areas and sizes are symbolic; counts follow the history row. Simulated, not a hardware measurement.</p>
+  </div>
+</figure>
+<figure class="work" id="v0-4-0" data-index="6" data-kind="mc">
+  <button class="frame" type="button" aria-label="View No. 7, L&#x27;Arithmétique, version 0.4.0, enlarged">
+    <span class="mat"><img src="art/v0.4.0.svg" width="800" height="1000" loading="lazy" alt="Abstract ink drawing of the processor at version 0.4.0, a multicycle core. A ring of 4 control states around the register file, 1 execution slot, and the bus below."></span>
+  </button>
+  <figcaption class="placard">
+    <span class="no">No. 7</span>
+    <h3>L&#x27;Arithmétique</h3>
+    <p class="ver">Version 0.4.0<span class="sep"> · </span>20 novembre 2026</p>
+    <p class="medium">ink and ochre on vellum; simulated</p>
+    <p class="cap">The M extension arrives: multiply and a divider that steps once per clock.</p>
+    <p class="perf"><span class="num">1.02</span> DMIPS/MHz<span class="tag">simulated, reference runtime</span></p>
+  </figcaption>
+  <div class="detail" hidden>
+    <h4>From the register</h4>
+    <p>M extension: <code>mul</code>, <code>mulh</code>, <code>mulhsu</code>, <code>mulhu</code>, <code>div</code>, <code>divu</code>, <code>rem</code>, <code>remu</code> and the <code>w</code> forms. Multiply completes in EXECUTE; divide-by-zero, signed overflow and small dividends complete in EXECUTE; other divides use a DIVIDE state, one step per clock from the quotient&#x27;s highest possible bit. ISA string <code>rv64im_zifencei</code>.</p>
+    <h4>The units</h4>
+    <table class="units"><tbody><tr><th scope='row'>Organisation</th><td>Multicycle core (rtl/cpu/rv64_core.sv)</td></tr><tr><th scope='row'>Control states</th><td>Fetch · Execute · Memory · Divide</td></tr><tr><th scope='row'>Issue</th><td>1 per clock</td></tr><tr><th scope='row'>Retirement</th><td>1 per clock</td></tr><tr><th scope='row'>Instruction cache</th><td>4 KiB, direct-mapped, 8-byte lines</td></tr><tr><th scope='row'>Data cache</th><td>4 KiB, direct-mapped, write-through</td></tr><tr><th scope='row'>Multiply / divide</th><td>M extension; divide one step per clock</td></tr></tbody></table>
+    <h4>Marginalia</h4><ul class="marks"><li>a one-beat fetch buffer</li><li>requests issue from EXECUTE</li><li>writes acknowledged in the same clock</li></ul>
+    <p class="small">Compatibility: No (instructions added). <a href="https://github.com/monstercameron/RISC-V-FPGA-CPU-Research/releases/tag/cpu-v0.4.0" rel="noopener">Tag cpu-v0.4.0</a>.
+    Areas and sizes are symbolic; counts follow the history row. Simulated, not a hardware measurement.</p>
+  </div>
+</figure></div>
+    <div class="floor" aria-hidden="true"></div>
+  </div>
+</section>
+<section class="room" id="salle-ii" aria-labelledby="h-ii">
+  <header class="room-head">
+    <p class="room-no">Salle II</p>
+    <h2 id="h-ii">Le Duo et le Trio</h2>
+    <p class="room-blurb">Two, then three instructions in the same clock.</p>
+  </header>
+  <div class="wall">
+    <div class="rail" aria-hidden="true"></div>
+    <div class="hang">
+<figure class="work" id="v0-5-0" data-index="7" data-kind="mc">
+  <button class="frame" type="button" aria-label="View No. 8, Le Duo, version 0.5.0, enlarged">
+    <span class="mat"><img src="art/v0.5.0.svg" width="800" height="1000" loading="lazy" alt="Abstract ink drawing of the processor at version 0.5.0, a multicycle core. A ring of 4 control states around the register file, 2 execution slots, and the bus below."></span>
+  </button>
+  <figcaption class="placard">
+    <span class="no">No. 8</span>
+    <h3>Le Duo</h3>
+    <p class="ver">Version 0.5.0<span class="sep"> · </span>20 novembre 2026</p>
+    <p class="medium">ink and ochre on vellum; simulated</p>
+    <p class="cap">Two instructions in one clock: a second slot and a second retirement port.</p>
+    <p class="perf"><span class="num">1.31</span> DMIPS/MHz<span class="tag">simulated, reference runtime</span></p>
+  </figcaption>
+  <div class="detail" hidden>
+    <h4>From the register</h4>
+    <p>Dual issue: the instruction after an integer operation, a data-cache-hit load or a store to another beat executes in the same clock when it is a simple integer operation in the same 8-byte beat, independent of the first. New second retirement port <code>retire2_*</code> on <code>rv64_core</code> and <code>retire2_valid</code> on <code>rv64_bram_soc</code>.</p>
+    <h4>The units</h4>
+    <table class="units"><tbody><tr><th scope='row'>Organisation</th><td>Multicycle core (rtl/cpu/rv64_core.sv)</td></tr><tr><th scope='row'>Control states</th><td>Fetch · Execute · Memory · Divide</td></tr><tr><th scope='row'>Issue</th><td>2 per clock</td></tr><tr><th scope='row'>Retirement</th><td>2 per clock</td></tr><tr><th scope='row'>Instruction cache</th><td>4 KiB, direct-mapped, 8-byte lines</td></tr><tr><th scope='row'>Data cache</th><td>4 KiB, direct-mapped, write-through</td></tr><tr><th scope='row'>Second slot</th><td>simple integer</td></tr><tr><th scope='row'>Multiply / divide</th><td>M extension; divide one step per clock</td></tr></tbody></table>
+    <h4>Marginalia</h4><ul class="marks"><li>a one-beat fetch buffer</li><li>requests issue from EXECUTE</li><li>writes acknowledged in the same clock</li></ul>
+    <p class="small">Compatibility: No (new ports; trace order unchanged). <a href="https://github.com/monstercameron/RISC-V-FPGA-CPU-Research/releases/tag/cpu-v0.5.0" rel="noopener">Tag cpu-v0.5.0</a>.
+    Areas and sizes are symbolic; counts follow the history row. Simulated, not a hardware measurement.</p>
+  </div>
+</figure>
+<figure class="work" id="v0-5-1" data-index="8" data-kind="mc">
+  <button class="frame" type="button" aria-label="View No. 9, Le Pont, version 0.5.1, enlarged">
+    <span class="mat"><img src="art/v0.5.1.svg" width="800" height="1000" loading="lazy" alt="Abstract ink drawing of the processor at version 0.5.1, a multicycle core. A ring of 4 control states around the register file, 2 execution slots, and the bus below."></span>
+  </button>
+  <figcaption class="placard">
+    <span class="no">No. 9</span>
+    <h3>Le Pont</h3>
+    <p class="ver">Version 0.5.1<span class="sep"> · </span>20 novembre 2026</p>
+    <p class="medium">ink and ochre on vellum; simulated</p>
+    <p class="cap">The second slot may reach into the next beat, and may be a conditional branch.</p>
+    <p class="perf"><span class="num">1.43</span> DMIPS/MHz<span class="tag">simulated, reference runtime</span> <span class="aside">(fast runtime: 1.58)</span></p>
+  </figcaption>
+  <div class="detail" hidden>
+    <h4>From the register</h4>
+    <p>Second slot widened: it may come from the next 8-byte beat when that beat is in the instruction cache, and may be a conditional branch with an aligned target.</p>
+    <h4>The units</h4>
+    <table class="units"><tbody><tr><th scope='row'>Organisation</th><td>Multicycle core (rtl/cpu/rv64_core.sv)</td></tr><tr><th scope='row'>Control states</th><td>Fetch · Execute · Memory · Divide</td></tr><tr><th scope='row'>Issue</th><td>2 per clock</td></tr><tr><th scope='row'>Retirement</th><td>2 per clock</td></tr><tr><th scope='row'>Instruction cache</th><td>4 KiB, direct-mapped, 8-byte lines</td></tr><tr><th scope='row'>Data cache</th><td>4 KiB, direct-mapped, write-through</td></tr><tr><th scope='row'>Second slot</th><td>simple integer, branch</td></tr><tr><th scope='row'>Multiply / divide</th><td>M extension; divide one step per clock</td></tr></tbody></table>
+    <h4>Marginalia</h4><ul class="marks"><li>a one-beat fetch buffer</li><li>requests issue from EXECUTE</li><li>writes acknowledged in the same clock</li><li>second slot across beats</li></ul>
+    <p class="small">Compatibility: No. <a href="https://github.com/monstercameron/RISC-V-FPGA-CPU-Research/releases/tag/cpu-v0.5.1" rel="noopener">Tag cpu-v0.5.1</a>.
+    Areas and sizes are symbolic; counts follow the history row. Simulated, not a hardware measurement.</p>
+  </div>
+</figure>
+<figure class="work" id="v0-5-2" data-index="9" data-kind="mc">
+  <button class="frame" type="button" aria-label="View No. 10, Deux Lectures, version 0.5.2, enlarged">
+    <span class="mat"><img src="art/v0.5.2.svg" width="800" height="1000" loading="lazy" alt="Abstract ink drawing of the processor at version 0.5.2, a multicycle core. A ring of 4 control states around the register file, 2 execution slots, and the bus below."></span>
+  </button>
+  <figcaption class="placard">
+    <span class="no">No. 10</span>
+    <h3>Deux Lectures</h3>
+    <p class="ver">Version 0.5.2<span class="sep"> · </span>20 novembre 2026</p>
+    <p class="medium">ink and ochre on vellum; simulated</p>
+    <p class="cap">A second data-cache port lets an aligned load ride in the second slot.</p>
+    <p class="perf"><span class="num">1.46</span> DMIPS/MHz<span class="tag">simulated, reference runtime</span> <span class="aside">(fast runtime: 1.63)</span></p>
+  </figcaption>
+  <div class="detail" hidden>
+    <h4>From the register</h4>
+    <p>Second slot may also be an aligned load that hits the data cache, read through a second data-cache port, when the first slot is not a store.</p>
+    <h4>The units</h4>
+    <table class="units"><tbody><tr><th scope='row'>Organisation</th><td>Multicycle core (rtl/cpu/rv64_core.sv)</td></tr><tr><th scope='row'>Control states</th><td>Fetch · Execute · Memory · Divide</td></tr><tr><th scope='row'>Issue</th><td>2 per clock</td></tr><tr><th scope='row'>Retirement</th><td>2 per clock</td></tr><tr><th scope='row'>Instruction cache</th><td>4 KiB, direct-mapped, 8-byte lines</td></tr><tr><th scope='row'>Data cache</th><td>4 KiB, direct-mapped, write-through</td></tr><tr><th scope='row'>Second slot</th><td>simple integer, branch, load</td></tr><tr><th scope='row'>Multiply / divide</th><td>M extension; divide one step per clock</td></tr></tbody></table>
+    <h4>Marginalia</h4><ul class="marks"><li>a one-beat fetch buffer</li><li>requests issue from EXECUTE</li><li>writes acknowledged in the same clock</li><li>second slot across beats</li><li>second data-cache port</li></ul>
+    <p class="small">Compatibility: No. <a href="https://github.com/monstercameron/RISC-V-FPGA-CPU-Research/releases/tag/cpu-v0.5.2" rel="noopener">Tag cpu-v0.5.2</a>.
+    Areas and sizes are symbolic; counts follow the history row. Simulated, not a hardware measurement.</p>
+  </div>
+</figure>
+<figure class="work" id="v0-5-3" data-index="10" data-kind="mc">
+  <button class="frame" type="button" aria-label="View No. 11, Le Saut, version 0.5.3, enlarged">
+    <span class="mat"><img src="art/v0.5.3.svg" width="800" height="1000" loading="lazy" alt="Abstract ink drawing of the processor at version 0.5.3, a multicycle core. A ring of 4 control states around the register file, 2 execution slots, and the bus below."></span>
+  </button>
+  <figcaption class="placard">
+    <span class="no">No. 11</span>
+    <h3>Le Saut</h3>
+    <p class="ver">Version 0.5.3<span class="sep"> · </span>20 novembre 2026</p>
+    <p class="medium">ink and ochre on vellum; simulated</p>
+    <p class="cap">Jumps may take the second slot; a not-taken branch may lead the pair.</p>
+    <p class="perf"><span class="num">1.55</span> DMIPS/MHz<span class="tag">simulated, reference runtime</span> <span class="aside">(fast runtime: 1.83)</span></p>
+  </figcaption>
+  <div class="detail" hidden>
+    <h4>From the register</h4>
+    <p>Pairing widened again: a not-taken branch may be first; JAL or JALR with an aligned target may be second; a data-cache-hit load may pair after a store to a different beat.</p>
+    <h4>The units</h4>
+    <table class="units"><tbody><tr><th scope='row'>Organisation</th><td>Multicycle core (rtl/cpu/rv64_core.sv)</td></tr><tr><th scope='row'>Control states</th><td>Fetch · Execute · Memory · Divide</td></tr><tr><th scope='row'>Issue</th><td>2 per clock</td></tr><tr><th scope='row'>Retirement</th><td>2 per clock</td></tr><tr><th scope='row'>Instruction cache</th><td>4 KiB, direct-mapped, 8-byte lines</td></tr><tr><th scope='row'>Data cache</th><td>4 KiB, direct-mapped, write-through</td></tr><tr><th scope='row'>Second slot</th><td>simple integer, branch, load, jump</td></tr><tr><th scope='row'>Multiply / divide</th><td>M extension; divide one step per clock</td></tr></tbody></table>
+    <h4>Marginalia</h4><ul class="marks"><li>a one-beat fetch buffer</li><li>requests issue from EXECUTE</li><li>writes acknowledged in the same clock</li><li>second slot across beats</li><li>second data-cache port</li><li>jump in the second slot</li></ul>
+    <p class="small">Compatibility: No. <a href="https://github.com/monstercameron/RISC-V-FPGA-CPU-Research/releases/tag/cpu-v0.5.3" rel="noopener">Tag cpu-v0.5.3</a>.
+    Areas and sizes are symbolic; counts follow the history row. Simulated, not a hardware measurement.</p>
+  </div>
+</figure>
+<figure class="work" id="v0-5-4" data-index="11" data-kind="mc">
+  <button class="frame" type="button" aria-label="View No. 12, Le Relais, version 0.5.4, enlarged">
+    <span class="mat"><img src="art/v0.5.4.svg" width="800" height="1000" loading="lazy" alt="Abstract ink drawing of the processor at version 0.5.4, a multicycle core. A ring of 4 control states around the register file, 2 execution slots, and the bus below."></span>
+  </button>
+  <figcaption class="placard">
+    <span class="no">No. 12</span>
+    <h3>Le Relais</h3>
+    <p class="ver">Version 0.5.4<span class="sep"> · </span>20 novembre 2026</p>
+    <p class="medium">ink and ochre on vellum; simulated</p>
+    <p class="cap">Stores join the second slot, and results are passed hand to hand within the clock.</p>
+    <p class="perf"><span class="num">1.70</span> DMIPS/MHz<span class="tag">simulated, reference runtime</span> <span class="aside">(fast runtime: 2.11)</span></p>
+  </figcaption>
+  <div class="detail" hidden>
+    <h4>From the register</h4>
+    <p>Second slot may be an aligned store when the first slot does not use the bus (it waits in MEMORY if the bus stalls, and traps precisely on a bus error); integer results of the first slot are forwarded to the second slot&#x27;s operands in the same clock; same-destination pairs allowed.</p>
+    <h4>The units</h4>
+    <table class="units"><tbody><tr><th scope='row'>Organisation</th><td>Multicycle core (rtl/cpu/rv64_core.sv)</td></tr><tr><th scope='row'>Control states</th><td>Fetch · Execute · Memory · Divide</td></tr><tr><th scope='row'>Issue</th><td>2 per clock</td></tr><tr><th scope='row'>Retirement</th><td>2 per clock</td></tr><tr><th scope='row'>Instruction cache</th><td>4 KiB, direct-mapped, 8-byte lines</td></tr><tr><th scope='row'>Data cache</th><td>4 KiB, direct-mapped, write-through</td></tr><tr><th scope='row'>Second slot</th><td>simple integer, branch, load, jump, store</td></tr><tr><th scope='row'>Multiply / divide</th><td>M extension; divide one step per clock</td></tr></tbody></table>
+    <h4>Marginalia</h4><ul class="marks"><li>a one-beat fetch buffer</li><li>requests issue from EXECUTE</li><li>writes acknowledged in the same clock</li><li>second slot across beats</li><li>second data-cache port</li><li>jump in the second slot</li><li>slot-to-slot forwarding</li></ul>
+    <p class="small">Compatibility: No. <a href="https://github.com/monstercameron/RISC-V-FPGA-CPU-Research/releases/tag/cpu-v0.5.4" rel="noopener">Tag cpu-v0.5.4</a>.
+    Areas and sizes are symbolic; counts follow the history row. Simulated, not a hardware measurement.</p>
+  </div>
+</figure>
+<figure class="work" id="v0-5-5" data-index="12" data-kind="mc">
+  <button class="frame" type="button" aria-label="View No. 13, Le Repli, version 0.5.5, enlarged">
+    <span class="mat"><img src="art/v0.5.5.svg" width="800" height="1000" loading="lazy" alt="Abstract ink drawing of the processor at version 0.5.5, a multicycle core. A ring of 4 control states around the register file, 2 execution slots, and the bus below."></span>
+  </button>
+  <figcaption class="placard">
+    <span class="no">No. 13</span>
+    <h3>Le Repli</h3>
+    <p class="ver">Version 0.5.5<span class="sep"> · </span>20 novembre 2026</p>
+    <p class="medium">ink and ochre on vellum; simulated</p>
+    <p class="cap">Branch folding: a jump and the instruction at its target execute together.</p>
+    <p class="perf"><span class="num">1.98</span> DMIPS/MHz<span class="tag">simulated, reference runtime</span> <span class="aside">(fast runtime: 2.26)</span></p>
+  </figcaption>
+  <div class="detail" hidden>
+    <h4>From the register</h4>
+    <p>Branch folding: when the first slot is a jump or a taken branch, the second slot executes the instruction at its target, read from the instruction cache in the same clock; JAL/JALR links are forwarded.</p>
+    <h4>The units</h4>
+    <table class="units"><tbody><tr><th scope='row'>Organisation</th><td>Multicycle core (rtl/cpu/rv64_core.sv)</td></tr><tr><th scope='row'>Control states</th><td>Fetch · Execute · Memory · Divide</td></tr><tr><th scope='row'>Issue</th><td>2 per clock</td></tr><tr><th scope='row'>Retirement</th><td>2 per clock</td></tr><tr><th scope='row'>Instruction cache</th><td>4 KiB, direct-mapped, 8-byte lines</td></tr><tr><th scope='row'>Data cache</th><td>4 KiB, direct-mapped, write-through</td></tr><tr><th scope='row'>Second slot</th><td>simple integer, branch, load, jump, store</td></tr><tr><th scope='row'>Branch folding</th><td>yes</td></tr><tr><th scope='row'>Multiply / divide</th><td>M extension; divide one step per clock</td></tr></tbody></table>
+    <h4>Marginalia</h4><ul class="marks"><li>a one-beat fetch buffer</li><li>requests issue from EXECUTE</li><li>writes acknowledged in the same clock</li><li>second slot across beats</li><li>second data-cache port</li><li>jump in the second slot</li><li>slot-to-slot forwarding</li><li>branch folding</li></ul>
+    <p class="small">Compatibility: No. <a href="https://github.com/monstercameron/RISC-V-FPGA-CPU-Research/releases/tag/cpu-v0.5.5" rel="noopener">Tag cpu-v0.5.5</a>.
+    Areas and sizes are symbolic; counts follow the history row. Simulated, not a hardware measurement.</p>
+  </div>
+</figure>
+<figure class="work" id="v0-6-0" data-index="13" data-kind="mc">
+  <button class="frame" type="button" aria-label="View No. 14, La Grammaire des Bits, version 0.6.0, enlarged">
+    <span class="mat"><img src="art/v0.6.0.svg" width="800" height="1000" loading="lazy" alt="Abstract ink drawing of the processor at version 0.6.0, a multicycle core. A ring of 4 control states around the register file, 2 execution slots, and the bus below."></span>
+  </button>
+  <figcaption class="placard">
+    <span class="no">No. 14</span>
+    <h3>La Grammaire des Bits</h3>
+    <p class="ver">Version 0.6.0<span class="sep"> · </span>20 novembre 2026</p>
+    <p class="medium">ink and ochre on vellum; simulated</p>
+    <p class="cap">The B extension (Zba, Zbb, Zbs) enters both slots; three multipliers become one.</p>
+    <p class="perf"><span class="num">1.99</span> DMIPS/MHz<span class="tag">simulated, reference runtime</span> <span class="aside">(fast runtime: 2.30)</span></p>
+  </figcaption>
+  <div class="detail" hidden>
+    <h4>From the register</h4>
+    <p>B extension (Zba, Zbb, Zbs) in both issue slots; ISA string <code>rv64im_zba_zbb_zbs_zifencei</code>. The three 128-bit multipliers are replaced by one signed 65x65 product (same results).</p>
+    <h4>The units</h4>
+    <table class="units"><tbody><tr><th scope='row'>Organisation</th><td>Multicycle core (rtl/cpu/rv64_core.sv)</td></tr><tr><th scope='row'>Control states</th><td>Fetch · Execute · Memory · Divide</td></tr><tr><th scope='row'>Issue</th><td>2 per clock</td></tr><tr><th scope='row'>Retirement</th><td>2 per clock</td></tr><tr><th scope='row'>Instruction cache</th><td>4 KiB, direct-mapped, 8-byte lines</td></tr><tr><th scope='row'>Data cache</th><td>4 KiB, direct-mapped, write-through</td></tr><tr><th scope='row'>Second slot</th><td>simple integer, branch, load, jump, store</td></tr><tr><th scope='row'>Branch folding</th><td>yes</td></tr><tr><th scope='row'>Multiply / divide</th><td>M extension; divide one step per clock</td></tr><tr><th scope='row'>Bit manipulation</th><td>Zba, Zbb, Zbs</td></tr></tbody></table>
+    <h4>Marginalia</h4><ul class="marks"><li>a one-beat fetch buffer</li><li>requests issue from EXECUTE</li><li>writes acknowledged in the same clock</li><li>second slot across beats</li><li>second data-cache port</li><li>jump in the second slot</li><li>slot-to-slot forwarding</li><li>branch folding</li></ul>
+    <p class="small">Compatibility: No (instructions added). <a href="https://github.com/monstercameron/RISC-V-FPGA-CPU-Research/releases/tag/cpu-v0.6.0" rel="noopener">Tag cpu-v0.6.0</a>.
+    Areas and sizes are symbolic; counts follow the history row. Simulated, not a hardware measurement.</p>
+  </div>
+</figure>
+<figure class="work" id="v0-7-0" data-index="14" data-kind="mc">
+  <button class="frame" type="button" aria-label="View No. 15, Le Trio, version 0.7.0, enlarged">
+    <span class="mat"><img src="art/v0.7.0.svg" width="800" height="1000" loading="lazy" alt="Abstract ink drawing of the processor at version 0.7.0, a multicycle core. A ring of 4 control states around the register file, 3 execution slots, and the bus below."></span>
+  </button>
+  <figcaption class="placard">
+    <span class="no">No. 15</span>
+    <h3>Le Trio</h3>
+    <p class="ver">Version 0.7.0<span class="sep"> · </span>20 novembre 2026</p>
+    <p class="medium">ink and ochre on vellum; simulated</p>
+    <p class="cap">A third, ALU-only slot and a third retirement port: three instructions in a clock.</p>
+    <p class="perf"><span class="num">2.22</span> DMIPS/MHz<span class="tag">simulated, reference runtime</span> <span class="aside">(fast runtime: 2.62)</span></p>
+  </figcaption>
+  <div class="detail" hidden>
+    <h4>From the register</h4>
+    <p>ALU-only third issue slot: the instruction after the second slot, read from the instruction cache, issues in the same clock when it is a simple integer or B operation that does not depend on the second slot; new third retirement port <code>retire3_*</code> on <code>rv64_core</code> and <code>retire3_valid</code> on <code>rv64_bram_soc</code>.</p>
+    <h4>The units</h4>
+    <table class="units"><tbody><tr><th scope='row'>Organisation</th><td>Multicycle core (rtl/cpu/rv64_core.sv)</td></tr><tr><th scope='row'>Control states</th><td>Fetch · Execute · Memory · Divide</td></tr><tr><th scope='row'>Issue</th><td>3 per clock</td></tr><tr><th scope='row'>Retirement</th><td>3 per clock</td></tr><tr><th scope='row'>Instruction cache</th><td>4 KiB, direct-mapped, 8-byte lines</td></tr><tr><th scope='row'>Data cache</th><td>4 KiB, direct-mapped, write-through</td></tr><tr><th scope='row'>Second slot</th><td>simple integer, branch, load, jump, store</td></tr><tr><th scope='row'>Branch folding</th><td>yes</td></tr><tr><th scope='row'>Multiply / divide</th><td>M extension; divide one step per clock</td></tr><tr><th scope='row'>Bit manipulation</th><td>Zba, Zbb, Zbs</td></tr></tbody></table>
+    <h4>Marginalia</h4><ul class="marks"><li>a one-beat fetch buffer</li><li>requests issue from EXECUTE</li><li>writes acknowledged in the same clock</li><li>second slot across beats</li><li>second data-cache port</li><li>jump in the second slot</li><li>slot-to-slot forwarding</li><li>branch folding</li></ul>
+    <p class="small">Compatibility: No (new ports; trace order unchanged). <a href="https://github.com/monstercameron/RISC-V-FPGA-CPU-Research/releases/tag/cpu-v0.7.0" rel="noopener">Tag cpu-v0.7.0</a>.
+    Areas and sizes are symbolic; counts follow the history row. Simulated, not a hardware measurement.</p>
+  </div>
+</figure>
+<figure class="work" id="v0-7-1" data-index="15" data-kind="mc">
+  <button class="frame" type="button" aria-label="View No. 16, Le Temps Compté, version 0.7.1, enlarged">
+    <span class="mat"><img src="art/v0.7.1.svg" width="800" height="1000" loading="lazy" alt="Abstract ink drawing of the processor at version 0.7.1, a multicycle core. A ring of 5 control states around the register file, 3 execution slots, and the bus below."></span>
+  </button>
+  <figcaption class="placard">
+    <span class="no">No. 16</span>
+    <h3>Le Temps Compté</h3>
+    <p class="ver">Version 0.7.1<span class="sep"> · </span>20 novembre 2026</p>
+    <p class="medium">ink and ochre on vellum; simulated</p>
+    <p class="cap">The multiplier is registered: one clock longer, and the longest path shortens from 80 to 52 LUT levels.</p>
+    <p class="perf"><span class="num">2.22</span> DMIPS/MHz<span class="tag">simulated, reference runtime</span> <span class="aside">(fast runtime: 2.62)</span></p>
+  </figcaption>
+  <div class="detail" hidden>
+    <h4>From the register</h4>
+    <p>Registered multiplier: a multiply registers its operands in EXECUTE and retires from a new MULTIPLY state one clock later (two clocks instead of one), and no longer pairs with a following instruction. Generic 6-input LUT depth of the core falls from 80 to 52 levels.</p>
+    <h4>The units</h4>
+    <table class="units"><tbody><tr><th scope='row'>Organisation</th><td>Multicycle core (rtl/cpu/rv64_core.sv)</td></tr><tr><th scope='row'>Control states</th><td>Fetch · Execute · Memory · Divide · Multiply</td></tr><tr><th scope='row'>Issue</th><td>3 per clock</td></tr><tr><th scope='row'>Retirement</th><td>3 per clock</td></tr><tr><th scope='row'>Instruction cache</th><td>4 KiB, direct-mapped, 8-byte lines</td></tr><tr><th scope='row'>Data cache</th><td>4 KiB, direct-mapped, write-through</td></tr><tr><th scope='row'>Second slot</th><td>simple integer, branch, load, jump, store</td></tr><tr><th scope='row'>Branch folding</th><td>yes</td></tr><tr><th scope='row'>Multiply / divide</th><td>M extension; divide one step per clock</td></tr><tr><th scope='row'>Bit manipulation</th><td>Zba, Zbb, Zbs</td></tr></tbody></table>
+    <h4>Marginalia</h4><ul class="marks"><li>a one-beat fetch buffer</li><li>requests issue from EXECUTE</li><li>writes acknowledged in the same clock</li><li>second slot across beats</li><li>second data-cache port</li><li>jump in the second slot</li><li>slot-to-slot forwarding</li><li>branch folding</li><li>registered multiplier</li></ul>
+    <p class="small">Compatibility: No (timing only). <a href="https://github.com/monstercameron/RISC-V-FPGA-CPU-Research/releases/tag/cpu-v0.7.1" rel="noopener">Tag cpu-v0.7.1</a>.
+    Areas and sizes are symbolic; counts follow the history row. Simulated, not a hardware measurement.</p>
+  </div>
+</figure></div>
+    <div class="floor" aria-hidden="true"></div>
+  </div>
+</section>
+<section class="room" id="salle-iii" aria-labelledby="h-iii">
+  <header class="room-head">
+    <p class="room-no">Salle III</p>
+    <h2 id="h-iii">La Chaîne</h2>
+    <p class="room-blurb">The same contract, drawn again as a pipeline.</p>
+  </header>
+  <div class="wall">
+    <div class="rail" aria-hidden="true"></div>
+    <div class="hang">
+<figure class="work" id="v0-8-0" data-index="16" data-kind="pipe">
+  <button class="frame" type="button" aria-label="View No. 17, La Chaîne, version 0.8.0, enlarged">
+    <span class="mat"><img src="art/v0.8.0.svg" width="800" height="1000" loading="lazy" alt="Abstract ink drawing of the processor at version 0.8.0, a pipelined core. 4 pipeline stages as coloured slabs, a branch target buffer drawn as rings, and two caches above a bus."></span>
+  </button>
+  <figcaption class="placard">
+    <span class="no">No. 17</span>
+    <h3>La Chaîne</h3>
+    <p class="ver">Version 0.8.0<span class="sep"> · </span>21 novembre 2026</p>
+    <p class="medium">ink, slate and ochre on vellum; simulated</p>
+    <p class="cap">A second implementation: a four-stage single-issue pipeline with a 256-entry branch target buffer.</p>
+    <p class="perf"><span class="num">0.97</span> DMIPS/MHz<span class="tag">simulated, reference runtime</span> <span class="aside">(fast runtime: 1.17)</span></p>
+  </figcaption>
+  <div class="detail" hidden>
+    <h4>From the register</h4>
+    <p>Second implementation of the same contract: <code>rtl/cpu/rv64_pipe.sv</code> (<code>da2caf82aff0</code>), a four-stage single-issue pipeline with a 256-entry BTB and return stack, block-RAM-style caches and a LUT-RAM-friendly register file zeroed by a sequencer after reset. Selected with <code>--core pipe</code>; <code>rv64_core.sv</code> (multicycle, unchanged from 0.7.1) stays the default.</p>
+    <h4>The units</h4>
+    <table class="units"><tbody><tr><th scope='row'>Organisation</th><td>Pipelined, single issue (rtl/cpu/rv64_pipe.sv)</td></tr><tr><th scope='row'>Stages</th><td>F · D · E · M</td></tr><tr><th scope='row'>Branch target buffer</th><td>256 entries</td></tr><tr><th scope='row'>Return stack</th><td>4 entries</td></tr><tr><th scope='row'>Caches</th><td>4 KiB each, block-RAM style</td></tr><tr><th scope='row'>Retirement</th><td>1 per clock</td></tr></tbody></table>
+    <h4>Marginalia</h4><ul class="marks"><li>a one-beat fetch buffer</li><li>requests issue from EXECUTE</li><li>writes acknowledged in the same clock</li><li>second slot across beats</li><li>second data-cache port</li><li>jump in the second slot</li><li>slot-to-slot forwarding</li><li>branch folding</li><li>registered multiplier</li></ul>
+    <p class="small">Compatibility: No for ports and ISA; the pipelined core issues speculative instruction fetches. <a href="https://github.com/monstercameron/RISC-V-FPGA-CPU-Research/releases/tag/cpu-v0.8.0" rel="noopener">Tag cpu-v0.8.0</a>.
+    Areas and sizes are symbolic; counts follow the history row. Simulated, not a hardware measurement.</p>
+  </div>
+</figure>
+<figure class="work" id="v0-8-1" data-index="17" data-kind="pipe">
+  <button class="frame" type="button" aria-label="View No. 18, L&#x27;Antichambre, version 0.8.1, enlarged">
+    <span class="mat"><img src="art/v0.8.1.svg" width="800" height="1000" loading="lazy" alt="Abstract ink drawing of the processor at version 0.8.1, a pipelined core. 5 pipeline stages as coloured slabs, a branch target buffer drawn as rings, and two caches above a bus."></span>
+  </button>
+  <figcaption class="placard">
+    <span class="no">No. 18</span>
+    <h3>L&#x27;Antichambre</h3>
+    <p class="ver">Version 0.8.1<span class="sep"> · </span>21 novembre 2026</p>
+    <p class="medium">ink, slate and ochre on vellum; simulated</p>
+    <p class="cap">A fetch queue between F and D, split redirects, and an extra stage for slow bus accesses.</p>
+    <p class="perf none">Dhrystone: no run logged for this version yet. Simulated results are recorded in the journal as they are measured.</p>
+  </figcaption>
+  <div class="detail" hidden>
+    <h4>From the register</h4>
+    <p>Pipelined implementation <code>rv64_pipe.sv</code> (<code>077ac0a99210</code>) restructured for clock rate: fetch queue between F and D, redirects sent once from D (prediction check) and E (branch direction, JALR target), registered store/fence.i flush, X stage for bus accesses that do not complete in M&#x27;s first clock, return stack in F. Multicycle <code>rv64_core.sv</code> unchanged.</p>
+    <h4>The units</h4>
+    <table class="units"><tbody><tr><th scope='row'>Organisation</th><td>Pipelined, single issue (rtl/cpu/rv64_pipe.sv)</td></tr><tr><th scope='row'>Stages</th><td>F · D · E · M · X</td></tr><tr><th scope='row'>Branch target buffer</th><td>256 entries</td></tr><tr><th scope='row'>Return stack</th><td>4 entries</td></tr><tr><th scope='row'>Caches</th><td>4 KiB each, block-RAM style</td></tr><tr><th scope='row'>Fetch queue</th><td>between F and D</td></tr><tr><th scope='row'>Retirement</th><td>1 per clock</td></tr></tbody></table>
+    <h4>Marginalia</h4><ul class="marks"><li>a one-beat fetch buffer</li><li>requests issue from EXECUTE</li><li>writes acknowledged in the same clock</li><li>second slot across beats</li><li>second data-cache port</li><li>jump in the second slot</li><li>slot-to-slot forwarding</li><li>branch folding</li><li>registered multiplier</li><li>fetch queue and X stage</li></ul>
+    <p class="small">Compatibility: No. <a href="https://github.com/monstercameron/RISC-V-FPGA-CPU-Research/releases/tag/cpu-v0.8.1" rel="noopener">Tag cpu-v0.8.1</a>.
+    Areas and sizes are symbolic; counts follow the history row. Simulated, not a hardware measurement.</p>
+  </div>
+</figure></div>
+    <div class="floor" aria-hidden="true"></div>
+  </div>
+</section>
+<section class="room" id="salle-iv" aria-labelledby="h-iv">
+  <header class="room-head">
+    <p class="room-no">Salle IV</p>
+    <h2 id="h-iv">Le Désordre</h2>
+    <p class="room-blurb">Out of order: instructions run when ready, retire in order.</p>
+  </header>
+  <div class="wall">
+    <div class="rail" aria-hidden="true"></div>
+    <div class="hang">
+<figure class="work" id="v0-9-0" data-index="18" data-kind="ooo">
+  <button class="frame" type="button" aria-label="View No. 19, Le Désordre, version 0.9.0, enlarged">
+    <span class="mat"><img src="art/v0.9.0.svg" width="800" height="1000" loading="lazy" alt="Abstract ink drawing of the processor at version 0.9.0, an out-of-order core. Blocks for a 32-entry reorder buffer, 64 physical registers, a 8-entry issue queue, 1 integer units, and instruction and data caches above a bus."></span>
+  </button>
+  <figcaption class="placard">
+    <span class="no">No. 19</span>
+    <h3>Le Désordre</h3>
+    <p class="ver">Version 0.9.0<span class="sep"> · </span>21 novembre 2026</p>
+    <p class="medium">ink, oxblood and gold leaf on vellum; simulated</p>
+    <p class="cap">A third implementation, out of order: rename, a 32-entry reorder buffer and an 8-entry issue queue.</p>
+    <p class="perf"><span class="num">0.79</span> DMIPS/MHz<span class="tag">simulated, reference runtime</span> <span class="aside">(fast runtime: 0.93)</span></p>
+  </figcaption>
+  <div class="detail" hidden>
+    <h4>From the register</h4>
+    <p>Third implementation of the same contract: <code>rtl/cpu/rv64_ooo.sv</code> (<code>055953ba9c6d</code>), out of order: rename onto 64 physical registers, 32-entry reorder buffer retiring in order, 8-entry issue queue, an integer port and a load/store port, stores written at retirement, early fetch redirect on a mispredict with rename waiting for the branch to retire. Selected with <code>--core ooo</code>.</p>
+    <h4>The units</h4>
+    <table class="units"><tbody><tr><th scope='row'>Organisation</th><td>Out of order (rtl/cpu/rv64_ooo.sv)</td></tr><tr><th scope='row'>Fetch / rename / retire</th><td>1 / 1 / 1 per clock</td></tr><tr><th scope='row'>Reorder buffer</th><td>32 entries</td></tr><tr><th scope='row'>Physical registers</th><td>64</td></tr><tr><th scope='row'>Issue queue</th><td>8 entries</td></tr><tr><th scope='row'>Integer ports</th><td>1</td></tr><tr><th scope='row'>Memory port</th><td>one load/store port, memory issued in program order</td></tr><tr><th scope='row'>Branch target buffer</th><td>256 entries, with return stack</td></tr><tr><th scope='row'>Caches</th><td>4 KiB instruction, 4 KiB data</td></tr></tbody></table>
+    <h4>Marginalia</h4><ul class="marks"><li>a one-beat fetch buffer</li><li>requests issue from EXECUTE</li><li>writes acknowledged in the same clock</li><li>second slot across beats</li><li>second data-cache port</li><li>jump in the second slot</li><li>slot-to-slot forwarding</li><li>branch folding</li><li>registered multiplier</li><li>fetch queue and X stage</li></ul>
+    <p class="small">Compatibility: No for ports and ISA; the out-of-order core issues speculative fetches and loads, holding any presented request until it completes. <a href="https://github.com/monstercameron/RISC-V-FPGA-CPU-Research/releases/tag/cpu-v0.9.0" rel="noopener">Tag cpu-v0.9.0</a>.
+    Areas and sizes are symbolic; counts follow the history row. Simulated, not a hardware measurement.</p>
+  </div>
+</figure>
+<figure class="work" id="v0-9-1" data-index="19" data-kind="ooo">
+  <button class="frame" type="button" aria-label="View No. 20, Le Passage des Valeurs, version 0.9.1, enlarged">
+    <span class="mat"><img src="art/v0.9.1.svg" width="800" height="1000" loading="lazy" alt="Abstract ink drawing of the processor at version 0.9.1, an out-of-order core. Blocks for a 32-entry reorder buffer, 64 physical registers, a 8-entry issue queue, 1 integer units, and instruction and data caches above a bus."></span>
+  </button>
+  <figcaption class="placard">
+    <span class="no">No. 20</span>
+    <h3>Le Passage des Valeurs</h3>
+    <p class="ver">Version 0.9.1<span class="sep"> · </span>21 novembre 2026</p>
+    <p class="medium">ink, oxblood and gold leaf on vellum; simulated</p>
+    <p class="cap">A load may take its value straight from an older store still waiting to retire.</p>
+    <p class="perf"><span class="num">0.94</span> DMIPS/MHz<span class="tag">simulated, reference runtime</span> <span class="aside">(fast runtime: 1.07)</span></p>
+  </figcaption>
+  <div class="detail" hidden>
+    <h4>From the register</h4>
+    <p>Out-of-order core <code>rv64_ooo.sv</code> (<code>50ffb15f845a</code>): a load issues once every older store has its address and data, with forwarding from the youngest older store to its beat when that store covers the load&#x27;s bytes (partial overlap waits for retirement and reads the bus). New test <code>store_load_forwarding</code>.</p>
+    <h4>The units</h4>
+    <table class="units"><tbody><tr><th scope='row'>Organisation</th><td>Out of order (rtl/cpu/rv64_ooo.sv)</td></tr><tr><th scope='row'>Fetch / rename / retire</th><td>1 / 1 / 1 per clock</td></tr><tr><th scope='row'>Reorder buffer</th><td>32 entries</td></tr><tr><th scope='row'>Physical registers</th><td>64</td></tr><tr><th scope='row'>Issue queue</th><td>8 entries</td></tr><tr><th scope='row'>Integer ports</th><td>1</td></tr><tr><th scope='row'>Memory port</th><td>one load/store port, memory issued in program order</td></tr><tr><th scope='row'>Branch target buffer</th><td>256 entries, with return stack</td></tr><tr><th scope='row'>Caches</th><td>4 KiB instruction, 4 KiB data</td></tr></tbody></table>
+    <h4>Marginalia</h4><ul class="marks"><li>a one-beat fetch buffer</li><li>requests issue from EXECUTE</li><li>writes acknowledged in the same clock</li><li>second slot across beats</li><li>second data-cache port</li><li>jump in the second slot</li><li>slot-to-slot forwarding</li><li>branch folding</li><li>registered multiplier</li><li>fetch queue and X stage</li><li>store-to-load forwarding</li></ul>
+    <p class="small">Compatibility: No. <a href="https://github.com/monstercameron/RISC-V-FPGA-CPU-Research/releases/tag/cpu-v0.9.1" rel="noopener">Tag cpu-v0.9.1</a>.
+    Areas and sizes are symbolic; counts follow the history row. Simulated, not a hardware measurement.</p>
+  </div>
+</figure>
+<figure class="work" id="v0-9-2" data-index="20" data-kind="ooo">
+  <button class="frame" type="button" aria-label="View No. 21, Les Jumeaux, version 0.9.2, enlarged">
+    <span class="mat"><img src="art/v0.9.2.svg" width="800" height="1000" loading="lazy" alt="Abstract ink drawing of the processor at version 0.9.2, an out-of-order core. Blocks for a 32-entry reorder buffer, 64 physical registers, a 8-entry issue queue, 2 integer units, and instruction and data caches above a bus."></span>
+  </button>
+  <figcaption class="placard">
+    <span class="no">No. 21</span>
+    <h3>Les Jumeaux</h3>
+    <p class="ver">Version 0.9.2<span class="sep"> · </span>21 novembre 2026</p>
+    <p class="medium">ink, oxblood and gold leaf on vellum; simulated</p>
+    <p class="cap">Two-wide: two fetched, two renamed, two integer ports, two retired per clock.</p>
+    <p class="perf"><span class="num">1.28</span> DMIPS/MHz<span class="tag">simulated, reference runtime</span> <span class="aside">(fast runtime: 1.44)</span></p>
+  </figcaption>
+  <div class="detail" hidden>
+    <h4>From the register</h4>
+    <p>Out-of-order core <code>rv64_ooo.sv</code> (<code>b2650b2af34e</code>) made two-wide: two-instruction fetch from an aligned beat with a second BTB lookup, 8-entry fetch queue, two D slots, rename and dispatch of two per clock, a second integer port for simple integer and B operations, memory instructions issued in program order, two retirements per clock through <code>retire2_*</code>.</p>
+    <h4>The units</h4>
+    <table class="units"><tbody><tr><th scope='row'>Organisation</th><td>Out of order (rtl/cpu/rv64_ooo.sv)</td></tr><tr><th scope='row'>Fetch / rename / retire</th><td>2 / 2 / 2 per clock</td></tr><tr><th scope='row'>Reorder buffer</th><td>32 entries</td></tr><tr><th scope='row'>Physical registers</th><td>64</td></tr><tr><th scope='row'>Issue queue</th><td>8 entries</td></tr><tr><th scope='row'>Integer ports</th><td>2</td></tr><tr><th scope='row'>Memory port</th><td>one load/store port, memory issued in program order</td></tr><tr><th scope='row'>Branch target buffer</th><td>256 entries, with return stack</td></tr><tr><th scope='row'>Caches</th><td>4 KiB instruction, 4 KiB data</td></tr></tbody></table>
+    <h4>Marginalia</h4><ul class="marks"><li>a one-beat fetch buffer</li><li>requests issue from EXECUTE</li><li>writes acknowledged in the same clock</li><li>second slot across beats</li><li>second data-cache port</li><li>jump in the second slot</li><li>slot-to-slot forwarding</li><li>branch folding</li><li>registered multiplier</li><li>fetch queue and X stage</li><li>store-to-load forwarding</li></ul>
+    <p class="small">Compatibility: No (uses the existing second retirement port). <a href="https://github.com/monstercameron/RISC-V-FPGA-CPU-Research/releases/tag/cpu-v0.9.2" rel="noopener">Tag cpu-v0.9.2</a>.
+    Areas and sizes are symbolic; counts follow the history row. Simulated, not a hardware measurement.</p>
+  </div>
+</figure>
+<figure class="work" id="v0-9-3" data-index="21" data-kind="ooo">
+  <button class="frame" type="button" aria-label="View No. 22, Le Dernier Mot, version 0.9.3, enlarged">
+    <span class="mat"><img src="art/v0.9.3.svg" width="800" height="1000" loading="lazy" alt="Abstract ink drawing of the processor at version 0.9.3, an out-of-order core. Blocks for a 32-entry reorder buffer, 64 physical registers, a 8-entry issue queue, 2 integer units, and instruction and data caches above a bus."></span>
+  </button>
+  <figcaption class="placard">
+    <span class="no">No. 22</span>
+    <h3>Le Dernier Mot</h3>
+    <p class="ver">Version 0.9.3<span class="sep"> · </span>21 novembre 2026</p>
+    <p class="medium">ink, oxblood and gold leaf on vellum; simulated</p>
+    <p class="cap">Stores read their data at retirement and no longer make the head of the line wait.</p>
+    <p class="perf"><span class="num">1.56</span> DMIPS/MHz<span class="tag">simulated, reference runtime</span> <span class="aside">(fast runtime: 1.58)</span></p>
+  </figcaption>
+  <div class="detail" hidden>
+    <h4>From the register</h4>
+    <p>Out-of-order core <code>rv64_ooo.sv</code> (<code>b719dfb760e3</code>): stores issue on their address and read their data register at retirement; the retiring store&#x27;s cache update and instruction-cache invalidation move to a pending register applied one clock later (alongside a fill to another line), so a store no longer waits a clock at the head; a load that waited in its second stage reads the bus.</p>
+    <h4>The units</h4>
+    <table class="units"><tbody><tr><th scope='row'>Organisation</th><td>Out of order (rtl/cpu/rv64_ooo.sv)</td></tr><tr><th scope='row'>Fetch / rename / retire</th><td>2 / 2 / 2 per clock</td></tr><tr><th scope='row'>Reorder buffer</th><td>32 entries</td></tr><tr><th scope='row'>Physical registers</th><td>64</td></tr><tr><th scope='row'>Issue queue</th><td>8 entries</td></tr><tr><th scope='row'>Integer ports</th><td>2</td></tr><tr><th scope='row'>Memory port</th><td>one load/store port, memory issued in program order</td></tr><tr><th scope='row'>Branch target buffer</th><td>256 entries, with return stack</td></tr><tr><th scope='row'>Caches</th><td>4 KiB instruction, 4 KiB data</td></tr></tbody></table>
+    <h4>Marginalia</h4><ul class="marks"><li>a one-beat fetch buffer</li><li>requests issue from EXECUTE</li><li>writes acknowledged in the same clock</li><li>second slot across beats</li><li>second data-cache port</li><li>jump in the second slot</li><li>slot-to-slot forwarding</li><li>branch folding</li><li>registered multiplier</li><li>fetch queue and X stage</li><li>store-to-load forwarding</li><li>stores finish at retirement</li></ul>
+    <p class="small">Compatibility: No. <a href="https://github.com/monstercameron/RISC-V-FPGA-CPU-Research/releases/tag/cpu-v0.9.3" rel="noopener">Tag cpu-v0.9.3</a>.
+    Areas and sizes are symbolic; counts follow the history row. Simulated, not a hardware measurement.</p>
+  </div>
+</figure>
+<figure class="work" id="v0-9-4" data-index="22" data-kind="ooo">
+  <button class="frame" type="button" aria-label="View No. 23, Par-dessus la Frontière, version 0.9.4, enlarged">
+    <span class="mat"><img src="art/v0.9.4.svg" width="800" height="1000" loading="lazy" alt="Abstract ink drawing of the processor at version 0.9.4, an out-of-order core. Blocks for a 32-entry reorder buffer, 64 physical registers, a 8-entry issue queue, 2 integer units, and instruction and data caches above a bus."></span>
+  </button>
+  <figcaption class="placard">
+    <span class="no">No. 23</span>
+    <h3>Par-dessus la Frontière</h3>
+    <p class="ver">Version 0.9.4<span class="sep"> · </span>21 novembre 2026</p>
+    <p class="medium">ink, oxblood and gold leaf on vellum; simulated</p>
+    <p class="cap">Fetch reads the next beat too, so a pair may straddle a boundary.</p>
+    <p class="perf"><span class="num">1.58</span> DMIPS/MHz<span class="tag">simulated, reference runtime</span> <span class="aside">(fast runtime: 1.62)</span></p>
+  </figcaption>
+  <div class="detail" hidden>
+    <h4>From the register</h4>
+    <p>Out-of-order core <code>rv64_ooo.sv</code> (<code>2581fcef3389</code>): fetch also reads the next beat, so the second instruction of a fetch group can come from it.</p>
+    <h4>The units</h4>
+    <table class="units"><tbody><tr><th scope='row'>Organisation</th><td>Out of order (rtl/cpu/rv64_ooo.sv)</td></tr><tr><th scope='row'>Fetch / rename / retire</th><td>2 / 2 / 2 per clock</td></tr><tr><th scope='row'>Reorder buffer</th><td>32 entries</td></tr><tr><th scope='row'>Physical registers</th><td>64</td></tr><tr><th scope='row'>Issue queue</th><td>8 entries</td></tr><tr><th scope='row'>Integer ports</th><td>2</td></tr><tr><th scope='row'>Memory port</th><td>one load/store port, memory issued in program order</td></tr><tr><th scope='row'>Branch target buffer</th><td>256 entries, with return stack</td></tr><tr><th scope='row'>Caches</th><td>4 KiB instruction, 4 KiB data</td></tr></tbody></table>
+    <h4>Marginalia</h4><ul class="marks"><li>a one-beat fetch buffer</li><li>requests issue from EXECUTE</li><li>writes acknowledged in the same clock</li><li>second slot across beats</li><li>second data-cache port</li><li>jump in the second slot</li><li>slot-to-slot forwarding</li><li>branch folding</li><li>registered multiplier</li><li>fetch queue and X stage</li><li>store-to-load forwarding</li><li>stores finish at retirement</li><li>cross-beat fetch</li></ul>
+    <p class="small">Compatibility: No. <a href="https://github.com/monstercameron/RISC-V-FPGA-CPU-Research/releases/tag/cpu-v0.9.4" rel="noopener">Tag cpu-v0.9.4</a>.
+    Areas and sizes are symbolic; counts follow the history row. Simulated, not a hardware measurement.</p>
+  </div>
+</figure></div>
+    <div class="floor" aria-hidden="true"></div>
+  </div>
+</section>
+<section class="room" id="salle-v" aria-labelledby="h-v">
+  <header class="room-head">
+    <p class="room-no">Salle V</p>
+    <h2 id="h-v">L&#x27;Octuple</h2>
+    <p class="room-blurb">Eight wide, and learning to guess.</p>
+  </header>
+  <div class="wall">
+    <div class="rail" aria-hidden="true"></div>
+    <div class="hang">
+<figure class="work" id="v0-10-0" data-index="23" data-kind="ooo">
+  <button class="frame" type="button" aria-label="View No. 24, L&#x27;Octuple, version 0.10.0, enlarged">
+    <span class="mat"><img src="art/v0.10.0.svg" width="800" height="1000" loading="lazy" alt="Abstract ink drawing of the processor at version 0.10.0, an out-of-order core. Blocks for a 128-entry reorder buffer, 160 physical registers, a 64-entry issue queue, 8 integer units, and instruction and data caches above a bus."></span>
+  </button>
+  <figcaption class="placard">
+    <span class="no">No. 24</span>
+    <h3>L&#x27;Octuple</h3>
+    <p class="ver">Version 0.10.0<span class="sep"> · </span>21 novembre 2026</p>
+    <p class="medium">ink, oxblood and gold leaf on vellum; simulated</p>
+    <p class="cap">Eight wide, sized after published measurements of the Apple M5 performance core: 128-entry reorder buffer, 160 physical registers, 64-entry issue queue, 8 ALUs (3 full), 3 load and 2 store ports.</p>
+    <p class="perf"><span class="num">4.32</span> DMIPS/MHz<span class="tag">simulated, reference runtime</span> <span class="aside">(fast runtime: 3.85)</span></p>
+  </figcaption>
+  <div class="detail" hidden>
+    <h4>From the register</h4>
+    <p>Out-of-order core <code>rv64_ooo.sv</code> (released file <code>c406a99e9105</code>; corrected the same day, the row first gave <code>d71a5889c2fa</code>, an earlier candidate that hung) replaced by a wide behavioural model configured after the Apple M5 performance core: 8-wide fetch, rename and retirement, 128-entry ROB, 160 physical registers, 64-entry issue queue, 8 ALUs (3 full), 3 load and 2 store-address ports, replaying loads, per-branch rename snapshots, 128 KiB caches. New wide trace outputs <code>rt_*</code>; testbenches log a store&#x27;s write just before its own retirement.</p>
+    <h4>The units</h4>
+    <table class="units"><tbody><tr><th scope='row'>Organisation</th><td>Out of order (rtl/cpu/rv64_ooo.sv)</td></tr><tr><th scope='row'>Fetch / rename / retire</th><td>8 / 8 / 8 per clock</td></tr><tr><th scope='row'>Reorder buffer</th><td>128 entries</td></tr><tr><th scope='row'>Physical registers</th><td>160</td></tr><tr><th scope='row'>Issue queue</th><td>64 entries</td></tr><tr><th scope='row'>ALUs</th><td>8, of which 3 full (branch, multiply, divide)</td></tr><tr><th scope='row'>Memory ports</th><td>3 load, 2 store-address</td></tr><tr><th scope='row'>Branch target buffer</th><td>256 entries, with return stack</td></tr><tr><th scope='row'>Caches</th><td>128 KiB instruction, 128 KiB data</td></tr><tr><th scope='row'>Taken transfers per fetch</th><td>1</td></tr></tbody></table>
+    <h4>Marginalia</h4><ul class="marks"><li>a one-beat fetch buffer</li><li>requests issue from EXECUTE</li><li>writes acknowledged in the same clock</li><li>second slot across beats</li><li>second data-cache port</li><li>jump in the second slot</li><li>slot-to-slot forwarding</li><li>branch folding</li><li>registered multiplier</li><li>fetch queue and X stage</li><li>store-to-load forwarding</li><li>stores finish at retirement</li><li>cross-beat fetch</li></ul>
+    <p class="small">Compatibility: Yes: new rt_* outputs on the out-of-order core and the store-write trace rule generalized; the other cores and ports are unchanged. <a href="https://github.com/monstercameron/RISC-V-FPGA-CPU-Research/releases/tag/cpu-v0.10.0" rel="noopener">Tag cpu-v0.10.0</a>.
+    Areas and sizes are symbolic; counts follow the history row. Simulated, not a hardware measurement.</p>
+  </div>
+</figure>
+<figure class="work" id="v0-10-1" data-index="24" data-kind="ooo">
+  <button class="frame" type="button" aria-label="View No. 25, Le Double Saut, version 0.10.1, enlarged">
+    <span class="mat"><img src="art/v0.10.1.svg" width="800" height="1000" loading="lazy" alt="Abstract ink drawing of the processor at version 0.10.1, an out-of-order core. Blocks for a 128-entry reorder buffer, 160 physical registers, a 64-entry issue queue, 8 integer units, and instruction and data caches above a bus."></span>
+  </button>
+  <figcaption class="placard">
+    <span class="no">No. 25</span>
+    <h3>Le Double Saut</h3>
+    <p class="ver">Version 0.10.1<span class="sep"> · </span>21 novembre 2026</p>
+    <p class="medium">ink, oxblood and gold leaf on vellum; simulated</p>
+    <p class="cap">Fetch follows two predicted-taken transfers in one clock.</p>
+    <p class="perf"><span class="num">4.67</span> DMIPS/MHz<span class="tag">simulated, reference runtime</span> <span class="aside">(fast runtime: 4.32)</span></p>
+  </figcaption>
+  <div class="detail" hidden>
+    <h4>From the register</h4>
+    <p>Out-of-order core: fetch follows two predicted-taken transfers per clock (one call or return per group). Dhrystone timing probe 65,933 to 60,935 clocks (reference), 73,947 to 65,944 (fast runtime)</p>
+    <h4>The units</h4>
+    <table class="units"><tbody><tr><th scope='row'>Organisation</th><td>Out of order (rtl/cpu/rv64_ooo.sv)</td></tr><tr><th scope='row'>Fetch / rename / retire</th><td>8 / 8 / 8 per clock</td></tr><tr><th scope='row'>Reorder buffer</th><td>128 entries</td></tr><tr><th scope='row'>Physical registers</th><td>160</td></tr><tr><th scope='row'>Issue queue</th><td>64 entries</td></tr><tr><th scope='row'>ALUs</th><td>8, of which 3 full (branch, multiply, divide)</td></tr><tr><th scope='row'>Memory ports</th><td>3 load, 2 store-address</td></tr><tr><th scope='row'>Branch target buffer</th><td>256 entries, with return stack</td></tr><tr><th scope='row'>Caches</th><td>128 KiB instruction, 128 KiB data</td></tr><tr><th scope='row'>Taken transfers per fetch</th><td>2</td></tr></tbody></table>
+    <h4>Marginalia</h4><ul class="marks"><li>a one-beat fetch buffer</li><li>requests issue from EXECUTE</li><li>writes acknowledged in the same clock</li><li>second slot across beats</li><li>second data-cache port</li><li>jump in the second slot</li><li>slot-to-slot forwarding</li><li>branch folding</li><li>registered multiplier</li><li>fetch queue and X stage</li><li>store-to-load forwarding</li><li>stores finish at retirement</li><li>cross-beat fetch</li></ul>
+    <p class="small">Compatibility: No. <a href="https://github.com/monstercameron/RISC-V-FPGA-CPU-Research/releases/tag/cpu-v0.10.1" rel="noopener">Tag cpu-v0.10.1</a>.
+    Areas and sizes are symbolic; counts follow the history row. Simulated, not a hardware measurement.</p>
+  </div>
+</figure>
+<figure class="work" id="v0-11-0" data-index="25" data-kind="ooo">
+  <button class="frame" type="button" aria-label="View No. 26, La Boucle, version 0.11.0, enlarged">
+    <span class="mat"><img src="art/v0.11.0.svg" width="800" height="1000" loading="lazy" alt="Abstract ink drawing of the processor at version 0.11.0, an out-of-order core. Blocks for a 128-entry reorder buffer, 160 physical registers, a 64-entry issue queue, 8 integer units, and instruction and data caches above a bus."></span>
+  </button>
+  <figcaption class="placard">
+    <span class="no">No. 26</span>
+    <h3>La Boucle</h3>
+    <p class="ver">Version 0.11.0<span class="sep"> · </span>21 novembre 2026</p>
+    <p class="medium">ink, oxblood and gold leaf on vellum; simulated</p>
+    <p class="cap">A loop predictor, a two-way data cache and paired store writes on the bus.</p>
+    <p class="perf"><span class="num">6.19</span> DMIPS/MHz<span class="tag">simulated, reference runtime</span> <span class="aside">(fast runtime: 6.12)</span></p>
+  </figcaption>
+  <div class="detail" hidden>
+    <h4>From the register</h4>
+    <p>Out-of-order core: loop predictor; two-way data cache (memory agent); paired store writes on the bus (mem_*2, PAIR_WRITES; memory agent); fixes from the Codex review (owner-tied fill errors, byte-granular forwarding that keeps read faults, FENCE ordering for loads, halt pulses, RW range, return-stack restore, multiply/divide latency 3/7). Timing probe: reference 60,935 to 46,010 clocks, fast runtime 65,944 to 46,528</p>
+    <h4>The units</h4>
+    <table class="units"><tbody><tr><th scope='row'>Organisation</th><td>Out of order (rtl/cpu/rv64_ooo.sv)</td></tr><tr><th scope='row'>Fetch / rename / retire</th><td>8 / 8 / 8 per clock</td></tr><tr><th scope='row'>Reorder buffer</th><td>128 entries</td></tr><tr><th scope='row'>Physical registers</th><td>160</td></tr><tr><th scope='row'>Issue queue</th><td>64 entries</td></tr><tr><th scope='row'>ALUs</th><td>8, of which 3 full (branch, multiply, divide)</td></tr><tr><th scope='row'>Memory ports</th><td>3 load, 2 store-address</td></tr><tr><th scope='row'>Branch target buffer</th><td>256 entries, with return stack</td></tr><tr><th scope='row'>Caches</th><td>128 KiB instruction, 128 KiB data, two-way data cache</td></tr><tr><th scope='row'>Taken transfers per fetch</th><td>2</td></tr><tr><th scope='row'>Loop predictor</th><td>yes</td></tr><tr><th scope='row'>Store writes</th><td>paired on the bus</td></tr></tbody></table>
+    <h4>Marginalia</h4><ul class="marks"><li>a one-beat fetch buffer</li><li>requests issue from EXECUTE</li><li>writes acknowledged in the same clock</li><li>second slot across beats</li><li>second data-cache port</li><li>jump in the second slot</li><li>slot-to-slot forwarding</li><li>branch folding</li><li>registered multiplier</li><li>fetch queue and X stage</li><li>store-to-load forwarding</li><li>stores finish at retirement</li><li>cross-beat fetch</li></ul>
+    <p class="small">Compatibility: Yes: new mem_*2 ports and PAIR_WRITES parameter on the out-of-order core; the SoC pairs writes in out-of-order builds; the other cores are unchanged. <a href="https://github.com/monstercameron/RISC-V-FPGA-CPU-Research/releases/tag/cpu-v0.11.0" rel="noopener">Tag cpu-v0.11.0</a>.
+    Areas and sizes are symbolic; counts follow the history row. Simulated, not a hardware measurement.</p>
+  </div>
+</figure>
+<figure class="work" id="v0-11-1" data-index="26" data-kind="ooo">
+  <button class="frame" type="button" aria-label="View No. 27, Le Pressentiment, version 0.11.1, enlarged">
+    <span class="mat"><img src="art/v0.11.1.svg" width="800" height="1000" loading="lazy" alt="Abstract ink drawing of the processor at version 0.11.1, an out-of-order core. Blocks for a 128-entry reorder buffer, 160 physical registers, a 64-entry issue queue, 8 integer units, and instruction and data caches above a bus."></span>
+  </button>
+  <figcaption class="placard">
+    <span class="no">No. 27</span>
+    <h3>Le Pressentiment</h3>
+    <p class="ver">Version 0.11.1<span class="sep"> · </span>21 novembre 2026</p>
+    <p class="medium">ink, oxblood and gold leaf on vellum; simulated</p>
+    <p class="cap">Value prediction for loads, multiplies and divides; fetch predecode of direct jumps, calls and returns.</p>
+    <p class="perf"><span class="num">6.39</span> DMIPS/MHz<span class="tag">simulated, reference runtime</span> <span class="aside">(fast runtime: 7.57)</span></p>
+  </figcaption>
+  <div class="detail" hidden>
+    <h4>From the register</h4>
+    <p>Out-of-order core: value prediction for loads, multiplies and divides (last value, 8 equal results, refetch after a wrong guess); fetch predecode of direct jumps, calls, returns and backward branches missing in the BTB. Second Codex review fixes (a fetch fault held across a redirect, loop-count limit). Memory agent: load wakeup at issue, memory-dependence speculation with a load-wait table, retirement past the store write. Timing probe: fast runtime 46,528 to 37,609 clocks, reference 46,010 to 44,550. New tests: value change, paired-store faults, forwarded-load read fault, six memory-dependence programs</p>
+    <h4>The units</h4>
+    <table class="units"><tbody><tr><th scope='row'>Organisation</th><td>Out of order (rtl/cpu/rv64_ooo.sv)</td></tr><tr><th scope='row'>Fetch / rename / retire</th><td>8 / 8 / 8 per clock</td></tr><tr><th scope='row'>Reorder buffer</th><td>128 entries</td></tr><tr><th scope='row'>Physical registers</th><td>160</td></tr><tr><th scope='row'>Issue queue</th><td>64 entries</td></tr><tr><th scope='row'>ALUs</th><td>8, of which 3 full (branch, multiply, divide)</td></tr><tr><th scope='row'>Memory ports</th><td>3 load, 2 store-address</td></tr><tr><th scope='row'>Branch target buffer</th><td>256 entries, with return stack</td></tr><tr><th scope='row'>Caches</th><td>128 KiB instruction, 128 KiB data, two-way data cache</td></tr><tr><th scope='row'>Taken transfers per fetch</th><td>2</td></tr><tr><th scope='row'>Loop predictor</th><td>yes</td></tr><tr><th scope='row'>Store writes</th><td>paired on the bus</td></tr><tr><th scope='row'>Value prediction</th><td>loads, multiplies, divides</td></tr><tr><th scope='row'>Fetch predecode</th><td>direct jumps, calls, returns, backward branches</td></tr></tbody></table>
+    <h4>Marginalia</h4><ul class="marks"><li>a one-beat fetch buffer</li><li>requests issue from EXECUTE</li><li>writes acknowledged in the same clock</li><li>second slot across beats</li><li>second data-cache port</li><li>jump in the second slot</li><li>slot-to-slot forwarding</li><li>branch folding</li><li>registered multiplier</li><li>fetch queue and X stage</li><li>store-to-load forwarding</li><li>stores finish at retirement</li><li>cross-beat fetch</li></ul>
+    <p class="small">Compatibility: No. <a href="https://github.com/monstercameron/RISC-V-FPGA-CPU-Research/releases/tag/cpu-v0.11.1" rel="noopener">Tag cpu-v0.11.1</a>.
+    Areas and sizes are symbolic; counts follow the history row. Simulated, not a hardware measurement.</p>
+  </div>
+</figure></div>
+    <div class="floor" aria-hidden="true"></div>
+  </div>
+</section>
+<dialog id="lightbox" aria-labelledby="lb-title">
+  <div class="lb-inner">
+    <button class="lb-close" type="button" aria-label="Close">&times;</button>
+    <div class="lb-art"><img id="lb-img" alt=""></div>
+    <div class="lb-text">
+      <p class="no" id="lb-no"></p>
+      <h2 id="lb-title"></h2>
+      <p class="ver" id="lb-ver"></p>
+      <p class="medium" id="lb-medium"></p>
+      <p class="cap" id="lb-cap"></p>
+      <div id="lb-perf"></div>
+      <div id="lb-detail"></div>
+      <div class="lb-nav"><button type="button" id="lb-prev">&larr; Previous</button><button type="button" id="lb-next">Next &rarr;</button></div>
+    </div>
+  </div>
+</dialog>
+</main>
+<footer class="colophon">
+  <p class="ornament" aria-hidden="true">· · ·</p>
+  <p>Art and science over time. Every figure on this site comes from simulation of the design in
+  <a href="https://github.com/monstercameron/RISC-V-FPGA-CPU-Research" rel="noopener">the repository</a>; nothing here is a hardware measurement.
+  The drawings are generated from the architecture history, not photographs of silicon.</p>
+  <p class="small">Generated by <code>scripts/build_site.py</code>. Fonts from Google Fonts; no scripts from elsewhere, no trackers.</p>
+</footer>
+<script src="assets/site.js" defer></script>
+</body>
+</html>
