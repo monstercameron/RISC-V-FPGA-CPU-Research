@@ -22,7 +22,7 @@ module tb_core #(parameter integer MEM_BYTES=16384, parameter integer ICACHE_BEA
         .retire2_valid(retired2),.retire2_pc(rpc2),.retire2_insn(rinsn2),.retire2_rd(rd2),
         .retire2_data(rval2),.retire2_next_pc(npc2));
 
-    string image_path,trace_path;
+    string image_path,trace_path,pending_write="";
     integer fd,i,lane,cycles=0,retire_count=0;
     integer max_stall=0,delay_left=0,seed_arg=1,fault_kind=0,max_cycles=200000;
     reg [31:0] rng;
@@ -51,17 +51,25 @@ module tb_core #(parameter integer MEM_BYTES=16384, parameter integer ICACHE_BEA
     always @(negedge clk) begin
         if (reset) begin ready=0; active=0; end
         else begin
+            // Writes completed at the last edge belong to a store retiring now. A store
+            // on the first slot (or alone) logs its write before its retirement; a
+            // second-slot store (0.5.4) logs it after the first slot's retirement.
+            if (!(retired2 && rinsn2[6:0]==7'h23) && pending_write!="") begin
+                $fdisplay(fd,"%s",pending_write); pending_write="";
+            end
             if (retired) begin
                 $fdisplay(fd,"R %016h %08h %02h %016h %016h",rpc,rinsn,rd,rval,npc);
                 retire_count=retire_count+1;
             end
             if (retired2) begin // second slot: after the first, in program order
                 if (!retired) $fatal(1,"second retirement slot without the first");
+                if (pending_write!="") begin $fdisplay(fd,"%s",pending_write); pending_write=""; end
                 $fdisplay(fd,"R %016h %08h %02h %016h %016h",rpc2,rinsn2,rd2,rval2,npc2);
                 retire_count=retire_count+1;
             end
             if (trapped) begin
                 if (valid) $fatal(1,"request after terminal trap");
+                if (pending_write!="") $fdisplay(fd,"%s",pending_write);
                 $fdisplay(fd,"T %016h %016h %016h",tpc,cause,tval);
                 $fclose(fd);
                 $display("DONE retirements=%0d cycles=%0d",retire_count,cycles);
@@ -96,7 +104,7 @@ module tb_core #(parameter integer MEM_BYTES=16384, parameter integer ICACHE_BEA
             if (valid && ready) begin
                 active=0;
                 if (!error && wstrb!=0) begin
-                    $fdisplay(fd,"W %016h %016h %02h",addr,wdata,wstrb);
+                    $sformat(pending_write,"W %016h %016h %02h",addr,wdata,wstrb);
                     for (lane=0;lane<8;lane=lane+1)
                         if (wstrb[lane]) memory[addr+lane]=wdata[8*lane+:8];
                 end

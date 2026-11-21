@@ -146,6 +146,17 @@ def cases():
          i_type(0x13, 11, 0, 10, 6), 0x100073]                    # 52: depends on 48; 56: ebreak
     yield 'dual_issue_jumps', p, 0, MASK
 
+    # 0.5.4: second-slot stores (data forwarded from the first slot) and ALU results
+    # forwarded to ALU, branch and store operands in the same clock.
+    p = [(2 << 12) | (1 << 7) | 0x37, i_type(0x13, 9, 0, 0, 1),    # lui x1,2; addi x9
+         i_type(0x13, 2, 0, 0, 5), store(3, 1, 2, 0),               # addi x2,x0,5; sd x2,0(x1)
+         i_type(0x13, 3, 0, 2, 1), i_type(0x13, 4, 0, 3, 1),        # x3 = x2+1; x4 = x3+1
+         i_type(0x13, 5, 0, 4, 1), branch(0, 5, 0, 8),              # x5 = x4+1; beq x5,x0 (not taken)
+         i_type(0x13, 6, 0, 5, 2), store(3, 1, 6, 8),               # x6 = x5+2; sd x6,8(x1)
+         i_type(0x13, 7, 0, 0, 3), i_type(0x13, 7, 0, 7, 4),        # same destination twice
+         i_type(3, 8, 3, 1, 8), 0x100073]                           # ld x8,8(x1)
+    yield 'dual_issue_store_second', p, 0, MASK
+
     # Overwrite an initially illegal instruction, fence, then fetch the new word.
     p = [(0x02a01 << 12) | (5 << 7) | 0x37,
          i_type(0x13, 5, 0, 5, -1517), store(2, 0, 5, 512),
@@ -218,6 +229,9 @@ def cases():
     yield 'fetch_bus_fault', [i_type(0x13, 1, 0, 0, 5), 0x100073], 1, 0
     yield 'load_bus_fault_x0', [(2 << 12) | (1 << 7) | 0x37, i_type(3, 0, 3, 1, 0), 0x100073], 2, 8192
     yield 'store_bus_fault', [(2 << 12) | (1 << 7) | 0x37, store(3, 1, 1, 0), 0x100073], 3, 8192
+    # 0.5.4: a second-slot store that faults; the first slot retires, the store traps.
+    yield 'store2_bus_fault', [(2 << 12) | (1 << 7) | 0x37, i_type(0x13, 9, 0, 0, 1),
+                               i_type(0x13, 2, 0, 0, 7), store(3, 1, 2, 0), 0x100073], 3, 8192
 
 
 def command(args):

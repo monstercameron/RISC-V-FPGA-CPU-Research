@@ -147,6 +147,10 @@ Times are US Eastern (UTC-05:00). Each timestamp names its source:
 | about 23:20 | Commit `c05a1ce`, second-slot loads (0.5.2); tagged `cpu-v0.5.2`. Runs: `rv64im` reference 388.8 clocks per run, 1.4640 DMIPS/MHz; `rv64im` fast runtime 348.9, 1.6315; `rv64i` reference 416.9, 1.3653; [devlog-c05a1ce.md](devlog/devlog-c05a1ce.md). Less than the model predicted (318.1 fast), because the model also let a load pair after any store | record |
 | about 23:22 | Pairing-blocker analysis on the 0.5.2 fast-runtime stream (clocks per run issued alone, by reason): branch first 40.0, store second 37.1, ALU-to-ALU dependency 32.0, JALR first 32.0, JALR second 22.1, load after store 14.0, ALU-to-branch dependency 14.0 | output |
 | after 23:22 | 0.5.3 written: not-taken branch first, JAL/JALR second, load after a store to another beat. New tests `dual_issue_jumps` and `misaligned_jalr_after_alu`. Regression 126/126 with default and 2-line caches | output |
+| about 23:32 | Commit `73c1fbc`, branches first and jumps second (0.5.3); tagged `cpu-v0.5.3`. Runs: `rv64im` reference 366.8 clocks per run, 1.5518 DMIPS/MHz; fast runtime 310.9, 1.8309; `rv64i` reference 391.9, 1.4524; [devlog-73c1fbc.md](devlog/devlog-73c1fbc.md) | record |
+| about 23:34 | Blockers on the 0.5.3 fast-runtime stream: store second 31.1 clocks per run, ALU-to-ALU dependency 24.1, JALR first 22.0, branch first (taken) 17.0, ALU-to-branch dependency 14.0 | output |
+| after 23:34 | 0.5.4 written: second-slot stores (held in MEMORY under stalls, precise bus-error trap) and ALU forwarding into the second slot. Trace testbench and visualizer now log a second-slot store's write after the first slot's retirement, matching program order. New tests `dual_issue_store_second` and `store2_bus_fault`. Regression 132/132 with default and 2-line caches; all seven visualizer lessons verify | output |
+| after 23:34 | Visualizer lesson build failed (`decisionNotTaken` missing): since 0.5.1 a branch can retire on the second slot, and the lesson checkpoints only looked at the first slot. Not caught at 0.5.1 to 0.5.3 because the lessons were not rebuilt then. Checkpoints now come from both slots' retirement records; all seven lessons verify; C demo 12,990 clocks | output |
 
 ### Optimization loop
 
@@ -169,6 +173,8 @@ Each step changes the core, passes the main regression, is committed and tagged 
 | 0.5.1, `rv64im`, fast runtime | Word-at-a-time `strcpy`/`strcmp` (labelled; not compared with the reference runtime) | 360.8 | 0.768 | 1.5773 | | |
 | 0.5.2, `rv64im` build | Data-cache-hit loads in the second slot | 388.8 | 0.703 | 1.4640 | 5.63x | 1.02x |
 | 0.5.2, `rv64im`, fast runtime | Same core, fast runtime | 348.9 | 0.742 | 1.6315 | | 1.03x |
+| 0.5.3, `rv64im` build | Not-taken branch first; JAL/JALR second; load after store to another beat | 366.8 | 0.663 | 1.5518 | 5.97x | 1.06x |
+| 0.5.3, `rv64im`, fast runtime | Same core, fast runtime | 310.9 | 0.661 | 1.8309 | | 1.12x |
 
 Every step measured what the previous profile estimated. The loop stopped after 0.4.0 because the core completes about one instruction per clock; see findings 23 to 27.
 
@@ -548,3 +554,6 @@ One row per benchmark run, oldest first. Each run's full record (result, rubric 
 | 2026-11-20 22:34:43 -0500 | `c05a1ce` | yes | 0.5.2 | clang version 23.1.5 `-O2` `rv64im` | 388.8 | 1.4640 | 37.1 | [devlog-c05a1ce.md](devlog/devlog-c05a1ce.md) |
 | 2026-11-20 22:35:51 -0500 | `c05a1ce` | yes | 0.5.2 | clang version 23.1.5 `-O2` `rv64im` fast runtime | 348.9 | 1.6315 | 37.1 | [devlog-c05a1ce.md](devlog/devlog-c05a1ce.md) |
 | 2026-11-20 22:37:10 -0500 | `c05a1ce` | yes | 0.5.2 | clang version 23.1.5 `-O2` `rv64i` | 416.9 | 1.3653 | 37.1 | [devlog-c05a1ce.md](devlog/devlog-c05a1ce.md) |
+| 2026-11-20 22:40:50 -0500 | `73c1fbc` | yes | 0.5.3 | clang version 23.1.5 `-O2` `rv64im` | 366.8 | 1.5518 | 37.1 | [devlog-73c1fbc.md](devlog/devlog-73c1fbc.md) |
+| 2026-11-20 22:41:52 -0500 | `73c1fbc` | yes | 0.5.3 | clang version 23.1.5 `-O2` `rv64im` fast runtime | 310.9 | 1.8309 | 37.1 | [devlog-73c1fbc.md](devlog/devlog-73c1fbc.md) |
+| 2026-11-20 22:43:07 -0500 | `73c1fbc` | yes | 0.5.3 | clang version 23.1.5 `-O2` `rv64i` | 391.9 | 1.4524 | 37.1 | [devlog-73c1fbc.md](devlog/devlog-73c1fbc.md) |

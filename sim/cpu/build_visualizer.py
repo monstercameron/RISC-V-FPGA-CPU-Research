@@ -124,12 +124,16 @@ def main():
         if cycle!=len(frames)+1: raise AssertionError('Non-contiguous clocks')
         if pc not in assembly: raise AssertionError('Missing instruction disassembly')
         if state in (1,2) and int(assembly[pc][2],16)!=insn: raise AssertionError('Instruction mismatch')
+        write_event=None
         if flags&16:
             writes+=1
             if addr+8>len(memory): raise AssertionError('Out-of-bounds RAM write')
-            actual_trace.append(f'W {addr:016x} {wd:016x} {strobe:02x}')
+            write_event=f'W {addr:016x} {wd:016x} {strobe:02x}'
             for lane in range(8):
                 if strobe & (1<<lane): memory[addr+lane]=(wd>>(8*lane))&255
+        # A second-slot store (architecture 0.5.4) writes after the first slot retires.
+        second_store=retired2 and (rinsn2 & 0x7f)==0x23
+        if write_event and not second_store: actual_trace.append(write_event)
         retirement=-1
         if retired:
             actual_trace.append(f'R {rpc:016x} {rinsn:08x} {rd:02x} {rval:016x} {npc:016x}')
@@ -139,6 +143,7 @@ def main():
         # Second retirement slot (architecture 0.5.0): same clock, next in program order.
         retirement2=-1
         if retired2:
+            if write_event and second_store: actual_trace.append(write_event)
             actual_trace.append(f'R {rpc2:016x} {rinsn2:08x} {rd2:02x} {rval2:016x} {npc2:016x}')
             retirement2=len(retirements)
             retirements.append([cycle,rd2,value_id(rval2),rpc2,npc2])
@@ -176,34 +181,38 @@ def main():
             chapters.append({'name':name,'frame':found})
     # Study stops come from executed opcodes/bus events, never estimated timings.
     branch_groups={};loads=[];calls=[];returns=[];stack_writes=[];data_writes=[];outputs=[]
+    # Events come from the retirement records of both slots, so an instruction that
+    # retired on the second slot (architecture 0.5.0 and later) is found too.
     for j,f in enumerate(frames):
-        word=int(assembly[f[1]][2],16);op=word&127
-        if f[13]>=0:
-            if op==0x63: branch_groups.setdefault(f[1],[]).append((j,f,word))
+        for index in (f[13],f[14]):
+            if index<0: continue
+            _,_,_,rpc,npc=retirements[index]
+            word=int(assembly[rpc][2],16);op=word&127
+            if op==0x63: branch_groups.setdefault(rpc,[]).append((j,rpc,npc,word))
             if op==3: loads.append(j)
-            if op in (0x6f,0x67) and (word>>7)&31==1 and f[1]>0x10: calls.append(j)
+            if op in (0x6f,0x67) and (word>>7)&31==1 and rpc>0x10: calls.append(j)
             if word==0x00008067: returns.append(j)
         if f[2]&16:
             if 0x3000<=f[3]<0x3000+len(expected)*8: outputs.append(j)
             elif f[3]>=0x3800: stack_writes.append(j)
             else: data_writes.append(j)
     signed_group=next((group for group in branch_groups.values()
-        if (group[0][2]>>12)&7 in (4,5)
-        and any(f[8]!=f[1]+4 for _,f,_ in group)
-        and any(f[8]==f[1]+4 for _,f,_ in group)),[])
+        if (group[0][3]>>12)&7 in (4,5)
+        and any(npc!=rpc+4 for _,rpc,npc,_ in group)
+        and any(npc==rpc+4 for _,rpc,npc,_ in group)),[])
     if not signed_group:
-        signed_group=next((g for g in branch_groups.values() if (g[0][2]>>12)&7 in (4,5)),[])
+        signed_group=next((g for g in branch_groups.values() if (g[0][3]>>12)&7 in (4,5)),[])
     loop_group=next((group for group in branch_groups.values()
-        if any(f[8]<f[1] for _,f,_ in group)
-        and any(f[8]==f[1]+4 for _,f,_ in group)),[])
+        if any(npc<rpc for _,rpc,npc,_ in group)
+        and any(npc==rpc+4 for _,rpc,npc,_ in group)),[])
     repeated_calls=[j for j in calls if sum(frames[k][1]==frames[j][1] for k in calls)>1]
     picks={
         'load':('First data load',loads[:1]),
         'nextLoad':('Load the next address',[j for j in loads if frames[j][3]!=frames[loads[0]][3]][:1] if loads else []),
-        'decisionTaken':('Decision: branch taken',[j for j,f,_ in signed_group if f[8]!=f[1]+4][:1]),
-        'decisionNotTaken':('Decision: branch not taken',[j for j,f,_ in signed_group if f[8]==f[1]+4][:1]),
-        'backward':('Loop: go around again',[j for j,f,_ in loop_group if f[8]<f[1]][:1]),
-        'loopExit':('Loop: final exit',[j for j,f,_ in loop_group if f[8]==f[1]+4][-1:]),
+        'decisionTaken':('Decision: branch taken',[j for j,rpc,npc,_ in signed_group if npc!=rpc+4][:1]),
+        'decisionNotTaken':('Decision: branch not taken',[j for j,rpc,npc,_ in signed_group if npc==rpc+4][:1]),
+        'backward':('Loop: go around again',[j for j,rpc,npc,_ in loop_group if npc<rpc][:1]),
+        'loopExit':('Loop: final exit',[j for j,rpc,npc,_ in loop_group if npc==rpc+4][-1:]),
         'stackWrite':('Save a value on the stack',stack_writes[:1]),
         'call':('Call the function',calls[:1]),
         'recursiveCall':('A recursive call',repeated_calls[1:2]),

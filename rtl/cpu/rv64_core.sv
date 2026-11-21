@@ -131,7 +131,9 @@ module rv64_core #(
     // Since 0.5.2 insn2 may also be an aligned load that hits the data cache, read
     // through a second port; since 0.5.3 also after a store to a different beat.
     // Since 0.5.3 insn may be a branch that is not taken, and insn2 may be a JAL or
-    // JALR with an aligned target.
+    // JALR with an aligned target. Since 0.5.4 insn2 may be an aligned store when insn
+    // does not use the bus, and an integer result of insn (not a load or multiply)
+    // is forwarded to insn2's operands in the same clock.
     reg [31:0] insn2;
     reg insn2_valid;
     wire [6:0] op2 = insn2[6:0];
@@ -140,12 +142,15 @@ module rv64_core #(
     wire [4:0] rd2 = insn2[11:7];
     wire [4:0] rs1_2 = insn2[19:15];
     wire [4:0] rs2_2 = insn2[24:20];
-    wire [63:0] a2 = rs1_2 == 0 ? 64'b0 : regs[rs1_2];
-    wire [63:0] b2 = rs2_2 == 0 ? 64'b0 : regs[rs2_2];
+    // insn's integer result, forwardable to insn2 (0.5.4).
+    wire slot0_forward = (op == 7'h37 || op == 7'h17 || op == 7'h13 || op == 7'h1b ||
+                          ((op == 7'h33 || op == 7'h3b) && f7 != 7'h01)) && rd != 0;
+    wire [63:0] a2 = rs1_2 == 0 ? 64'b0 : (slot0_forward && rs1_2 == rd) ? result : regs[rs1_2];
+    wire [63:0] b2 = rs2_2 == 0 ? 64'b0 : (slot0_forward && rs2_2 == rd) ? result : regs[rs2_2];
     wire [63:0] pc2 = pc + 64'd4;
     wire [63:0] imm_i2 = {{52{insn2[31]}},insn2[31:20]};
     wire [63:0] imm_u2 = {{32{insn2[31]}},insn2[31:12],12'b0};
-    reg simple2, uses_rs1_2, uses_rs2_2, branch2, taken2, load2, jump2;
+    reg simple2, uses_rs1_2, uses_rs2_2, branch2, taken2, load2, jump2, store2;
     reg [63:0] result2;
     reg [31:0] word2;
     wire [63:0] imm_b2 = {{51{insn2[31]}},insn2[31],insn2[7],insn2[30:25],insn2[11:8],1'b0};
@@ -171,9 +176,21 @@ module rv64_core #(
     end
     wire [63:0] imm_j2 = {{43{insn2[31]}},insn2[31],insn2[19:12],insn2[20],insn2[30:21],1'b0};
     wire [63:0] jump_target2 = op2 == 7'h6f ? pc2 + imm_j2 : (a2 + imm_i2) & ~64'd1;
+    // Second-slot store (0.5.4): address, alignment and bus lanes.
+    wire [63:0] imm_s2 = {{52{insn2[31]}},insn2[31:25],insn2[11:7]};
+    wire [63:0] ea2s = a2 + imm_s2;
+    wire [7:0] smask2 = f3_2[1:0] == 0 ? 8'h01 : f3_2[1:0] == 1 ? 8'h03 : f3_2[1:0] == 2 ? 8'h0f : 8'hff;
+    wire [63:0] store2_wdata = b2 << {ea2s[2:0],3'b000};
+    wire [7:0] store2_wstrb = smask2 << ea2s[2:0];
     always @* begin
         simple2=0; uses_rs1_2=1; uses_rs2_2=0; result2=0; word2=0; branch2=0; taken2=0; load2=0; jump2=0;
+        store2=0;
         case (op2)
+            7'h23: begin
+                store2=1; uses_rs2_2=1;
+                simple2=f3_2<4 && (ea2s & (f3_2[1:0] == 0 ? 64'd0 : f3_2[1:0] == 1 ? 64'd1 :
+                                           f3_2[1:0] == 2 ? 64'd3 : 64'd7))==0;
+            end
             7'h6f, 7'h67: begin
                 jump2=1; uses_rs1_2=op2 == 7'h67;
                 simple2=(op2 == 7'h6f || f3_2 == 0) && jump_target2[1:0] == 0;
@@ -257,15 +274,19 @@ module rv64_core #(
         endcase
     end
     wire slot0_writes = (load_op || write_rd) && rd != 0;
-    wire [4:0] dest2 = branch2 ? 5'b0 : rd2;
+    wire [4:0] dest2 = (branch2 || store2) ? 5'b0 : rd2;
     wire [63:0] next2 = jump2 ? jump_target2 : taken2 ? target2 : pc + 64'd8;
-    wire hazard2 = slot0_writes && ((uses_rs1_2 && rs1_2 == rd) || (uses_rs2_2 && rs2_2 == rd) || dest2 == rd);
+    // Same-register writes need no check: insn2's write lands last, as in program order.
+    wire hazard2 = slot0_writes && !slot0_forward && ((uses_rs1_2 && rs1_2 == rd) || (uses_rs2_2 && rs2_2 == rd));
     wire can_pair = insn2_valid && simple2 && !hazard2;
     wire slot0_alu = op == 7'h37 || op == 7'h17 || op == 7'h13 || op == 7'h1b ||
                      ((op == 7'h33 || op == 7'h3b) && !is_div) || (op == 7'h63 && !branch_taken);
-    wire pair_alu = can_pair && slot0_alu;
-    wire pair_load = can_pair && load_hit;
-    wire pair_store = can_pair && store_op && effective_addr[63:3] != pc2[63:3] &&
+    wire pair_alu = can_pair && slot0_alu && !store2;
+    wire pair_load = can_pair && load_hit && !store2;
+    wire pair_store2 = can_pair && store2 && (slot0_alu || load_hit);
+    wire [4:0] slot0_dest = load_hit ? rd : (write_rd ? rd : 5'b0);
+    wire [63:0] slot0_value = load_hit ? load_result : result;
+    wire pair_store = can_pair && store_op && !store2 && effective_addr[63:3] != pc2[63:3] &&
                       !(load2 && ea2[63:3] == effective_addr[63:3]);
 
     // One DIVIDE step, and whether it is the last.
@@ -319,11 +340,12 @@ module rv64_core #(
     wire [63:0] shifted_read = read_beat >> {access_addr[2:0],3'b000};
     reg [63:0] load_result;
 
-    assign mem_valid = !reset && ((state == FETCH && pc[1:0] == 0) || state == MEMORY || issue_data);
+    wire issue_store2 = state == EXECUTE && !exception && pair_store2;
+    assign mem_valid = !reset && ((state == FETCH && pc[1:0] == 0) || state == MEMORY || issue_data || issue_store2);
     assign mem_instr = state == FETCH;
-    assign mem_addr = state == FETCH ? {pc[63:3],3'b0} : {access_addr[63:3],3'b0};
-    assign mem_wdata = state == MEMORY ? pending_wdata : issue_data ? issue_wdata : 64'b0;
-    assign mem_wstrb = state == MEMORY ? pending_wstrb : issue_data ? issue_wstrb : 8'b0;
+    assign mem_addr = state == FETCH ? {pc[63:3],3'b0} : issue_store2 ? {ea2s[63:3],3'b0} : {access_addr[63:3],3'b0};
+    assign mem_wdata = state == MEMORY ? pending_wdata : issue_data ? issue_wdata : issue_store2 ? store2_wdata : 64'b0;
+    assign mem_wstrb = state == MEMORY ? pending_wstrb : issue_data ? issue_wstrb : issue_store2 ? store2_wstrb : 8'b0;
 
     always @* begin
         case (access_f3)
@@ -568,6 +590,23 @@ module rv64_core #(
                         div_neg_q<=neg_a ^ neg_b; div_neg_r<=neg_a;
                         div_want_rem<=want_rem; div_is_word<=m_word;
                         state<=DIVIDE;
+                    end
+                    else if (pair_store2) begin
+                        if (mem_ready && !mem_error) begin
+                            dcache_update(1'b0,ea2s,mem_rdata,store2_wdata,store2_wstrb);
+                            retire(slot0_dest,slot0_value,next2,1'b0,1'b1,ea2s,1'b1);
+                        end else begin
+                            // insn retires alone; insn2's store faults or waits in MEMORY.
+                            retire(slot0_dest,slot0_value,pc2,1'b0,1'b0,64'b0,1'b0);
+                            if (mem_ready) begin
+                                trap_valid<=1; trap_pc<=pc2; trap_cause<=7; trap_tval<=ea2s;
+                                state<=HALTED;
+                            end else begin
+                                insn<=insn2; pending_addr<=ea2s; pending_wdata<=store2_wdata;
+                                pending_wstrb<=store2_wstrb; pending_load<=0; pending_f3<=f3_2;
+                                pending_rd<=0; pending_next_pc<=pc2+64'd4; state<=MEMORY;
+                            end
+                        end
                     end
                     else if (load_hit) retire(rd,load_result,pair_load ? next2 : next_pc,1'b0,1'b0,64'b0,pair_load);
                     else if (load_op || store_op) begin
