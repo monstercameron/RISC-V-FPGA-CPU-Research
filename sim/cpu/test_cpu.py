@@ -593,6 +593,16 @@ def cases():
     mixed = [i_type(0x13, 6, 0, 0, 0x22), store(3, 1, 6, 32), i_type(3, 2, 3, 1, 40), store(3, 1, 6, 48),
              i_type(3, 3, 3, 1, 32), store(2, 1, 6, 56), i_type(3, 4, 3, 1, 48), i_type(3, 5, 3, 1, 64)]
     yield 'ports_mixed_fault_last_load', [lui1] + mixed + [0x100073], 2, 8256
+    # Wider retirement (council middle, after 0.13.0): long runs of instructions finished
+    # at rename (li/mv/addi/lui/auipc) retire up to RW per clock, around a trap, stores
+    # and a store bus fault in the same retirement window.
+    folded = lambda n, r0=10: [i_type(0x13, r0 + (k % 8), 0, (r0 + ((k + 7) % 8)) if k % 3 else 0, k + 1) for k in range(n)]
+    yield 'retire_wide_trap', prefix() + folded(40) + [i_type(3, 1, 3, 0, 4)] + folded(8, 20), 0, MASK
+    body = folded(14) + [store(3, 30, 10, 0x500), i_type(0x13, 30, 0, 30, 8)] + folded(14, 18) + \
+           [store(3, 30, 11, 0x500), i_type(3, 26, 3, 30, 0x4f8), r_type(0x33, 27, 0, 27, 26),
+            i_type(0x13, 28, 0, 28, -1), branch(1, 28, 0, -4 * 34)]
+    yield 'retire_wide_stores', prefix() + [i_type(0x13, 28, 0, 0, 3)] + body + [0x100073], 0, MASK
+    yield 'retire_wide_store_fault', [(2 << 12) | (1 << 7) | 0x37] + folded(24) + [store(3, 1, 10, 0)] + folded(10, 18) + [0x100073], 3, 8192
 
 def command(args):
     result = subprocess.run([str(x) for x in args], capture_output=True, text=True, timeout=60)

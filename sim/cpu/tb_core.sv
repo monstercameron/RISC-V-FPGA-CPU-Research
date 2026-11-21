@@ -17,7 +17,7 @@ module tb_core #(parameter integer MEM_BYTES=16384, parameter integer ICACHE_BEA
 `ifdef WIDE_TRACE
     // Wide retirement trace (out-of-order core, 0.10.0): up to RWT per clock (16 since
     // 0.12.0), slot 0 oldest.
-    localparam integer RWT = 16;
+    localparam integer RWT = 32;
     wire [RWT-1:0] rtv;
     wire [RWT*64-1:0] rtpc,rtdata,rtnext;
     wire [RWT*32-1:0] rtinsn;

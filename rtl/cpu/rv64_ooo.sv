@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Original CPU foundation, wide out-of-order implementation (architecture 0.12.0).
+// Original CPU foundation, wide out-of-order implementation (architecture 0.14.0).
 // RV64IM + B execution, serialized FENCE.I, terminal EEI. Same module name and
 // contract as rv64_core.sv and rv64_pipe.sv, plus a wider retirement trace (rt_*);
 // build with one of the three files. Architecture version: cpu/VERSION,
@@ -10,8 +10,8 @@ module rv64_core #(
     parameter integer ICACHE_BEATS = 16384,   // 128 KiB, after the Apple M5's large L1s
     // Direct-mapped write-through data cache size in 8-byte beats; power of two, >= 2.
     parameter integer DCACHE_BEATS = 16384,   // 128 KiB
-    // Retirement (and fetch and rename) width (8 until 0.11.2).
-    parameter integer RW = 16,
+    // Retirement (and fetch and rename) width (16 until 0.13.1; fetch/rename stays 16).
+    parameter integer RW = 32,
     // Paired store writes (0.11.0): 1 when the memory implements mem_*2.
     parameter integer PAIR_WRITES = 0,
     // Extra store writes: 1 or 2 more stores per write on mem_x*, with PAIR_WRITES.
@@ -103,11 +103,11 @@ module rv64_core #(
     generate if (DCACHE_BEATS < 2 || (DCACHE_BEATS & (DCACHE_BEATS - 1)) != 0) begin : bad_dcache_size
         initial $fatal(1, "DCACHE_BEATS must be a power of two of at least 2");
     end endgenerate
-    localparam integer FW = RW;          // fetch and rename width
-    localparam integer ROB_N = 256;
-    localparam integer ROB_B = 8;
+    localparam integer FW = RW < 16 ? RW : 16;   // fetch and rename width (RW until 0.13.0)
+    localparam integer ROB_N = 512;       // 256 until 0.13.0
+    localparam integer ROB_B = 9;
     localparam integer PRF_N = 32 + ROB_N;
-    localparam integer P_B = 9;
+    localparam integer P_B = 10;
     localparam integer IQ_N = 128;
     localparam integer IQ_B = 7;
     localparam integer Q_N = 32;
@@ -559,7 +559,7 @@ module rv64_core #(
     reg [63:0] iq_off2 [0:IQ_N-1];
     reg [63:0] ex_off1 [0:NP-1];
     reg [63:0] ex_off2 [0:NP-1];
-    reg [8:0] refcnt [0:PRF_N-1];        // committed map entries + in-flight writers
+    reg [P_B:0] refcnt [0:PRF_N-1];        // committed map entries + in-flight writers
     reg [63:0] o1_, o2_, eoff, jt_;
     reg [P_B-1:0] ep_;
     reg elim_, done_;
@@ -722,7 +722,7 @@ module rv64_core #(
     reg [63:0] g_pred [0:FW-1];
     reg [FW-1:0] g_fp, g_bh, g_fault, g_fmis;
     reg [1:0] g_bc [0:FW-1];
-    reg [4:0] g_n;
+    reg [6:0] g_n;
     reg [63:0] g_next;
     reg [3:0] g_sp [0:FW-1];
     reg [4:0] g_taken;
@@ -731,7 +731,7 @@ module rv64_core #(
     reg [3:0] cur_sp;
     reg [BTB_BITS-1:0] bi;
     reg [IC_INDEX-1:0] fi;
-    reg [4:0] n_ren;
+    reg [6:0] n_ren;
     reg d_redirect;
     reg [63:0] d_redirect_pc;
     reg [IQ_B-1:0] slot;
@@ -750,7 +750,7 @@ module rv64_core #(
     reg ol_valid;
     reg [Q_B-1:0] qa;
 
-    initial if (RW < 3 || RW > 16) $fatal(1, "rv64_ooo.sv supports RW from 3 to 16, got %0d", RW);
+    initial if (RW < 3 || RW > 32) $fatal(1, "rv64_ooo.sv supports RW from 3 to 32, got %0d", RW);
 
     // Fused producer's value for execute port pp.
     function [63:0] fz_value(input integer pp);
