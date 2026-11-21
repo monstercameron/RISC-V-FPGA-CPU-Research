@@ -99,7 +99,8 @@ kernel gives 8.34 / 2.59 MIPS/MHz against 1.91 / 1.93 from `7z b -md22` (compres
 | Multicycle core (`rv64_core.sv`) | 1.61 (19% of X925) | 1.69 (65%) | 1.36 / 1.66 |
 | Pipelined core (`rv64_pipe.sv`) | 0.96 (12%) | 0.89 (34%) | 0.82 / 0.87 |
 | Out-of-order core (`rv64_ooo.sv`), 4 KiB caches, Verilator | 3.39 (41%) | 2.56 (99%) | 2.87 / 2.50 |
-| **Out-of-order core, 64 KiB I / 64 KiB D caches (measured configuration from 2026-11-21 18:07)** | **7.46 (89%)** | **2.89 (112%)** | 6.32 / 2.83 |
+| Out-of-order 0.14.6, 64 KiB I / 64 KiB D caches (measured configuration from 2026-11-21 18:07) | 7.46 (89%) | 2.89 (112%) | 6.32 / 2.83 |
+| **Out-of-order 0.14.7, 64 KiB I / 64 KiB D** | **7.65 (92%)** | **3.23 (125%)** | 6.48 / 3.16 |
 
 All simulated figures are idealized-model simulation (1-clock memory, 4 KiB caches). The multicycle and
 pipelined results are whole-program runs checked against the reference model and an independent liblzma
