@@ -255,7 +255,7 @@ DEFAULTS = dict(
     states=["FETCH", "EXECUTE", "MEMORY"], stages=[], btb=0, ras=0, fq=False,
     rob=0, prf=0, iq=0, decode_w=0, alus=0, full=0, loads=0, stores=0, ldst_shared=False,
     fwd=False, snapshots=False, taken=0, loop=False, vp=False, predecode=False, paired=False,
-    marks=[],
+    marks=[], fuse=False, bias=False, btb_n=256, lp_n=256,
 )
 
 # (version, era, French title, caption, medium, overrides)
@@ -345,6 +345,16 @@ WORKS = [
     ("0.11.1", "Le Pressentiment",
      "Value prediction for loads, multiplies and divides; fetch predecode of direct jumps, calls and returns.",
      dict(vp=True, predecode=True)),
+    ("0.11.2", "L'Alliage",
+     "A simple operation and the instruction that reads its result are welded into one; "
+     "the loop predictor and the branch buffer grow fourfold to 1,024 entries, and a branch that has always gone one way is trusted to go on.",
+     dict(fuse=True, bias=True, btb_n=1024, lp_n=1024,
+          marks=["instruction fusion", "1,024-entry predictors", "fixed-direction bias"])),
+    ("0.12.0", "Les Seize Voix",
+     "Sixteen instructions a clock through fetch, rename and retirement, before a window twice the size: "
+     "256 in the reorder buffer, 288 physical registers, 128 waiting. Behind it the same eight execution units, unchanged.",
+     dict(fetch_w=16, decode_w=16, retire=16, issue=16, rob=256, prf=288, iq=128,
+          marks=["sixteen lanes"])),
 ]
 
 ERAS = [
@@ -352,7 +362,8 @@ ERAS = [
     ("II", "Salle II", "Le Duo et le Trio", "Two, then three instructions in the same clock.", "0.5.0", "0.7.1"),
     ("III", "Salle III", "La Chaîne", "The same contract, drawn again as a pipeline.", "0.8.0", "0.8.1"),
     ("IV", "Salle IV", "Le Désordre", "Out of order: instructions run when ready, retire in order.", "0.9.0", "0.9.4"),
-    ("V", "Salle V", "L'Octuple", "Eight wide, and learning to guess.", "0.10.0", "0.11.1"),
+    ("V", "Salle V", "L'Octuple", "Eight wide, and learning to guess.", "0.10.0", "0.11.2"),
+    ("VI", "Salle VI", "Le Grand Format", "Sixteen wide: a window twice the size before the same eight execution units.", "0.12.0", "0.12.0"),
 ]
 
 
@@ -416,13 +427,17 @@ def unit_lines(s: dict) -> list[tuple[str, str]]:
             u.append(("Memory port", "one load/store port, memory issued in program order"))
         else:
             u.append(("Memory ports", f"{s['loads']} load, {s['stores']} store-address"))
-        u.append(("Branch target buffer", "256 entries, with return stack"))
+        u.append(("Branch target buffer", f"{s['btb_n']:,} entries, with return stack"))
         u.append(("Caches", f"{s['icache_kb'] or 4} KiB instruction, {s['dcache_kb'] or 4} KiB data"
                   + (", two-way data cache" if s["dc_ways"] == 2 else "")))
         if s["taken"]:
             u.append(("Taken transfers per fetch", str(s["taken"])))
         if s["loop"]:
-            u.append(("Loop predictor", "yes"))
+            u.append(("Loop predictor", f"{s['lp_n']:,} entries"))
+        if s["bias"]:
+            u.append(("Branch bias", "a branch that has gone one way at least 4 times with no exit is predicted that way"))
+        if s["fuse"]:
+            u.append(("Instruction fusion", "a simple integer producer and the next instruction reading it"))
         if s["paired"]:
             u.append(("Store writes", "paired on the bus"))
         if s["vp"]:
@@ -525,9 +540,9 @@ class Art:
         s = self.s
         if not s["btb"]:
             return
-        rings = 4  # log2(256) - 4: a 256-entry buffer
+        rings = max(int(math.log2(s["btb_n"])) - 4, 4) if s["kind"] == "ooo" else 4  # 256 entries: 4 rings; 1,024: 6 finer rings
         for i in range(rings):
-            self.a(f'<circle cx="{cx}" cy="{cy}" r="{14 * (i + 1)}" fill="none" stroke="{INK}" stroke-width="{1.6 if i % 2 == 0 else 0.8}"/>')
+            self.a(f'<circle cx="{cx}" cy="{cy}" r="{56 * (i + 1) / rings:.1f}" fill="none" stroke="{INK}" stroke-width="{1.6 if i % 2 == 0 else 0.8}"/>')
         self.disc(cx, cy, 9, OXBLOOD, off=2)
         if s["ras"]:
             for i in range(4):
@@ -545,8 +560,9 @@ class Art:
         n = self.s["retire"]
         self.line(x, y0 - 14, x, y1 + 14, sw=2.2, col=GOLD)
         step = (y1 - y0) / max(n, 1)
+        rad = min(10, step / 2 - 1)
         for i in range(n):
-            self.disc(x, y0 + step * (i + 0.5), 10, GOLD, off=2)
+            self.disc(x, y0 + step * (i + 0.5), rad, GOLD, off=min(2, rad / 4))
         self.text(x, y1 + 40, "retire", 17, col=INK, op=0.7)
 
     def marks(self):
@@ -594,10 +610,19 @@ class Art:
         self.text(400, y + 12 * lanes + 36, "the bus", 18, op=0.7)
 
     # families -------------------------------------------------------------
+    def lane_geometry(self, n):
+        """(box width, gap, first x): the 16-lane rows start right of the predictor."""
+        if n > 8:
+            gap = 3
+            w = (530 - gap * (n - 1)) / n
+            return w, gap, 215
+        return 42, 6, 400 - (n * 48 - 6) / 2
+
     def fetch_row(self, y, n, dashed=False):
-        w, gap = 42, 6
+        w, gap, x0 = self.lane_geometry(n)
         tot = n * (w + gap) - gap
-        x0 = 400 - tot / 2
+        if n <= 8:
+            x0 = 400 - tot / 2
         for i in range(n):
             self.box(x0 + i * (w + gap), y, w, 34, OCHRE, dash="5 3" if dashed else None)
         return x0, tot
@@ -707,54 +732,57 @@ class Art:
     def ooo(self):
         s = self.s
         fx0, ft = self.fetch_row(96, s["fetch_w"])
-        self.text(400, 86, "fetch", 18, op=0.8)
+        self.text(400, 86, "fetch" if s["fetch_w"] <= 8 else f"fetch, {s['fetch_w']} lanes", 18, op=0.8)
         self.predictor(120, 136)
         for t in range(max(s["taken"], 1)):
             self.path(f"M{fx0 + 6} {100 + t * 4} C{fx0 - 40} {60 - t * 14} 200 {58 - t * 14} 150 {104 + t * 6}",
                       sw=1.8, col=GOLD)
         # rename row, slot by slot under fetch
         n = s["decode_w"]
-        dx0 = 400 - (n * 48 - 6) / 2
+        dw, dg, dx0 = self.lane_geometry(n)
+        dp = dw + dg
         for i in range(n):
-            self.box(dx0 + i * 48, 178, 42, 28, OXBLOOD, op=0.85)
-            self.line(dx0 + i * 48 + 21, 130, dx0 + i * 48 + 21, 178, sw=0.9, op=0.7)
-            self.a(f'<line x1="{dx0 + i * 48 + 6}" y1="200" x2="{dx0 + i * 48 + 36}" y2="184" stroke="{INK}" stroke-width="0.8" stroke-opacity="0.6"/>')
+            self.box(dx0 + i * dp, 178, dw, 28, OXBLOOD, op=0.85)
+            self.line(dx0 + i * dp + dw / 2, 130, dx0 + i * dp + dw / 2, 178, sw=0.9, op=0.7)
+            self.a(f'<line x1="{dx0 + i * dp + dw * 0.15:.1f}" y1="200" x2="{dx0 + i * dp + dw * 0.85:.1f}" y2="184" stroke="{INK}" stroke-width="0.8" stroke-opacity="0.6"/>')
         self.text(400, 232, "rename", 18, op=0.8)
         if s["snapshots"]:
-            self.box(dx0 - 10, 170, n * 48 + 14, 44, None, sw=1.2, dash="3 4", off=0)
+            self.box(dx0 - 10, 170, n * dp + 14, 44, None, sw=1.2, dash="3 4", off=0)
         # window: reorder buffer, register file, issue queue
         cell = 14
-        cols = 4 if s["rob"] <= 32 else 8
+        rcell = 14 if s["rob"] <= 128 else 10
+        cols = 4 if s["rob"] <= 32 else (8 if s["rob"] <= 128 else 16)
         rows = s["rob"] // cols
         rx, ry = 70, 276
         for j in range(rows):
             for i in range(cols):
-                self.a(f'<rect x="{rx + i * cell}" y="{ry + j * cell}" width="{cell - 2}" height="{cell - 2}" fill="{OXBLOOD}" fill-opacity="{0.35 + 0.5 * ((i + j) % 3) / 2:.2f}" stroke="{INK}" stroke-width="0.7"/>')
-        self.text(rx + cols * cell / 2, ry + rows * cell + 22, f"{s['rob']} in order", 17, op=0.8)
+                self.a(f'<rect x="{rx + i * rcell}" y="{ry + j * rcell}" width="{rcell - 2}" height="{rcell - 2}" fill="{OXBLOOD}" fill-opacity="{0.35 + 0.5 * ((i + j) % 3) / 2:.2f}" stroke="{INK}" stroke-width="0.7"/>')
+        self.text(rx + cols * rcell / 2, ry + rows * rcell + 22, f"{s['rob']} in order", 17, op=0.8)
         pcols = 8 if s["prf"] <= 64 else 16
         prow = math.ceil(s["prf"] / pcols)
-        px = 330 - (pcols * 10) / 2
+        px = (330 if s["rob"] <= 128 else 345) - (pcols * 10) / 2
         py = 290
         for k in range(s["prf"]):
             i, j = k % pcols, k // pcols
             self.a(f'<circle cx="{px + i * 10 + 5:.0f}" cy="{py + j * 10 + 5:.0f}" r="3.4" fill="{SAGE if k >= 32 else INK}" stroke="{INK}" stroke-width="0.6"/>')
-        self.text(330, py + prow * 10 + 24, f"{s['prf']} names", 17, op=0.8)
-        icols = 8
+        self.text(px + pcols * 5, py + prow * 10 + 24, f"{s['prf']} names", 17, op=0.8)
+        icell = 14 if s["iq"] <= 64 else 10
+        icols = 8 if s["iq"] <= 64 else 16
         irows = max(s["iq"] // icols, 1)
         ix = 520
         iy = 290
-        self.path(f"M{ix - 6} {iy - 16} L{ix + icols * cell + 4} {iy - 16} L{ix + icols * cell / 2 - 2} {iy - 2}Z", sw=1.4, fill=SLATE, op=0.9)
+        self.path(f"M{ix - 6} {iy - 16} L{ix + icols * icell + 4} {iy - 16} L{ix + icols * icell / 2 - 2} {iy - 2}Z", sw=1.4, fill=SLATE, op=0.9)
         for j in range(irows):
             for i in range(icols):
-                self.box(ix + i * cell, iy + j * cell, cell - 2, cell - 2, SLATE, op=0.75, sw=0.8, off=0)
-        self.text(ix + icols * cell / 2, iy + irows * cell + 22, f"{s['iq']} waiting", 17, op=0.8)
+                self.box(ix + i * icell, iy + j * icell, icell - 2, icell - 2, SLATE, op=0.75, sw=0.8, off=0)
+        self.text(ix + icols * icell / 2, iy + irows * icell + 22, f"{s['iq']} waiting", 17, op=0.8)
         if s["fq"] or s["fetch_w"] > 1:
             pass
         self.line(400, 206, 400, 262, sw=1.2, op=0.7)
-        self.line(400, 262, rx + cols * cell / 2, 262, sw=1.2, op=0.7)
-        self.line(400, 262, ix + icols * cell / 2, 262, sw=1.2, op=0.7)
+        self.line(400, 262, rx + cols * rcell / 2, 262, sw=1.2, op=0.7)
+        self.line(400, 262, ix + icols * icell / 2, 262, sw=1.2, op=0.7)
         self.retire_col(300, 500)
-        self.line(rx + cols * cell, ry + 40, 700, ry + 40, sw=0.9, col=GOLD, op=0.9)
+        self.line(rx + cols * rcell, ry + 40, 700, ry + 40, sw=0.9, col=GOLD, op=0.9)
         # execution row
         k = s["alus"]
         pitch = min(78, 600 / max(k, 1))
@@ -764,10 +792,15 @@ class Art:
         rad = 28 if k <= 4 else 26
         for i, x in enumerate(xs):
             full = i in fullset
-            self.line(ix + icols * cell / 2, iy + irows * cell + 36, x, y - rad - 6, sw=0.9, op=0.6)
+            self.line(ix + icols * icell / 2, iy + irows * icell + 36, x, y - rad - 6, sw=0.9, op=0.6)
             self.disc(x, y, rad, SLATE if not full else OXBLOOD, op=0.9)
             if full:
                 self.disc(x, y, rad + 8, None, sw=1.2)
+        if s["fuse"] and k > 2:
+            # a gold clasp joining two neighbouring units: producer and consumer as one
+            self.path(f"M{xs[1] + 4} {y - rad - 14} Q{(xs[1] + xs[2]) / 2} {y - rad - 44} {xs[2] - 4} {y - rad - 14}", sw=2.6, col=GOLD)
+            self.disc(xs[1] + 4, y - rad - 14, 3.5, GOLD, off=0)
+            self.disc(xs[2] - 4, y - rad - 14, 3.5, GOLD, off=0)
         # memory ports
         ly = 722
         if s["ldst_shared"]:
@@ -866,7 +899,7 @@ def assemble() -> tuple[list[dict], list[dict], list[dict]]:
             "date": h["date"], "date_fr": fr_date(h["date"]) if h["date"] else "",
             "kind": s["kind"], "status": status, "tag": f"cpu-v{v}",
             "register": h["summary"], "register_html": h["summary_html"], "breaking": h["breaking"],
-            "units": unit_lines(s), "marks": s["marks"],
+            "units": unit_lines(s), "marks": s["marks"], "width": s["retire"], "alus": s["alus"],
             "dmips_ref": best["dmips_mhz"] if best else None,
             "clocks_ref": best["clocks"] if best else None,
             "dmips_fast": bestf["dmips_mhz"] if bestf else None,
@@ -885,10 +918,16 @@ FONTS = ('<link rel="preconnect" href="https://fonts.googleapis.com">'
          '<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,400;0,500;0,600;1,400;1,500&amp;family=Jost:wght@300;400;500&amp;display=swap">')
 
 
-def page(title: str, desc: str, body: str, active: str, extra_head: str = "", body_class: str = "") -> str:
+SITE_URL = "https://monstercameron.github.io/RISC-V-FPGA-CPU-Research/"
+# Social preview image: an existing artwork under docs/ (SVG, as published).
+SITE_IMAGE = SITE_URL + "art/v0.11.2.svg"
+
+
+def page(title: str, desc: str, body: str, active: str, path: str, extra_head: str = "", body_class: str = "") -> str:
     def nav(href, label, key):
         cur = ' aria-current="page"' if key == active else ""
         return f'<a href="{href}"{cur}>{label}</a>'
+    canon = SITE_URL + ("" if path == "index.html" else path)
     return f"""<!doctype html>
 <html lang="en" class="no-js">
 <head>
@@ -896,6 +935,17 @@ def page(title: str, desc: str, body: str, active: str, extra_head: str = "", bo
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>{e(title)}</title>
 <meta name="description" content="{e(desc)}">
+<link rel="canonical" href="{e(canon)}">
+<meta property="og:title" content="{e(title)}">
+<meta property="og:description" content="{e(desc)}">
+<meta property="og:type" content="website">
+<meta property="og:url" content="{e(canon)}">
+<meta property="og:image" content="{e(SITE_IMAGE)}">
+<meta property="og:site_name" content="Atelier RV64">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="{e(title)}">
+<meta name="twitter:description" content="{e(desc)}">
+<meta name="twitter:image" content="{e(SITE_IMAGE)}">
 <meta name="color-scheme" content="light dark">
 {FONTS}
 <link rel="stylesheet" href="assets/style.css">
@@ -916,6 +966,7 @@ def page(title: str, desc: str, body: str, active: str, extra_head: str = "", bo
   <p>Art and science over time. Every figure on this site comes from simulation of the design in
   <a href="{REPO_URL}" rel="noopener">the repository</a>; nothing here is a hardware measurement.
   The drawings are generated from the architecture history, not photographs of silicon.</p>
+  <p class="small">Source code and full record: <a href="{REPO_URL}" rel="noopener">{REPO_URL.replace("https://", "")}</a>.</p>
   <p class="small">Generated by <code>scripts/build_site.py</code>. Fonts from Google Fonts; no scripts from elsewhere, no trackers.</p>
 </footer>
 <script src="assets/site.js" defer></script>
@@ -1045,8 +1096,8 @@ def gallery_page(versions, specs) -> str:
     </div>
   </div>
 </dialog>"""
-    return page("La Galerie · Atelier RV64", "A gallery of generated drawings, one for each version of the RV64 CPU architecture.",
-                intro + "".join(rooms) + dialog, "gallery", body_class="gallery")
+    return page("La Galerie · Atelier RV64", "A gallery of generated drawings, one for each version of the RV64 simulated research CPU architecture. Drawings only; no hardware measurements.",
+                intro + "".join(rooms) + dialog, "gallery", "gallery.html", body_class="gallery")
 
 
 def chart_svg(versions) -> str:
@@ -1055,7 +1106,9 @@ def chart_svg(versions) -> str:
     pts = [v for v in versions if v["dmips_ref"] is not None]
     n = len(versions)
     xs = {v["version"]: l + (Wc - l - r) * (i + 0.5) / n for i, v in enumerate(versions)}
-    lo, hi = math.log2(0.2), math.log2(8)
+    top = max([v["dmips_ref"] for v in pts] + [v["dmips_fast"] or 0 for v in versions])
+    ymax = 16 if top > 7.5 else 8
+    lo, hi = math.log2(0.2), math.log2(ymax)
 
     def Y(val):
         return t + (Hc - t - b) * (1 - (math.log2(val) - lo) / (hi - lo))
@@ -1070,7 +1123,7 @@ def chart_svg(versions) -> str:
         x1 = l + (Wc - l - r) * (idx[-1] + 1) / n
         out.append(f'<rect x="{x0:.1f}" y="{t}" width="{x1 - x0:.1f}" height="{Hc - t - b}" fill="{col}" fill-opacity="0.09"/>')
         out.append(f'<text x="{(x0 + x1) / 2:.1f}" y="{t + 22}" text-anchor="middle" class="ct-era">{label}</text>')
-    for val in (0.25, 0.5, 1, 2, 4, 8):
+    for val in [g for g in (0.25, 0.5, 1, 2, 4, 8, 16) if g <= ymax]:
         y = Y(val)
         out.append(f'<line x1="{l}" y1="{y:.1f}" x2="{Wc - r}" y2="{y:.1f}" class="ct-grid"/>')
         out.append(f'<text x="{l - 10}" y="{y + 5:.1f}" text-anchor="end" class="ct-lab">{val:g}</text>')
@@ -1154,8 +1207,8 @@ def journal_page(versions, days, runs) -> str:
   <tbody>{"".join(run_rows)}</tbody></table></div>
 </section>
 <p class="more-link"><a href="{BLOB}DEVLOG.md" rel="noopener">Read the full DEVLOG.md on GitHub &rarr;</a></p>""")
-    return page("Le Journal · Atelier RV64", "The development log of the RV64 CPU project, set as a timeline of dated entries, commits and runs.",
-                "".join(body), "journal", body_class="journal")
+    return page("Le Journal · Atelier RV64", "The development log of the RV64 research CPU project: dated entries, commits and simulated Dhrystone runs. No hardware measurements.",
+                "".join(body), "journal", "journal.html", body_class="journal")
 
 
 def index_page(versions) -> str:
@@ -1172,12 +1225,12 @@ def index_page(versions) -> str:
     <p class="eyebrow">Art and science over time</p>
     <h1>The shape of a processor, one version at a time</h1>
     <p class="lede">An original 64-bit RISC-V core for FPGAs, built in public. Here its architecture is hung as a gallery: {n} drawings, from a core that fetched one instruction at a time to one that
-    renames, reorders and retires eight, and a notebook that keeps the dated record of how it got there.</p>
+    renames, reorders and retires sixteen, and a notebook that keeps the dated record of how it got there.</p>
     <p class="cta"><a class="btn" href="gallery.html">Enter the gallery</a><a class="btn ghost" href="journal.html">Read the journal</a></p>
   </div>
   <figure class="hero-art">
     <a class="frame static" href="gallery.html#{slug(hero['version'])}" aria-label="See No. {hero['no']}, {e(hero['title'])}, in the gallery">
-      <span class="mat"><img src="{hero['art']}" width="800" height="1000" alt="Ink drawing of the 8-wide out-of-order processor, version {hero['version']}: blocks for the reorder buffer, register names, issue queue, eight execution units, caches and bus."></span>
+      <span class="mat"><img src="{hero['art']}" width="800" height="1000" alt="Ink drawing of the {hero['width']}-wide out-of-order processor, version {hero['version']}: blocks for the reorder buffer, register names, issue queue, {hero['alus']} execution units, caches and bus."></span>
     </a>
     <figcaption class="placard small-card"><span class="no">No. {hero['no']}</span> <strong>{e(hero['title'])}</strong>, version {hero['version']}
     <br><span class="medium">{medium(hero['kind'])}</span></figcaption>
@@ -1214,8 +1267,8 @@ def index_page(versions) -> str:
 </section>
 """
     return page("Atelier RV64 · Art and science over time",
-                "A gallery of generated drawings and a development journal for an original RV64 FPGA CPU, one version at a time.",
-                body, "home", body_class="home")
+                "A gallery of generated drawings and a development journal for an original RV64 research CPU aimed at FPGAs, one version at a time. Results are simulated, not hardware measurements.",
+                body, "home", "index.html", body_class="home")
 
 
 # ---------------------------------------------------------------------------

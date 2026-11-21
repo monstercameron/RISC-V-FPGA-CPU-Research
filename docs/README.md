@@ -17,7 +17,7 @@ The script reads `cpu/VERSION`, the history table in `cpu/architecture.md` (sect
 
 ## Publish
 
-GitHub Pages: Settings, Pages, "Deploy from a branch", branch `main`, folder `/docs`. `docs/.nojekyll` makes Pages serve the files as they are. Not enabled by this repository's history; that is the owner's decision.
+GitHub Pages: Settings, Pages, "Deploy from a branch", branch `main`, folder `/docs`. `docs/.nojekyll` makes Pages serve the files as they are. Enabled on 2026-11-21 (branch `main`, folder `/docs`): https://monstercameron.github.io/RISC-V-FPGA-CPU-Research/ . The site shows what is on `main` on GitHub, so it updates when `main` is pushed.
 
 ## Honesty notes
 

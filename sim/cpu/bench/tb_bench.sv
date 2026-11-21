@@ -45,7 +45,7 @@ module tb_bench #(parameter integer RAM_WORDS = 8192);
         cycles=cycles+1;
 `ifdef WIDE_TRACE
         // Out-of-order core (0.10.0): up to 8 retirements per clock in rt_*.
-        for (w=0;w<8;w=w+1) if (dut.cpu.rt_valid[w]) retirements=retirements+1;
+        for (w=0;w<$bits(dut.cpu.rt_valid);w=w+1) if (dut.cpu.rt_valid[w]) retirements=retirements+1;
 `else
         if (retired) retirements=retirements+1;
         if (retired2) retirements=retirements+1;
@@ -65,7 +65,7 @@ module tb_bench #(parameter integer RAM_WORDS = 8192);
                 $fdisplay(profile_fd,"R %016h %08h %02h %016h 0 0 0",dut.cpu.retire3_pc,
                     dut.cpu.retire3_insn,dut.cpu.retire3_rd,dut.cpu.retire3_next_pc);
 `ifdef WIDE_TRACE
-            for (w=3;w<8;w=w+1) if (dut.cpu.rt_valid[w] && profile_fd!=0 && start_cycle>=0 && stop_cycle<0)
+            for (w=3;w<$bits(dut.cpu.rt_valid);w=w+1) if (dut.cpu.rt_valid[w] && profile_fd!=0 && start_cycle>=0 && stop_cycle<0)
                 $fdisplay(profile_fd,"R %016h %08h %02h %016h 0 0 0",dut.cpu.rt_pc[64*w +: 64],
                     dut.cpu.rt_insn[32*w +: 32],dut.cpu.rt_rd[5*w +: 5],dut.cpu.rt_next[64*w +: 64]);
 `endif

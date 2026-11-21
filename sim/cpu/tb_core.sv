@@ -15,11 +15,13 @@ module tb_core #(parameter integer MEM_BYTES=16384, parameter integer ICACHE_BEA
     wire [31:0] rinsn,rinsn2,rinsn3;
     wire [4:0] rd,rd2,rd3;
 `ifdef WIDE_TRACE
-    // Wide retirement trace (out-of-order core, 0.10.0): up to 8 per clock, slot 0 oldest.
-    wire [7:0] rtv;
-    wire [511:0] rtpc,rtdata,rtnext;
-    wire [255:0] rtinsn;
-    wire [39:0] rtrd;
+    // Wide retirement trace (out-of-order core, 0.10.0): up to RWT per clock (16 since
+    // 0.12.0), slot 0 oldest.
+    localparam integer RWT = 16;
+    wire [RWT-1:0] rtv;
+    wire [RWT*64-1:0] rtpc,rtdata,rtnext;
+    wire [RWT*32-1:0] rtinsn;
+    wire [RWT*5-1:0] rtrd;
     integer q;
     // Paired store write (0.11.0).
     wire [63:0] addr2,wdata2;
@@ -28,7 +30,7 @@ module tb_core #(parameter integer MEM_BYTES=16384, parameter integer ICACHE_BEA
 `endif
     rv64_core #(.ICACHE_BEATS(ICACHE_BEATS),.DCACHE_BEATS(DCACHE_BEATS)
 `ifdef WIDE_TRACE
-        ,.PAIR_WRITES(1)
+        ,.PAIR_WRITES(1),.RW(RWT)
 `endif
         ) dut(.clk(clk),.reset(reset),.mem_valid(valid),.mem_instr(instr),
         .mem_addr(addr),.mem_wdata(wdata),.mem_wstrb(wstrb),.mem_ready(ready),
@@ -82,7 +84,7 @@ module tb_core #(parameter integer MEM_BYTES=16384, parameter integer ICACHE_BEA
 `ifdef WIDE_TRACE
             // Writes completed at the last edge belong to the store retiring now: its
             // write is logged just before its own retirement, whatever its slot.
-            for (q=0;q<8;q=q+1) if (rtv[q]) begin
+            for (q=0;q<RWT;q=q+1) if (rtv[q]) begin
                 if (q>0 && !rtv[q-1]) $fatal(1,"retirement slots not contiguous");
                 if (rtinsn[32*q +: 7]==7'h23) begin
                     // Paired writes (0.11.0) belong to two stores, in program order.

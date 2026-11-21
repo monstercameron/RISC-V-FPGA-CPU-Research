@@ -30,6 +30,8 @@
    ]
   ],
   "marks": [],
+  "width": 1,
+  "alus": 0,
   "dmips_ref": 0.2601,
   "clocks_ref": 2188.2,
   "dmips_fast": null,
@@ -73,6 +75,8 @@
   "marks": [
    "a one-beat fetch buffer"
   ],
+  "width": 1,
+  "alus": 0,
   "dmips_ref": 0.3336,
   "clocks_ref": 1706.2,
   "dmips_fast": null,
@@ -116,6 +120,8 @@
   "marks": [
    "a one-beat fetch buffer"
   ],
+  "width": 1,
+  "alus": 0,
   "dmips_ref": 0.5756,
   "clocks_ref": 988.7,
   "dmips_fast": null,
@@ -160,6 +166,8 @@
    "a one-beat fetch buffer",
    "requests issue from EXECUTE"
   ],
+  "width": 1,
+  "alus": 0,
   "dmips_ref": 0.7162,
   "clocks_ref": 794.7,
   "dmips_fast": null,
@@ -205,6 +213,8 @@
    "requests issue from EXECUTE",
    "writes acknowledged in the same clock"
   ],
+  "width": 1,
+  "alus": 0,
   "dmips_ref": 0.7919,
   "clocks_ref": 718.7,
   "dmips_fast": null,
@@ -254,6 +264,8 @@
    "requests issue from EXECUTE",
    "writes acknowledged in the same clock"
   ],
+  "width": 1,
+  "alus": 0,
   "dmips_ref": 0.9473,
   "clocks_ref": 600.8,
   "dmips_fast": null,
@@ -307,6 +319,8 @@
    "requests issue from EXECUTE",
    "writes acknowledged in the same clock"
   ],
+  "width": 1,
+  "alus": 0,
   "dmips_ref": 1.0242,
   "clocks_ref": 555.7,
   "dmips_fast": null,
@@ -364,6 +378,8 @@
    "requests issue from EXECUTE",
    "writes acknowledged in the same clock"
   ],
+  "width": 2,
+  "alus": 0,
   "dmips_ref": 1.3062,
   "clocks_ref": 435.7,
   "dmips_fast": null,
@@ -422,6 +438,8 @@
    "writes acknowledged in the same clock",
    "second slot across beats"
   ],
+  "width": 2,
+  "alus": 0,
   "dmips_ref": 1.4309,
   "clocks_ref": 397.8,
   "dmips_fast": 1.5773,
@@ -481,6 +499,8 @@
    "second slot across beats",
    "second data-cache port"
   ],
+  "width": 2,
+  "alus": 0,
   "dmips_ref": 1.464,
   "clocks_ref": 388.8,
   "dmips_fast": 1.6315,
@@ -541,6 +561,8 @@
    "second data-cache port",
    "jump in the second slot"
   ],
+  "width": 2,
+  "alus": 0,
   "dmips_ref": 1.5518,
   "clocks_ref": 366.8,
   "dmips_fast": 1.8309,
@@ -602,6 +624,8 @@
    "jump in the second slot",
    "slot-to-slot forwarding"
   ],
+  "width": 2,
+  "alus": 0,
   "dmips_ref": 1.6951,
   "clocks_ref": 335.8,
   "dmips_fast": 2.1091,
@@ -668,6 +692,8 @@
    "slot-to-slot forwarding",
    "branch folding"
   ],
+  "width": 2,
+  "alus": 0,
   "dmips_ref": 1.9777,
   "clocks_ref": 287.8,
   "dmips_fast": 2.2598,
@@ -738,6 +764,8 @@
    "slot-to-slot forwarding",
    "branch folding"
   ],
+  "width": 2,
+  "alus": 0,
   "dmips_ref": 1.9916,
   "clocks_ref": 285.8,
   "dmips_fast": 2.2964,
@@ -808,6 +836,8 @@
    "slot-to-slot forwarding",
    "branch folding"
   ],
+  "width": 3,
+  "alus": 0,
   "dmips_ref": 2.2163,
   "clocks_ref": 256.8,
   "dmips_fast": 2.6243,
@@ -879,6 +909,8 @@
    "branch folding",
    "registered multiplier"
   ],
+  "width": 3,
+  "alus": 0,
   "dmips_ref": 2.2163,
   "clocks_ref": 256.8,
   "dmips_fast": 2.6243,
@@ -934,6 +966,8 @@
    "branch folding",
    "registered multiplier"
   ],
+  "width": 1,
+  "alus": 0,
   "dmips_ref": 0.967,
   "clocks_ref": 588.6,
   "dmips_fast": 1.1744,
@@ -994,6 +1028,8 @@
    "registered multiplier",
    "fetch queue and X stage"
   ],
+  "width": 1,
+  "alus": 0,
   "dmips_ref": null,
   "clocks_ref": null,
   "dmips_fast": null,
@@ -1062,6 +1098,8 @@
    "registered multiplier",
    "fetch queue and X stage"
   ],
+  "width": 1,
+  "alus": 1,
   "dmips_ref": 0.7888,
   "clocks_ref": 721.6,
   "dmips_fast": 0.9306,
@@ -1131,6 +1169,8 @@
    "fetch queue and X stage",
    "store-to-load forwarding"
   ],
+  "width": 1,
+  "alus": 1,
   "dmips_ref": 0.9428,
   "clocks_ref": 603.7,
   "dmips_fast": 1.0684,
@@ -1200,6 +1240,8 @@
    "fetch queue and X stage",
    "store-to-load forwarding"
   ],
+  "width": 2,
+  "alus": 2,
   "dmips_ref": 1.2768,
   "clocks_ref": 445.8,
   "dmips_fast": 1.4419,
@@ -1270,6 +1312,8 @@
    "store-to-load forwarding",
    "stores finish at retirement"
   ],
+  "width": 2,
+  "alus": 2,
   "dmips_ref": 1.5648,
   "clocks_ref": 363.7,
   "dmips_fast": 1.5777,
@@ -1341,6 +1385,8 @@
    "stores finish at retirement",
    "cross-beat fetch"
   ],
+  "width": 2,
+  "alus": 2,
   "dmips_ref": 1.5778,
   "clocks_ref": 360.7,
   "dmips_fast": 1.618,
@@ -1416,6 +1462,8 @@
    "stores finish at retirement",
    "cross-beat fetch"
   ],
+  "width": 8,
+  "alus": 8,
   "dmips_ref": 4.3169,
   "clocks_ref": 131.8,
   "dmips_fast": 3.8484,
@@ -1491,6 +1539,8 @@
    "stores finish at retirement",
    "cross-beat fetch"
   ],
+  "width": 8,
+  "alus": 8,
   "dmips_ref": 4.6702,
   "clocks_ref": 121.9,
   "dmips_fast": 4.3154,
@@ -1552,7 +1602,7 @@
    ],
    [
     "Loop predictor",
-    "yes"
+    "256 entries"
    ],
    [
     "Store writes",
@@ -1574,6 +1624,8 @@
    "stores finish at retirement",
    "cross-beat fetch"
   ],
+  "width": 8,
+  "alus": 8,
   "dmips_ref": 6.1851,
   "clocks_ref": 92.0,
   "dmips_fast": 6.1162,
@@ -1635,7 +1687,7 @@
    ],
    [
     "Loop predictor",
-    "yes"
+    "256 entries"
    ],
    [
     "Store writes",
@@ -1665,10 +1717,221 @@
    "stores finish at retirement",
    "cross-beat fetch"
   ],
+  "width": 8,
+  "alus": 8,
   "dmips_ref": 6.3878,
   "clocks_ref": 89.1,
   "dmips_fast": 7.5667,
   "ref_run": "2026-11-21 11:32:21 -0500",
   "art": "art/v0.11.1.svg"
+ },
+ {
+  "no": 28,
+  "version": "0.11.2",
+  "title": "L'Alliage",
+  "caption": "A simple operation and the instruction that reads its result are welded into one; the loop predictor and the branch buffer grow fourfold to 1,024 entries, and a branch that has always gone one way is trusted to go on.",
+  "date": "2026-11-21",
+  "date_fr": "21 novembre 2026",
+  "kind": "ooo",
+  "status": "tagged",
+  "tag": "cpu-v0.11.2",
+  "register": "Out-of-order core: instruction fusion of a simple integer producer with the next instruction reading it; loop predictor and BTB 1024 entries; fixed-direction branches predicted from the loop predictor's run count. Timing probe: reference 44,550 to 38,103 clocks, fast runtime 37,609 to 31,158. New test fused_pairs",
+  "breaking": "No",
+  "units": [
+   [
+    "Organisation",
+    "Out of order (rtl/cpu/rv64_ooo.sv)"
+   ],
+   [
+    "Fetch / rename / retire",
+    "8 / 8 / 8 per clock"
+   ],
+   [
+    "Reorder buffer",
+    "128 entries"
+   ],
+   [
+    "Physical registers",
+    "160"
+   ],
+   [
+    "Issue queue",
+    "64 entries"
+   ],
+   [
+    "ALUs",
+    "8, of which 3 full (branch, multiply, divide)"
+   ],
+   [
+    "Memory ports",
+    "3 load, 2 store-address"
+   ],
+   [
+    "Branch target buffer",
+    "1,024 entries, with return stack"
+   ],
+   [
+    "Caches",
+    "128 KiB instruction, 128 KiB data, two-way data cache"
+   ],
+   [
+    "Taken transfers per fetch",
+    "2"
+   ],
+   [
+    "Loop predictor",
+    "1,024 entries"
+   ],
+   [
+    "Branch bias",
+    "a branch that has gone one way at least 4 times with no exit is predicted that way"
+   ],
+   [
+    "Instruction fusion",
+    "a simple integer producer and the next instruction reading it"
+   ],
+   [
+    "Store writes",
+    "paired on the bus"
+   ],
+   [
+    "Value prediction",
+    "loads, multiplies, divides"
+   ],
+   [
+    "Fetch predecode",
+    "direct jumps, calls, returns, backward branches"
+   ]
+  ],
+  "marks": [
+   "a one-beat fetch buffer",
+   "requests issue from EXECUTE",
+   "writes acknowledged in the same clock",
+   "second slot across beats",
+   "second data-cache port",
+   "jump in the second slot",
+   "slot-to-slot forwarding",
+   "branch folding",
+   "registered multiplier",
+   "fetch queue and X stage",
+   "store-to-load forwarding",
+   "stores finish at retirement",
+   "cross-beat fetch",
+   "instruction fusion",
+   "1,024-entry predictors",
+   "fixed-direction bias"
+  ],
+  "width": 8,
+  "alus": 8,
+  "dmips_ref": 7.4686,
+  "clocks_ref": 76.2,
+  "dmips_fast": 9.1333,
+  "ref_run": "2026-11-21 11:53:20 -0500",
+  "art": "art/v0.11.2.svg"
+ },
+ {
+  "no": 29,
+  "version": "0.12.0",
+  "title": "Les Seize Voix",
+  "caption": "Sixteen instructions a clock through fetch, rename and retirement, before a window twice the size: 256 in the reorder buffer, 288 physical registers, 128 waiting. Behind it the same eight execution units, unchanged.",
+  "date": "2026-11-21",
+  "date_fr": "21 novembre 2026",
+  "kind": "ooo",
+  "status": "in progress",
+  "tag": "cpu-v0.12.0",
+  "register": "Out-of-order core 16 instructions per clock through fetch, rename and retirement (RW default 16), 256-entry ROB, 288 physical registers, 128-entry issue queue; testbenches follow RW. Timing probe: reference 38,103 to 28,749 clocks, fast runtime 31,158 to 22,269",
+  "breaking": "Yes: the out-of-order core's RW default (trace width) changes from 8 to 16",
+  "units": [
+   [
+    "Organisation",
+    "Out of order (rtl/cpu/rv64_ooo.sv)"
+   ],
+   [
+    "Fetch / rename / retire",
+    "16 / 16 / 16 per clock"
+   ],
+   [
+    "Reorder buffer",
+    "256 entries"
+   ],
+   [
+    "Physical registers",
+    "288"
+   ],
+   [
+    "Issue queue",
+    "128 entries"
+   ],
+   [
+    "ALUs",
+    "8, of which 3 full (branch, multiply, divide)"
+   ],
+   [
+    "Memory ports",
+    "3 load, 2 store-address"
+   ],
+   [
+    "Branch target buffer",
+    "1,024 entries, with return stack"
+   ],
+   [
+    "Caches",
+    "128 KiB instruction, 128 KiB data, two-way data cache"
+   ],
+   [
+    "Taken transfers per fetch",
+    "2"
+   ],
+   [
+    "Loop predictor",
+    "1,024 entries"
+   ],
+   [
+    "Branch bias",
+    "a branch that has gone one way at least 4 times with no exit is predicted that way"
+   ],
+   [
+    "Instruction fusion",
+    "a simple integer producer and the next instruction reading it"
+   ],
+   [
+    "Store writes",
+    "paired on the bus"
+   ],
+   [
+    "Value prediction",
+    "loads, multiplies, divides"
+   ],
+   [
+    "Fetch predecode",
+    "direct jumps, calls, returns, backward branches"
+   ]
+  ],
+  "marks": [
+   "a one-beat fetch buffer",
+   "requests issue from EXECUTE",
+   "writes acknowledged in the same clock",
+   "second slot across beats",
+   "second data-cache port",
+   "jump in the second slot",
+   "slot-to-slot forwarding",
+   "branch folding",
+   "registered multiplier",
+   "fetch queue and X stage",
+   "store-to-load forwarding",
+   "stores finish at retirement",
+   "cross-beat fetch",
+   "instruction fusion",
+   "1,024-entry predictors",
+   "fixed-direction bias",
+   "sixteen lanes"
+  ],
+  "width": 16,
+  "alus": 8,
+  "dmips_ref": 9.8986,
+  "clocks_ref": 57.5,
+  "dmips_fast": 12.779,
+  "ref_run": "2026-11-21 12:14:56 -0500",
+  "art": "art/v0.12.0.svg"
  }
 ]

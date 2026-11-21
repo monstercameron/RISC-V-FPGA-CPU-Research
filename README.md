@@ -4,6 +4,8 @@
 
 Start with the [interactive CPU infographic](cpu/core-explainer.html), the [CPU quick start](cpu/README.md), and the [architecture and staged RVA23 checklist](cpu/architecture.md).
 
+Gallery and journal (generated drawings and simulated results): https://monstercameron.github.io/RISC-V-FPGA-CPU-Research/
+
 **Current evidence (architecture 0.4.0):** 111 differential program simulations passed, plus reset and synchronous-RAM checks, covering 66 `rv64im_zifencei` instructions. Compiled C produced the expected result, 36. Dhrystone runs at 1.024 DMIPS/MHz in simulation, 3.94x the first 0.1.0 core; see the [optimization history](cpu/dhrystone.md#optimization-history). This is an integer foundation, not yet RVA23, a Linux-capable CPU or a physical FPGA result. See the [verification record](cpu/verification.json).
 
 Study the core with [seven selectable C programs](cpu/programs.md), from 1 + 1 to sorting and CRC32. The connected visualizer includes C/assembly/binary views, study questions, hardware checkpoints and verified outputs.

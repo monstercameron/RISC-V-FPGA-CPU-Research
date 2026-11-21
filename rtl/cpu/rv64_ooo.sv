@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Original CPU foundation, wide out-of-order implementation (architecture 0.11.0).
+// Original CPU foundation, wide out-of-order implementation (architecture 0.12.0).
 // RV64IM + B execution, serialized FENCE.I, terminal EEI. Same module name and
 // contract as rv64_core.sv and rv64_pipe.sv, plus a wider retirement trace (rt_*);
 // build with one of the three files. Architecture version: cpu/VERSION,
@@ -10,8 +10,8 @@ module rv64_core #(
     parameter integer ICACHE_BEATS = 16384,   // 128 KiB, after the Apple M5's large L1s
     // Direct-mapped write-through data cache size in 8-byte beats; power of two, >= 2.
     parameter integer DCACHE_BEATS = 16384,   // 128 KiB
-    // Retirement (and fetch and rename) width.
-    parameter integer RW = 8,
+    // Retirement (and fetch and rename) width (8 until 0.11.2).
+    parameter integer RW = 16,
     // Paired store writes (0.11.0): 1 when the memory implements mem_*2.
     parameter integer PAIR_WRITES = 0
 ) (
@@ -70,10 +70,10 @@ module rv64_core #(
     output wire [7:0]      mem_wstrb2,
     input  wire            mem_error2
 );
-    // Wide out-of-order core (0.10.0), configured after measurements of the Apple M5
-    // performance core (useless-husband/m5-uarch): 8 instructions per clock through
-    // fetch, rename and retirement, a 128-entry reorder buffer, 160 physical registers,
-    // a 64-entry issue queue, 8 integer ALUs of which 3 also execute branches, jumps,
+    // Wide out-of-order core (0.10.0), first configured after measurements of the Apple M5
+    // performance core (useless-husband/m5-uarch); since 0.12.0 16 instructions per clock
+    // through fetch, rename and retirement (wider than the M5's measured 10 per clock), a
+    // 256-entry reorder buffer, 288 physical registers, a 128-entry issue queue, 8 integer ALUs of which 3 also execute branches, jumps,
     // system instructions and multiply/divide, 3 load ports and 2 store-address ports.
     // Multiply takes 3 clocks (pipelined), divide 7 (one unit). Loads that cannot finish
     // (cache miss, store data not ready, partial overlap with an older store) stay in
@@ -95,12 +95,12 @@ module rv64_core #(
         initial $fatal(1, "DCACHE_BEATS must be a power of two of at least 2");
     end endgenerate
     localparam integer FW = RW;          // fetch and rename width
-    localparam integer ROB_N = 128;
-    localparam integer ROB_B = 7;
+    localparam integer ROB_N = 256;
+    localparam integer ROB_B = 8;
     localparam integer PRF_N = 32 + ROB_N;
-    localparam integer P_B = 8;
-    localparam integer IQ_N = 64;
-    localparam integer IQ_B = 6;
+    localparam integer P_B = 9;
+    localparam integer IQ_N = 128;
+    localparam integer IQ_B = 7;
     localparam integer Q_N = 32;
     localparam integer Q_B = 5;
     localparam integer N_ALU = 8;        // integer ports
@@ -536,13 +536,13 @@ module rv64_core #(
     reg [63:0] rb_vpv [0:ROB_N-1];
     reg [VP_BITS-1:0] vpi;
     reg [7:0] rb_li [0:ROB_N-1];
-    reg [7:0] g_li [0:7];
+    reg [7:0] g_li [0:FW-1];
     reg [LP_BITS-1:0] g_lpi;
     reg [7:0] lp_it;
     reg [3:0] d_redirect_sp;
     reg [3:0] g_ras_pop_sp;
     reg f_stale;                    // the held fetch was issued before a redirect
-    reg [7:0] g_lpmask;
+    reg [FW-1:0] g_lpmask;
     reg g_lpu, g_lpd, lp_found, lp_d;
     reg [Q_N-1:0] q_lp_c;                      // queue entry is a conditional branch
     reg [LP_BITS-1:0] li_;
@@ -664,21 +664,21 @@ module rv64_core #(
     reg [7:0] bytes_;
     reg [ROB_B-1:0] fwd_e;
     reg fwd_hit, fwd_full;
-    reg [63:0] g_pc [0:7];
-    reg [31:0] g_insn [0:7];
-    reg [63:0] g_pred [0:7];
-    reg [7:0] g_fp, g_bh, g_fault, g_fmis;
-    reg [1:0] g_bc [0:7];
-    reg [3:0] g_n;
+    reg [63:0] g_pc [0:FW-1];
+    reg [31:0] g_insn [0:FW-1];
+    reg [63:0] g_pred [0:FW-1];
+    reg [FW-1:0] g_fp, g_bh, g_fault, g_fmis;
+    reg [1:0] g_bc [0:FW-1];
+    reg [4:0] g_n;
     reg [63:0] g_next;
     reg g_ras_push, g_ras_pop;
-    reg [3:0] g_sp [0:7];
+    reg [3:0] g_sp [0:FW-1];
     reg [2:0] g_taken;
     reg [3:0] cur_sp;
     reg [63:0] g_ras_val;
     reg [BTB_BITS-1:0] bi;
     reg [IC_INDEX-1:0] fi;
-    reg [3:0] n_ren;
+    reg [4:0] n_ren;
     reg d_redirect;
     reg [63:0] d_redirect_pc;
     reg [IQ_B-1:0] slot;
@@ -688,8 +688,8 @@ module rv64_core #(
     reg [2:0] f3_;
     reg [ROB_B:0] rb_count_new;
     reg dv_pend;
-    reg [IQ_B-1:0] fiq [0:7];   // free issue-queue slots and physical registers, lowest first
-    reg [P_B-1:0] fpl [0:7];
+    reg [IQ_B-1:0] fiq [0:FW-1];   // free issue-queue slots and physical registers, lowest first
+    reg [P_B-1:0] fpl [0:FW-1];
     integer nfi, nfp, ui, up;
     reg miss_v;
     reg [63:0] miss_beat;
@@ -697,7 +697,7 @@ module rv64_core #(
     reg ol_valid;
     reg [Q_B-1:0] qa;
 
-    initial if (RW < 3 || RW > 8) $fatal(1, "rv64_ooo.sv supports RW from 3 to 8, got %0d", RW);
+    initial if (RW < 3 || RW > 16) $fatal(1, "rv64_ooo.sv supports RW from 3 to 16, got %0d", RW);
 
     // Fused producer's value for execute port pp.
     function [63:0] fz_value(input integer pp);
@@ -1187,8 +1187,8 @@ module rv64_core #(
                         uses1_ = !(op == 7'h37 || op == 7'h17 || op == 7'h6f);
                         uses2_ = op == 7'h33 || op == 7'h3b || op == 7'h63 || op == 7'h23;
                         // Resources: ROB entry, issue-queue entry, physical register.
-                        slot_ok = ui < nfi; slot = fiq[ui % 8];
-                        fp_ok = up < nfp; fp = fpl[up % 8];
+                        slot_ok = ui < nfi; slot = fiq[ui % FW];
+                        fp_ok = up < nfp; fp = fpl[up % FW];
                         if (rb_count_new >= ROB_N || (!isfault && !slot_ok) || (writes_ && !fp_ok)) stop = 1;
                         else begin
                             // Prediction check (what D did in the earlier cores).
@@ -1295,7 +1295,7 @@ module rv64_core #(
                                     if (k < q_count && q_lp_c[qj] && q_pc[qj] == npc)
                                         lp_it = q_ld[qj] == lp_dir[g_lpi] ? (q_li[qj] == 255 ? 8'd255 : q_li[qj] + 8'd1) : 8'd0;
                                 end
-                                for (k = 0; k < 8; k = k + 1)
+                                for (k = 0; k < FW; k = k + 1)
                                     if (k < s && g_pc[k] == npc && g_insn[k][6:0] == 7'h63)
                                         lp_it = g_fp[k] == lp_dir[g_lpi] ? (g_li[k] == 255 ? 8'd255 : g_li[k] + 8'd1) : 8'd0;
                                 g_li[s] = lp_it;
