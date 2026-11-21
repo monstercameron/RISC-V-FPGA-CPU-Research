@@ -37,6 +37,15 @@ module rv64_bram_soc #(
     wire write_request=valid && wstrb!=0;
     wire ready=write_request || read_ready;
     wire error=write_request ? outside_ram : read_error;
+`ifdef WIDE_TRACE
+    // Paired store write (out-of-order core, 0.11.0): the second write applies only
+    // when the first succeeds; its error is its own range check.
+    wire [63:0] addr2,wdata2;
+    wire [7:0] wstrb2;
+    wire [INDEX_BITS-1:0] index2=addr2[INDEX_BITS+2:3];
+    wire outside2=addr2>=RAM_WORDS*64'd8;
+    wire error2=wstrb2!=0 && outside2;
+`endif
     integer lane;
     always @(posedge clk) begin
         if (reset) begin read_ready<=0; read_error<=0; rdata<=0; end
@@ -50,9 +59,18 @@ module rv64_bram_soc #(
             if (write_request && !outside_ram)
                 for (lane=0;lane<8;lane=lane+1)
                     if (wstrb[lane]) ram[index][8*lane+:8]<=wdata[8*lane+:8];
+`ifdef WIDE_TRACE
+            if (write_request && !outside_ram && wstrb2!=0 && !outside2)
+                for (lane=0;lane<8;lane=lane+1)
+                    if (wstrb2[lane]) ram[index2][8*lane+:8]<=wdata2[8*lane+:8];
+`endif
         end
     end
-    rv64_core #(.RESET_PC(RESET_PC),.ICACHE_BEATS(ICACHE_BEATS),.DCACHE_BEATS(DCACHE_BEATS)) cpu (
+    rv64_core #(.RESET_PC(RESET_PC),.ICACHE_BEATS(ICACHE_BEATS),.DCACHE_BEATS(DCACHE_BEATS)
+`ifdef WIDE_TRACE
+        ,.PAIR_WRITES(1)
+`endif
+        ) cpu (
         .clk(clk),.reset(reset),.mem_valid(valid),.mem_instr(instr),
         .mem_addr(addr),.mem_wdata(wdata),.mem_wstrb(wstrb),
         .mem_ready(ready),.mem_rdata(rdata),.mem_error(error),
@@ -63,5 +81,9 @@ module rv64_bram_soc #(
         .retire2_data(),.retire2_next_pc(),
         .retire3_valid(retire3_valid),.retire3_pc(),.retire3_insn(),.retire3_rd(),
         .retire3_data(),.retire3_next_pc()
+`ifdef WIDE_TRACE
+        ,.rt_valid(),.rt_pc(),.rt_insn(),.rt_rd(),.rt_data(),.rt_next(),
+        .mem_addr2(addr2),.mem_wdata2(wdata2),.mem_wstrb2(wstrb2),.mem_error2(error2)
+`endif
     );
 endmodule

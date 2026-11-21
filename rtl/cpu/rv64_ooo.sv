@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Original CPU foundation, wide out-of-order implementation (architecture 0.10.0).
+// Original CPU foundation, wide out-of-order implementation (architecture 0.11.0).
 // RV64IM + B execution, serialized FENCE.I, terminal EEI. Same module name and
 // contract as rv64_core.sv and rv64_pipe.sv, plus a wider retirement trace (rt_*);
 // build with one of the three files. Architecture version: cpu/VERSION,
@@ -11,7 +11,9 @@ module rv64_core #(
     // Direct-mapped write-through data cache size in 8-byte beats; power of two, >= 2.
     parameter integer DCACHE_BEATS = 16384,   // 128 KiB
     // Retirement (and fetch and rename) width.
-    parameter integer RW = 8
+    parameter integer RW = 8,
+    // Paired store writes (0.11.0): 1 when the memory implements mem_*2.
+    parameter integer PAIR_WRITES = 0
 ) (
     input  wire        clk,
     input  wire        reset,
@@ -59,7 +61,14 @@ module rv64_core #(
     output reg [RW*32-1:0] rt_insn,
     output reg [RW*5-1:0]  rt_rd,
     output reg [RW*64-1:0] rt_data,
-    output reg [RW*64-1:0] rt_next
+    output reg [RW*64-1:0] rt_next,
+    // Paired store write (0.11.0, with PAIR_WRITES): when mem_wstrb2 != 0 a store write
+    // also carries the next store; memory applies it only if the first succeeds, and
+    // mem_error2 reports it. Both complete with mem_ready.
+    output wire [63:0]     mem_addr2,
+    output wire [63:0]     mem_wdata2,
+    output wire [7:0]      mem_wstrb2,
+    input  wire            mem_error2
 );
     // Wide out-of-order core (0.10.0), configured after measurements of the Apple M5
     // performance core (useless-husband/m5-uarch): 8 instructions per clock through
@@ -75,7 +84,9 @@ module rv64_core #(
     localparam [2:0] FETCH=0, EXECUTE=1, MEMORY=2, HALTED=3;
     localparam integer IC_INDEX = $clog2(ICACHE_BEATS);
     localparam integer IC_TAG = 61 - IC_INDEX;
-    localparam integer DC_INDEX = $clog2(DCACHE_BEATS);
+    // Data cache: 2-way set associative, DCACHE_BEATS 8-byte lines in all (memory 1).
+    localparam integer DC_SETS = DCACHE_BEATS / 2;
+    localparam integer DC_INDEX = $clog2(DC_SETS);   // set-index bits, may be 0
     localparam integer DC_TAG = 61 - DC_INDEX;
     generate if (ICACHE_BEATS < 2 || (ICACHE_BEATS & (ICACHE_BEATS - 1)) != 0) begin : bad_icache_size
         initial $fatal(1, "ICACHE_BEATS must be a power of two of at least 2");
@@ -104,6 +115,9 @@ module rv64_core #(
     localparam integer BTB_TAG = 10;
     localparam integer BTB_ENTRIES = 1 << BTB_BITS;
     localparam integer RAS_N = 16;
+    localparam integer LP_BITS = 8;      // loop predictor (0.10.2): 256 entries
+    localparam integer LP_N = 1 << LP_BITS;
+    localparam integer LP_TAG = 10;
     localparam integer TAKEN_MAX = 2;    // predicted-taken transfers followed per fetch group (0.10.1)
     localparam [1:0] C_ALU = 0, C_FULL = 1, C_LD = 2, C_ST = 3;
     integer i, j, k, s, p;
@@ -444,6 +458,23 @@ module rv64_core #(
     reg [DCACHE_BEATS-1:0] dc_valid;
     reg [DC_TAG-1:0] dc_tag [0:DCACHE_BEATS-1];
     reg [63:0] dc_data [0:DCACHE_BEATS-1];
+    // Line l is way l / DC_SETS of set l % DC_SETS. A fill replaces the way that was
+    // not filled last in its set (for two ways, the older fill).
+    reg [DC_SETS-1:0] dc_last;           // way of the set's most recent fill
+    initial dc_last = 0;
+    integer dc_l;
+    function automatic integer dc_set(input [63:0] a);
+        dc_set = (a >> 3) & (DC_SETS - 1);
+    endfunction
+    function automatic integer dc_line(input [63:0] a);   // line holding a's beat, else -1
+        integer s0;
+        begin
+            s0 = dc_set(a);
+            if (dc_valid[s0] && dc_tag[s0] == a[63 -: DC_TAG]) dc_line = s0;
+            else if (dc_valid[DC_SETS + s0] && dc_tag[DC_SETS + s0] == a[63 -: DC_TAG]) dc_line = DC_SETS + s0;
+            else dc_line = -1;
+        end
+    endfunction
     // Branch target buffer and return stack.
     reg [BTB_ENTRIES-1:0] btb_valid, btb_ret;
     reg [BTB_TAG-1:0] btb_tag [0:BTB_ENTRIES-1];
@@ -459,6 +490,28 @@ module rv64_core #(
     reg [Q_N-1:0] q_fpred, q_bhit, q_fault, q_fmis;
     reg [1:0] q_bctr [0:Q_N-1];
     reg [3:0] q_rsp [0:Q_N-1];
+    // Loop predictor (0.10.2): for each conditional branch, the run length of its usual
+    // direction before one opposite outcome. An instance's iteration number comes from
+    // the youngest earlier instance still in flight, else from the retired count, so
+    // a discarded path leaves nothing to repair.
+    reg [LP_N-1:0] lp_valid, lp_dir;
+    reg [LP_TAG-1:0] lp_tag [0:LP_N-1];
+    reg [7:0] lp_trip [0:LP_N-1];
+    reg [7:0] lp_ret [0:LP_N-1];
+    reg [1:0] lp_conf [0:LP_N-1];
+    reg [Q_N-1:0] q_lp, q_ld;                  // loop predictor decided; predicted direction
+    reg [7:0] q_li [0:Q_N-1];                  // iteration number of this instance
+    reg [ROB_N-1:0] rb_lp, rb_ld;
+    reg [ROB_N-1:0] rb_fence;                  // FENCE (not FENCE.I), 0.10.2
+    reg [7:0] rb_li [0:ROB_N-1];
+    reg [7:0] g_li [0:7];
+    reg [7:0] g_lpi, lp_it;
+    reg [3:0] d_redirect_sp;
+    reg [7:0] g_lpmask;
+    reg g_lpu, g_lpd, lp_found, lp_d;
+    reg [Q_N-1:0] q_lp_c;                      // queue entry is a conditional branch
+    reg [LP_BITS-1:0] li_;
+    integer qj;
     reg [Q_B-1:0] q_head, q_tail;
     reg [Q_B:0] q_count;
     reg f_err;                  // the last fetch of f_pc's beat failed
@@ -466,6 +519,7 @@ module rv64_core #(
     // Bus: one request at a time, held until it completes.
     reg [1:0] bus_hold;         // 0 none, 1 fetch, 2 load miss, 3 store
     reg [63:0] hold_addr;
+    reg hold_pair;              // a held store write carries a second store
     reg mu_valid;               // a load miss is waiting for its beat
     reg [63:0] mu_beat;
     reg mu_errv;                // the last load miss failed, for this beat
@@ -480,15 +534,18 @@ module rv64_core #(
     reg fb_lock;                // fb_owner has not yet taken the buffered beat
     reg mu_owner_v;             // the load that asked for the miss is still in flight
     reg [63:0] mu_err_beat;
+    reg [ROB_B-1:0] mu_err_owner;   // the load the failed fill belongs to (0.10.2)
 
     // ---------------- bus request (combinational) -------------------------------
     // The retiring store: the first store in the retirement window, when everything
     // before it there is finished, will retire this clock and is no fence.i.
     reg st_cand;
     reg [ROB_B-1:0] st_idx;
+    reg st2_cand;               // a second store that can share the write
+    reg [ROB_B-1:0] st2_idx;
     reg h_exc;
     always @* begin
-        st_cand = 0; st_idx = 0;
+        st_cand = 0; st_idx = 0; st2_cand = 0; st2_idx = 0;
         h_exc = rb_count != 0 && rb_done[rb_head] && rb_exc[rb_head];
         begin : scan
             reg stop;
@@ -498,7 +555,14 @@ module rv64_core #(
                 e = rb_head + k[ROB_B-1:0];
                 if (!stop) begin
                     if (k >= rb_count || !rb_done[e] || rb_exc[e]) stop = 1;
-                    else if (rb_store[e]) begin st_cand = 1; st_idx = e; stop = 1; end
+                    // After the first store the scan looks for a second one; an instruction
+                    // between them (or the second store) in the first store's beat ends it,
+                    // since the first write would make it stale.
+                    else if (st_cand && rb_pc[e][63:3] == rb_addr[st_idx][63:3]) stop = 1;
+                    else if (rb_store[e]) begin
+                        if (!st_cand) begin st_cand = 1; st_idx = e; if (!PAIR_WRITES) stop = 1; end
+                        else begin st2_cand = 1; st2_idx = e; stop = 1; end
+                    end
                     else if (rb_fencei[e]) stop = 1;
                 end
             end
@@ -506,6 +570,8 @@ module rv64_core #(
     end
     wire [63:0] st_addr = rb_addr[st_idx];
     wire [63:0] st_wdata = prf[rb_sps2[st_idx]] << {st_addr[2:0],3'b000};
+    wire [63:0] st2_addr = rb_addr[st2_idx];
+    wire pair_now = bus_hold == 3 ? hold_pair : st2_cand;
     wire f_beat_hit = ic_valid[f_pc[3 +: IC_INDEX]] && ic_tag[f_pc[3 +: IC_INDEX]] == f_pc[63 -: IC_TAG];
     wire want_store = st_cand;
     wire want_miss = mu_valid && !h_exc;
@@ -518,6 +584,9 @@ module rv64_core #(
                     : bus_kind == 2 ? mu_beat : {st_addr[63:3],3'b000};
     assign mem_wdata = bus_kind == 3 ? st_wdata : 64'b0;
     assign mem_wstrb = bus_kind == 3 ? rb_wstrb[st_idx] : 8'b0;
+    assign mem_addr2 = bus_kind == 3 && pair_now ? {st2_addr[63:3],3'b000} : 64'b0;
+    assign mem_wdata2 = bus_kind == 3 && pair_now ? prf[rb_sps2[st2_idx]] << {st2_addr[2:0],3'b000} : 64'b0;
+    assign mem_wstrb2 = bus_kind == 3 && pair_now ? rb_wstrb[st2_idx] : 8'b0;
     wire [2:0] state = halted ? HALTED : (bus_kind >= 2) ? MEMORY : (bus_kind == 1) ? FETCH : EXECUTE;
 
     // ---------------- the clock -------------------------------------------------
@@ -525,7 +594,15 @@ module rv64_core #(
     // applied (phase 2), mirroring registered hardware.
     reg [ROB_B-1:0] e, b_rob, x_rob, o_age, a_age, ou_age, h_after;
     reg [ROB_B:0] n_ret;
+    reg st1_seen, smc;
+    reg [63:0] r_wd;
     reg ou_valid, mp_any, rflush, trap_now, stop, fired, fdone, ok, hit, full, dok;
+    reg [7:0] fwd_mask, fwd_byte_w;
+    reg fwd_wait, dc_hit_, fb_hit_;
+    reg [63:0] fwd_data;
+    integer b2;
+    reg fo_valid;                   // an older FENCE has not retired (0.10.2)
+    reg [ROB_B-1:0] fo_age;
     reg [63:0] mp_fix, rflush_pc, d_want, v, ea, tgt, npc, lw;
     reg [197:0] ef;
     reg [66:0] sa;
@@ -580,6 +657,8 @@ module rv64_core #(
     reg ol_valid;
     reg [Q_B-1:0] qa;
 
+    initial if (RW < 3 || RW > 8) $fatal(1, "rv64_ooo.sv supports RW from 3 to 8, got %0d", RW);
+
     task automatic squash_after(input [ROB_B-1:0] keep_age);  // keep entries with age <= keep_age
         reg [ROB_B-1:0] en;
         begin
@@ -597,13 +676,14 @@ module rv64_core #(
             if (dv_busy && (dv_rob - rb_head) > keep_age) dv_busy = 0;
             if (fb_lock && (fb_owner - rb_head) > keep_age) fb_lock = 0;
             if (mu_owner_v && (mu_owner - rb_head) > keep_age) mu_owner_v = 0;
+            if (mu_errv && (mu_err_owner - rb_head) > keep_age) mu_errv = 0;
         end
     endtask
 
     always @(posedge clk) begin
         if (reset) begin
             halted = 0; started = 0; f_pc = RESET_PC; f_err = 0; f_hold = 0;
-            bus_hold = 0; hold_addr = 0; mu_valid = 0; mu_beat = 0; mu_errv = 0; mu_err_beat = 0;
+            bus_hold = 0; hold_addr = 0; hold_pair = 0; mu_valid = 0; mu_beat = 0; mu_errv = 0; mu_err_beat = 0;
             fb_valid = 0; fb_beat = 0; fb_data = 0; mu_owner = 0; fb_owner = 0; fb_lock = 0; mu_owner_v = 0;
             for (i = 0; i < PRF_N; i = i + 1) prf[i] = 0;
             prf_ready = {PRF_N{1'b1}}; prf_written = {PRF_N{1'b1}};
@@ -611,7 +691,7 @@ module rv64_core #(
             for (i = 0; i < 32; i = i + 1) begin rat[i] = i; rrat[i] = i; end
             rb_live = 0; rb_done = 0; rb_head = 0; rb_tail = 0; rb_count = 0;
             iq_valid = 0; iq_issued = 0; ex_valid = 0; mq_valid = 0; dv_busy = 0;
-            ic_valid = 0; dc_valid = 0; btb_valid = 0; btb_ret = 0; ras_sp = 0;
+            ic_valid = 0; dc_valid = 0; btb_valid = 0; btb_ret = 0; ras_sp = 0; lp_valid = 0; lp_dir = 0;
             for (i = 0; i < RAS_N; i = i + 1) ras[i] = 0;
             q_head = 0; q_tail = 0; q_count = 0;
             trap_valid <= 0; trap_pc <= 0; trap_cause <= 0; trap_tval <= 0;
@@ -634,15 +714,20 @@ module rv64_core #(
                         end
                     end else if (bus_kind == 2) begin
                         mu_valid = 0;
-                        if (mem_error) begin mu_errv = 1; mu_err_beat = mu_beat; end
+                        if (mem_error) begin mu_errv = mu_owner_v; mu_err_beat = mu_beat; mu_err_owner = mu_owner; end
                         else begin
-                            dc_valid[mu_beat[3 +: DC_INDEX]] = 1; dc_tag[mu_beat[3 +: DC_INDEX]] = mu_beat[63 -: DC_TAG];
-                            dc_data[mu_beat[3 +: DC_INDEX]] = mem_rdata;
+                            dc_l = dc_line(mu_beat);
+                            if (dc_l < 0) begin
+                                dc_l = dc_set(mu_beat);
+                                if (dc_valid[dc_l] && (!dc_valid[DC_SETS + dc_l] || !dc_last[dc_l])) dc_l = DC_SETS + dc_l;
+                            end
+                            dc_valid[dc_l] = 1; dc_tag[dc_l] = mu_beat[63 -: DC_TAG]; dc_data[dc_l] = mem_rdata;
+                            dc_last[dc_set(mu_beat)] = dc_l >= DC_SETS;
                             fb_valid = 1; fb_beat = mu_beat; fb_data = mem_rdata; fb_owner = mu_owner; fb_lock = mu_owner_v;
                         end
                     end
                 end else begin
-                    bus_hold = bus_kind; hold_addr = mem_addr;
+                    bus_hold = bus_kind; hold_addr = mem_addr; hold_pair = bus_kind == 3 && pair_now;
                 end
             end
             // ================= phase 1: decisions from the state at the clock start =====
@@ -651,6 +736,11 @@ module rv64_core #(
             for (k = ROB_N-1; k >= 0; k = k - 1) begin
                 e = rb_head + k[ROB_B-1:0];
                 if (k < rb_count && rb_store[e] && !rb_sta[e]) begin ou_valid = 1; ou_age = k[ROB_B-1:0]; end
+            end
+            fo_valid = 0; fo_age = 0;
+            for (k = ROB_N-1; k >= 0; k = k - 1) begin
+                e = rb_head + k[ROB_B-1:0];
+                if (k < rb_count && rb_fence[e]) begin fo_valid = 1; fo_age = k[ROB_B-1:0]; end
             end
             dv_pend = 0;
             for (p = 0; p < N_BR; p = p + 1)
@@ -673,7 +763,7 @@ module rv64_core #(
                         ok = ok && prf_ready[iq_ps2[k]] &&
                              (iq_cls[k] == C_ALU || (p < N_BR && iq_cls[k] == C_FULL &&
                               !(iq_mdu[k] && iq_insn[k][14] && (dv_busy || dv_pend || divtaken))));
-                    end else if (p < N_ALU + N_LD) ok = ok && iq_cls[k] == C_LD && (!ou_valid || a_age < ou_age);
+                    end else if (p < N_ALU + N_LD) ok = ok && iq_cls[k] == C_LD && (!ou_valid || a_age < ou_age) && (!fo_valid || a_age < fo_age);
                     else ok = ok && iq_cls[k] == C_ST;
                     if (ok && (!bestv || a_age < best_age)) begin bestv = 1; best = k[IQ_B-1:0]; best_age = a_age; end
                 end
@@ -684,7 +774,7 @@ module rv64_core #(
             end
 
             // ---- retirement window
-            n_ret = 0; rflush = 0; trap_now = 0; stop = 0; rflush_pc = 0;
+            n_ret = 0; rflush = 0; trap_now = 0; stop = 0; rflush_pc = 0; st1_seen = 0; smc = 0;
             for (s = 0; s < RW; s = s + 1) begin
                 e = rb_head + s[ROB_B-1:0];
                 if (!stop) begin
@@ -696,12 +786,21 @@ module rv64_core #(
                         end
                         stop = 1;
                     end else if (rb_store[e]) begin
-                        if (bus_kind == 3 && mem_ready) begin
-                            if (mem_error) begin
+                        // The first store retires with its write; a paired second store
+                        // retires with the same write unless its half failed.
+                        if (!st1_seen) begin
+                            st1_seen = 1;
+                            if (bus_kind == 3 && mem_ready) begin
+                                if (mem_error) begin
+                                    trap_now = 1; trap_pc <= rb_pc[e]; trap_cause <= 7; trap_tval <= rb_addr[e]; stop = 1;
+                                end else begin n_ret = s + 1; if (!pair_now) stop = 1; end
+                            end else stop = 1;
+                        end else begin
+                            if (mem_error2) begin
                                 trap_now = 1; trap_pc <= rb_pc[e]; trap_cause <= 7; trap_tval <= rb_addr[e];
                             end else n_ret = s + 1;
+                            stop = 1;
                         end
-                        stop = 1;
                     end else begin
                         n_ret = s + 1;
                         if (rb_fencei[e]) begin rflush = 1; rflush_pc = rb_next[e]; stop = 1; end
@@ -730,6 +829,22 @@ module rv64_core #(
                     retire3_rd <= rb_writes[e] ? rb_rd[e] : 5'd0; retire3_data <= v; retire3_next_pc <= rb_next[e];
                 end
                 if (rb_writes[e]) begin rrat[rb_rd[e]] = rb_pdst[e]; free_mask[rb_opdst[e]] = 1; end
+                if (rb_ctl[e] && rb_insn[e][6:0] == 7'h63) begin
+                    li_ = rb_pc[e][2 +: LP_BITS];
+                    if (!lp_valid[li_] || lp_tag[li_] != rb_pc[e][2+LP_BITS +: LP_TAG]) begin
+                        lp_valid[li_] = 1; lp_tag[li_] = rb_pc[e][2+LP_BITS +: LP_TAG]; lp_dir[li_] = rb_taken[e];
+                        lp_ret[li_] = 1; lp_trip[li_] = 0; lp_conf[li_] = 0;
+                    end else if (rb_taken[e] == lp_dir[li_]) begin
+                        if (lp_ret[li_] != 255) lp_ret[li_] = lp_ret[li_] + 1;
+                        if (lp_ret[li_] > lp_trip[li_]) lp_conf[li_] = 0;
+                    end else if (lp_ret[li_] == 0) begin
+                        lp_dir[li_] = rb_taken[e]; lp_ret[li_] = 1; lp_trip[li_] = 0; lp_conf[li_] = 0;
+                    end else begin
+                        if (lp_ret[li_] == lp_trip[li_]) begin if (lp_conf[li_] != 3) lp_conf[li_] = lp_conf[li_] + 1; end
+                        else begin lp_trip[li_] = lp_ret[li_]; lp_conf[li_] = 0; end
+                        lp_ret[li_] = 0;
+                    end
+                end
                 if (rb_ctl[e]) begin
                     bi = rb_pc[e][2 +: BTB_BITS];
                     if (rb_taken[e]) begin
@@ -742,13 +857,14 @@ module rv64_core #(
                 end
                 if (rb_store[e]) begin
                     // Write-through: update a cached line; drop a cached instruction beat.
+                    r_wd = prf[rb_sps2[e]] << {rb_addr[e][2:0],3'b000};
                     fi = rb_addr[e][3 +: IC_INDEX];
-                    if (dc_valid[rb_addr[e][3 +: DC_INDEX]] && dc_tag[rb_addr[e][3 +: DC_INDEX]] == rb_addr[e][63 -: DC_TAG])
+                    if (dc_line(rb_addr[e]) >= 0)
                         for (k = 0; k < 8; k = k + 1)
-                            if (rb_wstrb[e][k]) dc_data[rb_addr[e][3 +: DC_INDEX]][8*k +: 8] = st_wdata[8*k +: 8];
+                            if (rb_wstrb[e][k]) dc_data[dc_line(rb_addr[e])][8*k +: 8] = r_wd[8*k +: 8];
                     if (ic_valid[fi] && ic_tag[fi] == rb_addr[e][63 -: IC_TAG]) ic_valid[fi] = 0;
                     if (fb_valid && fb_beat[63:3] == rb_addr[e][63:3])
-                        for (k = 0; k < 8; k = k + 1) if (rb_wstrb[e][k]) fb_data[8*k +: 8] = st_wdata[8*k +: 8];
+                        for (k = 0; k < 8; k = k + 1) if (rb_wstrb[e][k]) fb_data[8*k +: 8] = r_wd[8*k +: 8];
                     // Younger instructions already fetched from this beat are refetched.
                     hit = 0;
                     for (k = 0; k < ROB_N; k = k + 1)
@@ -759,11 +875,14 @@ module rv64_core #(
                     end
                     for (k = 0; k <= FW/2; k = k + 1)
                         if (f_pc[63:3] + k == rb_addr[e][63:3]) hit = 1;
-                    if (hit) begin rflush = 1; rflush_pc = rb_next[e]; end
+                    if (hit) smc = 1;
                 end
                 if (rb_fencei[e]) ic_valid = 0;
                 rb_live[e] = 0; rb_done[e] = 0;
             end
+            // A retired store wrote the beat of a younger fetched instruction: refetch
+            // after the last instruction retired this clock.
+            if (smc) begin rflush = 1; rflush_pc = rb_next[rb_head + n_ret[ROB_B-1:0] - 1'b1]; end
             if (trap_now) begin
                 trap_valid <= 1; halted = 1;
             end else begin
@@ -797,12 +916,12 @@ module rv64_core #(
                                 reg placed;
                                 placed = 0;
                                 for (k = 0; k < MQ_N; k = k + 1) if (!mq_valid[k] && !placed) begin
-                                    placed = 1; mq_valid[k] = 1; mq_cnt[k] = MUL_LAT - 3; mq_rob[k] = x_rob;
+                                    placed = 1; mq_valid[k] = 1; mq_cnt[k] = MUL_LAT - 2; mq_rob[k] = x_rob;
                                     mq_pdst[k] = ex_pdst[p]; mq_writes[k] = ex_writes[p];
                                     mq_val[k] = mul_value(f3_, op == 7'h3b, prf[ex_ps1[p]], prf[ex_ps2[p]]);
                                 end
                             end else begin
-                                dv_busy = 1; dv_cnt = DIV_LAT - 3; dv_rob = x_rob; dv_pdst = ex_pdst[p]; dv_writes = ex_writes[p];
+                                dv_busy = 1; dv_cnt = DIV_LAT - 2; dv_rob = x_rob; dv_pdst = ex_pdst[p]; dv_writes = ex_writes[p];
                                 dv_val = div_value(f3_, op == 7'h3b, prf[ex_ps1[p]], prf[ex_ps2[p]]);
                             end
                         end else begin
@@ -827,29 +946,46 @@ module rv64_core #(
                         rb_done[x_rob] = 1; rb_exc[x_rob] = 1;
                         rb_cause[x_rob] = f3_ == 3'd7 ? 64'd2 : 64'd4; rb_tval[x_rob] = f3_ == 3'd7 ? {32'b0, ex_insn[p]} : ea;
                         iq_valid[ex_iq[p]] = 0;
-                    end else if (mu_errv && mu_err_beat[63:3] == ea[63:3]) begin
+                    end else if (mu_errv && x_rob == mu_err_owner && mu_err_beat[63:3] == ea[63:3]) begin
                         if (fb_lock && x_rob == fb_owner) fb_lock = 0;
                         rb_done[x_rob] = 1; rb_exc[x_rob] = 1; rb_cause[x_rob] = 5; rb_tval[x_rob] = ea;
                         iq_valid[ex_iq[p]] = 0;
                     end else begin
-                        fwd_hit = 0; fwd_e = 0;
+                        // Each byte comes from the youngest older store that writes it, the
+                        // rest from the cache or fill buffer (0.10.2). The beat must have been
+                        // read successfully (a cache or fill-buffer hit) even when stores cover
+                        // every byte, so forwarding cannot hide a read access fault; a byte
+                        // whose store data is not yet written makes the load replay.
+                        fwd_mask = 0; fwd_byte_w = 0; fwd_wait = 0; fwd_data = 0;
                         a_age = x_rob - rb_head;
                         for (k = 0; k < ROB_N; k = k + 1) begin
                             e = rb_head + k[ROB_B-1:0];
                             if (k[ROB_B-1:0] < a_age && rb_live[e] && rb_store[e] && rb_sta[e] &&
-                                rb_addr[e][63:3] == ea[63:3] && (rb_wstrb[e] & bytes_) != 0) begin fwd_hit = 1; fwd_e = e; end
-                        end
-                        if (fwd_hit) begin
-                            if ((rb_wstrb[fwd_e] & bytes_) == bytes_ && prf_written[rb_sps2[fwd_e]]) begin
-                                v = load_align(prf[rb_sps2[fwd_e]] << {rb_addr[fwd_e][2:0],3'b000}, ea[2:0], f3_);
-                                fdone = 1;
+                                rb_addr[e][63:3] == ea[63:3] && (rb_wstrb[e] & bytes_) != 0) begin
+                                lw = prf[rb_sps2[e]] << {rb_addr[e][2:0],3'b000};
+                                for (b2 = 0; b2 < 8; b2 = b2 + 1) if (rb_wstrb[e][b2] && bytes_[b2]) begin
+                                    fwd_mask[b2] = 1; fwd_byte_w[b2] = prf_written[rb_sps2[e]]; fwd_data[8*b2 +: 8] = lw[8*b2 +: 8];
+                                end
                             end
-                        end else if (dc_valid[ea[3 +: DC_INDEX]] && dc_tag[ea[3 +: DC_INDEX]] == ea[63 -: DC_TAG]) begin
-                            v = load_align(dc_data[ea[3 +: DC_INDEX]], ea[2:0], f3_); fdone = 1;
-                        end else if (fb_valid && fb_beat[63:3] == ea[63:3]) begin
-                            v = load_align(fb_data, ea[2:0], f3_); fdone = 1;
-                        end else if (ol_valid && a_age == ol_age) begin
-                            miss_v = 1; miss_beat = {ea[63:3],3'b000}; miss_age = a_age; miss_owner = x_rob;
+                        end
+                        for (b2 = 0; b2 < 8; b2 = b2 + 1) if (fwd_mask[b2] && !fwd_byte_w[b2]) fwd_wait = 1;
+                        dc_hit_ = dc_line(ea) >= 0;
+                        fb_hit_ = fb_valid && fb_beat[63:3] == ea[63:3];
+                        if (fwd_wait) begin end
+                        else if (dc_hit_ || fb_hit_) begin
+                            lw = dc_hit_ ? dc_data[dc_line(ea)] : fb_data;
+                            for (b2 = 0; b2 < 8; b2 = b2 + 1) if (fwd_mask[b2]) lw[8*b2 +: 8] = fwd_data[8*b2 +: 8];
+                            v = load_align(lw, ea[2:0], f3_); fdone = 1;
+                        end else begin
+                            // Stores cover every byte but the beat has not been read: the value
+                            // goes to consumers now, and the load finishes after the read.
+                            if (fwd_mask == bytes_ && ex_writes[p]) begin
+                                prf[ex_pdst[p]] = load_align(fwd_data, ea[2:0], f3_);
+                                prf_written[ex_pdst[p]] = 1; prf_ready[ex_pdst[p]] = 1;
+                            end
+                            if (ol_valid && a_age == ol_age) begin
+                                miss_v = 1; miss_beat = {ea[63:3],3'b000}; miss_age = a_age; miss_owner = x_rob;
+                            end
                         end
                         if (fdone && fb_lock && x_rob == fb_owner) fb_lock = 0;
                         if (fdone) begin
@@ -913,10 +1049,11 @@ module rv64_core #(
                 free_mask = {PRF_N{1'b1}};
                 for (i = 0; i < 32; i = i + 1) free_mask[rrat[i]] = 0;
                 prf_ready = {PRF_N{1'b1}}; prf_written = {PRF_N{1'b1}};
-                ex_valid = 0; iq_valid = 0; iq_issued = 0; fb_lock = 0; mu_owner_v = 0;
+                ex_valid = 0; iq_valid = 0; iq_issued = 0; fb_lock = 0; mu_owner_v = 0; mu_errv = 0;
                 rb_live = 0; rb_tail = h_after; rb_count_new = 0;
                 q_head = 0; q_tail = 0; q_count = 0;
                 f_pc = rflush_pc; f_err = 0; f_hold = 0;
+                ras_sp = rb_rsp[rb_head + n_ret[ROB_B-1:0] - 1'b1];
             end else if (mp_any) begin
                 squash_after(o_age);
                 for (i = 0; i < 32; i = i + 1) rat[i] = snap[b_rob][i];
@@ -953,7 +1090,7 @@ module rv64_core #(
                             // Prediction check (what D did in the earlier cores).
                             tgt = wpc + (op == 7'h6f ? {{43{wi[31]}},wi[31],wi[19:12],wi[20],wi[30:21],1'b0}
                                                      : {{51{wi[31]}},wi[31],wi[7],wi[30:25],wi[11:8],1'b0});
-                            tkp = (op == 7'h6f || (op == 7'h63 && (q_fpred[j] || wi[31]))) && tgt[1:0] == 0 && !isfault;
+                            tkp = (op == 7'h6f || (op == 7'h63 && (q_lp[j] ? q_ld[j] : (q_fpred[j] || wi[31])))) && tgt[1:0] == 0 && !isfault;
                             npc = wpc + 64'd4;
                             d_want = isfault ? q_pred[j] : op == 7'h67 ? q_pred[j] : tkp ? tgt : npc;
                             ps1_ = (uses1_ && rs1_ != 0) ? rat[rs1_] : 0;
@@ -967,6 +1104,8 @@ module rv64_core #(
                             rb_store[e] = op == 7'h23 && !isfault; rb_load[e] = op == 7'h03 && !isfault;
                             rb_fencei[e] = 0; rb_ctl[e] = 0; rb_sta[e] = 0; rb_taken[e] = 0; rb_ret[e] = 0;
                             rb_bhit[e] = q_bhit[j]; rb_bctr[e] = q_bctr[j]; rb_rsp[e] = q_rsp[j];
+                            rb_li[e] = q_li[j]; rb_lp[e] = op == 7'h63 && !isfault; rb_ld[e] = tkp;
+                            rb_fence[e] = op == 7'h0f && f3_ == 3'd0 && !isfault;
                             rb_opdst[e] = rat[rd_]; rb_pdst[e] = writes_ ? fp : 0;
                             if (writes_) begin
                                 rat[rd_] = fp; free_mask[fp] = 0; prf_ready[fp] = 0; prf_written[fp] = 0;
@@ -982,14 +1121,14 @@ module rv64_core #(
                             rb_tail = rb_tail + 1; rb_count_new = rb_count_new + 1; n_ren = n_ren + 1;
                             if (!isfault) ui = ui + 1;
                             if (writes_) up = up + 1;
-                            if (d_want != q_pred[j]) begin d_redirect = 1; d_redirect_pc = d_want; stop = 1; end
+                            if (d_want != q_pred[j]) begin d_redirect = 1; d_redirect_pc = d_want; d_redirect_sp = q_rsp[j]; stop = 1; end
                         end
                     end
                 end
                 q_head = q_head + n_ren; q_count = q_count - n_ren;
                 if (d_redirect) begin
                     q_head = 0; q_tail = 0; q_count = 0;
-                    f_pc = d_redirect_pc; f_err = 0; f_hold = 0;
+                    f_pc = d_redirect_pc; f_err = 0; f_hold = 0; ras_sp = d_redirect_sp;
                 end
             end
             rb_count = rb_count_new;
@@ -1020,6 +1159,37 @@ module rv64_core #(
                         fdone = btb_valid[bi] && btb_tag[bi] == npc[2+BTB_BITS +: BTB_TAG];
                         tkp = fdone && (btb_ret[bi] || btb_ctr[bi][1]);
                         tgt = btb_ret[bi] ? ras[cur_sp] : {npc[63:32], btb_target[bi], 2'b00};
+                        g_lpu = 0; g_li[s] = 0;
+                        if (op == 7'h63) begin
+                            g_lpi = npc[2 +: LP_BITS];
+                            if (lp_valid[g_lpi] && lp_tag[g_lpi] == npc[2+LP_BITS +: LP_TAG]) begin
+                                // Iteration number: after the youngest earlier instance in flight.
+                                lp_found = 0; lp_it = lp_ret[g_lpi];
+                                for (k = 0; k < ROB_N; k = k + 1) begin
+                                    e = rb_head + k[ROB_B-1:0];
+                                    if (k < rb_count && rb_lp[e] && rb_pc[e] == npc) begin
+                                        lp_d = (rb_done[e] && rb_ctl[e]) ? rb_taken[e] : rb_ld[e];
+                                        lp_it = lp_d == lp_dir[g_lpi] ? (rb_li[e] == 255 ? 8'd255 : rb_li[e] + 8'd1) : 8'd0;
+                                    end
+                                end
+                                for (k = 0; k < Q_N; k = k + 1) begin
+                                    qj = (q_head + k) % Q_N;
+                                    if (k < q_count && q_lp_c[qj] && q_pc[qj] == npc)
+                                        lp_it = q_ld[qj] == lp_dir[g_lpi] ? (q_li[qj] == 255 ? 8'd255 : q_li[qj] + 8'd1) : 8'd0;
+                                end
+                                for (k = 0; k < 8; k = k + 1)
+                                    if (k < s && g_pc[k] == npc && g_insn[k][6:0] == 7'h63)
+                                        lp_it = g_fp[k] == lp_dir[g_lpi] ? (g_li[k] == 255 ? 8'd255 : g_li[k] + 8'd1) : 8'd0;
+                                g_li[s] = lp_it;
+                                if (lp_conf[g_lpi] >= 2 && lp_trip[g_lpi] != 0) begin
+                                    g_lpu = 1;
+                                    g_lpd = lp_it < lp_trip[g_lpi] ? lp_dir[g_lpi] : !lp_dir[g_lpi];
+                                    tkp = g_lpd;
+                                    tgt = npc + {{51{wi[31]}},wi[31],wi[7],wi[30:25],wi[11:8],1'b0};
+                                end
+                            end
+                        end
+                        g_lpmask[s] = g_lpu;
                         g_pc[s] = npc; g_insn[s] = wi; g_pred[s] = tkp ? tgt : npc + 64'd4;
                         g_fp[s] = tkp; g_bh[s] = fdone; g_bc[s] = btb_ctr[bi]; g_fault[s] = 0; g_fmis[s] = 0;
                         g_n = s + 1;
@@ -1040,6 +1210,7 @@ module rv64_core #(
                         q_pc[j] = g_pc[s]; q_insn[j] = g_insn[s]; q_pred[j] = g_pred[s]; q_fpred[j] = g_fp[s];
                         q_bhit[j] = g_bh[s]; q_bctr[j] = g_bc[s]; q_fault[j] = g_fault[s]; q_fmis[j] = g_fmis[s];
                         q_rsp[j] = g_sp[s];
+                        q_lp[j] = g_lpmask[s]; q_ld[j] = g_fp[s]; q_li[j] = g_li[s]; q_lp_c[j] = g_insn[s][6:0] == 7'h63 && !g_fault[s];
                     end
                     q_tail = q_tail + g_n; q_count = q_count + g_n;
                     if (g_ras_push) begin ras_sp = ras_sp + 1; ras[ras_sp] = g_ras_val; end
@@ -1050,6 +1221,9 @@ module rv64_core #(
             end
             end
 
+        end else begin
+            // Halted (0.10.2): the retirements of the halting clock pulse once.
+            retire_valid <= 0; retire2_valid <= 0; retire3_valid <= 0; rt_valid <= 0;
         end
     end
 endmodule

@@ -35,6 +35,9 @@ module tb_bench #(parameter integer RAM_WORDS = 8192);
 
     // Sampled between edges: a marker store has updated RAM and not yet retired,
     // so each region includes the start-marker store and excludes the stop one.
+    // The out-of-order core (WIDE_TRACE) retires a store on the edge its write
+    // completes, so there the region and the profile exclude the start-marker store
+    // and include the stop one; the count is the same (found by the Codex review).
     always @(negedge clk) if (!reset) begin
         cycles=cycles+1;
 `ifdef WIDE_TRACE

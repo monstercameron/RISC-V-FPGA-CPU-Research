@@ -387,28 +387,34 @@ def command(args):
 
 
 def main():
+    global OUT
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--image', type=Path, help='Optional raw firmware binary for an additional differential test')
     parser.add_argument('--icache-beats', type=int, help='Override the core instruction-cache size (power of two >= 2)')
     parser.add_argument('--dcache-beats', type=int, help='Override the core data-cache size (power of two >= 2)')
     parser.add_argument('--core', choices=sorted(CORES), default='multicycle', help='Core implementation to test')
+    parser.add_argument('--core-source', type=Path,
+                        help="Test this file instead of the core's file in rtl/cpu (a candidate kept elsewhere)")
+    parser.add_argument('--out-dir', type=Path,
+                        help='Build and report folder (default build/cpu), so candidates can be tested side by side')
     args = parser.parse_args()
+    if args.out_dir: OUT = args.out_dir.resolve()
     cache = [f'-Ptb_core.ICACHE_BEATS={args.icache_beats}'] if args.icache_beats else []
     cache += [f'-Ptb_core.DCACHE_BEATS={args.dcache_beats}'] if args.dcache_beats else []
     if not shutil.which('iverilog') or not shutil.which('vvp'):
         parser.error('iverilog and vvp are required; use the documented Ubuntu/WSL launcher')
     OUT.mkdir(parents=True, exist_ok=True)
     executable = OUT / 'cpu.vvp'
-    core_src = ROOT / CORES[args.core]
+    core_src = args.core_source.resolve() if args.core_source else ROOT / CORES[args.core]
     wide = ['-DWIDE_TRACE'] if args.core == 'ooo' else []  # 0.10.0: up to 8 retirements per clock
     command(['iverilog', '-g2012', '-Wall', *wide, '-s', 'tb_core', *cache, '-o', executable,
              core_src, ROOT / 'sim/cpu/tb_core.sv'])
-    command(['iverilog', '-g2012', '-Wall', '-s', 'rv64_bram_soc', '-o', OUT/'soc.vvp',
+    command(['iverilog', '-g2012', '-Wall', *wide, '-s', 'rv64_bram_soc', '-o', OUT/'soc.vvp',
              core_src, ROOT/'rtl/cpu/rv64_bram_soc.sv'])
     command(['iverilog','-g2012','-Wall','-s','tb_reset','-o',OUT/'reset.vvp',
              core_src,ROOT/'sim/cpu/tb_reset.sv'])
     reset_result=command(['vvp',OUT/'reset.vvp']).strip()
-    command(['iverilog','-g2012','-Wall','-s','tb_soc','-o',OUT/'bram-soc.vvp',
+    command(['iverilog','-g2012','-Wall',*wide,'-s','tb_soc','-o',OUT/'bram-soc.vvp',
              core_src,ROOT/'rtl/cpu/rv64_bram_soc.sv',ROOT/'sim/cpu/tb_soc.sv'])
     smoke=image_for([0x00500093,0x00700113,0x002081b3,0x00003237,0x00323023,0x00100073])
     smoke_hex=OUT/'soc-smoke.hex'
@@ -456,7 +462,7 @@ def main():
         for outcome in ('taken','not_taken'):
             if branch_name+':'+outcome not in coverage: raise AssertionError('Missing branch outcome')
     report={'status':'PASS','cases':len(workloads),'runs':len(records),'instruction_names_covered':len(required),
-            'core':args.core,'core_source':CORES[args.core],
+            'core':args.core,'core_source':str(args.core_source) if args.core_source else CORES[args.core],
             'icache_beats':args.icache_beats or 'RTL default','dcache_beats':args.dcache_beats or 'RTL default',
             'reset_test':reset_result,'bram_soc_tests':soc_results,
             'coverage':sorted(coverage),'validation_scope':'local directed/random differential simulation; no official ISA certification or synthesis',

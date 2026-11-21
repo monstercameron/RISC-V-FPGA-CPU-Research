@@ -21,8 +21,16 @@ module tb_core #(parameter integer MEM_BYTES=16384, parameter integer ICACHE_BEA
     wire [255:0] rtinsn;
     wire [39:0] rtrd;
     integer q;
+    // Paired store write (0.11.0).
+    wire [63:0] addr2,wdata2;
+    wire [7:0] wstrb2;
+    reg error2=0;
 `endif
-    rv64_core #(.ICACHE_BEATS(ICACHE_BEATS),.DCACHE_BEATS(DCACHE_BEATS)) dut(.clk(clk),.reset(reset),.mem_valid(valid),.mem_instr(instr),
+    rv64_core #(.ICACHE_BEATS(ICACHE_BEATS),.DCACHE_BEATS(DCACHE_BEATS)
+`ifdef WIDE_TRACE
+        ,.PAIR_WRITES(1)
+`endif
+        ) dut(.clk(clk),.reset(reset),.mem_valid(valid),.mem_instr(instr),
         .mem_addr(addr),.mem_wdata(wdata),.mem_wstrb(wstrb),.mem_ready(ready),
         .mem_rdata(rdata),.mem_error(error),.trap_valid(trapped),.trap_pc(tpc),
         .trap_cause(cause),.trap_tval(tval),.retire_valid(retired),.retire_pc(rpc),
@@ -32,18 +40,24 @@ module tb_core #(parameter integer MEM_BYTES=16384, parameter integer ICACHE_BEA
         .retire3_valid(retired3),.retire3_pc(rpc3),.retire3_insn(rinsn3),.retire3_rd(rd3),
         .retire3_data(rval3),.retire3_next_pc(npc3)
 `ifdef WIDE_TRACE
-        ,.rt_valid(rtv),.rt_pc(rtpc),.rt_insn(rtinsn),.rt_rd(rtrd),.rt_data(rtdata),.rt_next(rtnext)
+        ,.rt_valid(rtv),.rt_pc(rtpc),.rt_insn(rtinsn),.rt_rd(rtrd),.rt_data(rtdata),.rt_next(rtnext),
+        .mem_addr2(addr2),.mem_wdata2(wdata2),.mem_wstrb2(wstrb2),.mem_error2(error2)
 `endif
         );
 
-    string image_path,trace_path,pending_write="";
+    string image_path,trace_path,pending_write="",pending_write2="";
     integer fd,i,lane,cycles=0,retire_count=0,slot2_count=0,slot3_count=0,slot3_branches=0;
     integer max_stall=0,delay_left=0,seed_arg=1,fault_kind=0,max_cycles=200000;
     reg [31:0] rng;
     reg [63:0] fault_addr=64'hffffffffffffffff;
     reg active=0,held=0;
+`ifdef WIDE_TRACE
+    reg [272:0] held_request;
+    wire [272:0] request={instr,addr,wdata,wstrb,addr2,wdata2,wstrb2};
+`else
     reg [136:0] held_request;
     wire [136:0] request={instr,addr,wdata,wstrb};
+`endif
     initial begin
         if (!$value$plusargs("image=%s",image_path)) $fatal(1,"missing image");
         if (!$value$plusargs("trace=%s",trace_path)) $fatal(1,"missing trace");
@@ -70,8 +84,10 @@ module tb_core #(parameter integer MEM_BYTES=16384, parameter integer ICACHE_BEA
             // write is logged just before its own retirement, whatever its slot.
             for (q=0;q<8;q=q+1) if (rtv[q]) begin
                 if (q>0 && !rtv[q-1]) $fatal(1,"retirement slots not contiguous");
-                if (pending_write!="" && rtinsn[32*q +: 7]==7'h23) begin
-                    $fdisplay(fd,"%s",pending_write); pending_write="";
+                if (rtinsn[32*q +: 7]==7'h23) begin
+                    // Paired writes (0.11.0) belong to two stores, in program order.
+                    if (pending_write!="") begin $fdisplay(fd,"%s",pending_write); pending_write=""; end
+                    else if (pending_write2!="") begin $fdisplay(fd,"%s",pending_write2); pending_write2=""; end
                 end
                 $fdisplay(fd,"R %016h %08h %02h %016h %016h",rtpc[64*q +: 64],rtinsn[32*q +: 32],
                           rtrd[5*q +: 5],rtdata[64*q +: 64],rtnext[64*q +: 64]);
@@ -79,7 +95,9 @@ module tb_core #(parameter integer MEM_BYTES=16384, parameter integer ICACHE_BEA
                 if (q==1) slot2_count=slot2_count+1;
                 if (q==2) slot3_count=slot3_count+1;
             end
-            if (pending_write!="" && !trapped) begin $fdisplay(fd,"%s",pending_write); pending_write=""; end
+            // A successful write belongs to a store retiring on the same edge (0.10.2):
+            // a write left over here was not followed by its store's retirement.
+            if (pending_write!="" || pending_write2!="") $fatal(1,"store write without its store retiring on the same clock");
 `else
             // Writes completed at the last edge belong to a store retiring now. A store
             // on the first slot (or alone) logs its write before its retirement; a
@@ -107,6 +125,7 @@ module tb_core #(parameter integer MEM_BYTES=16384, parameter integer ICACHE_BEA
             if (trapped) begin
                 if (valid) $fatal(1,"request after terminal trap");
                 if (pending_write!="") $fdisplay(fd,"%s",pending_write);
+                if (pending_write2!="") $fdisplay(fd,"%s",pending_write2);
                 $fdisplay(fd,"T %016h %016h %016h",tpc,cause,tval);
                 $fclose(fd);
                 $display("DONE retirements=%0d cycles=%0d slot2=%0d slot3=%0d slot3_branches=%0d",
@@ -125,6 +144,9 @@ module tb_core #(parameter integer MEM_BYTES=16384, parameter integer ICACHE_BEA
                 error=addr>=MEM_BYTES || (addr==fault_addr &&
                     ((fault_kind==1 && instr) || (fault_kind==2 && !instr && wstrb==0) ||
                      (fault_kind==3 && !instr && wstrb!=0)));
+`ifdef WIDE_TRACE
+                error2=wstrb2!=0 && (addr2>=MEM_BYTES || (addr2==fault_addr && fault_kind==3));
+`endif
                 rdata=0;
                 if (!error)
                     for (lane=0;lane<8;lane=lane+1) rdata[8*lane+:8]=memory[addr+lane];
@@ -145,6 +167,13 @@ module tb_core #(parameter integer MEM_BYTES=16384, parameter integer ICACHE_BEA
                     $sformat(pending_write,"W %016h %016h %02h",addr,wdata,wstrb);
                     for (lane=0;lane<8;lane=lane+1)
                         if (wstrb[lane]) memory[addr+lane]=wdata[8*lane+:8];
+`ifdef WIDE_TRACE
+                    if (wstrb2!=0 && !error2) begin
+                        $sformat(pending_write2,"W %016h %016h %02h",addr2,wdata2,wstrb2);
+                        for (lane=0;lane<8;lane=lane+1)
+                            if (wstrb2[lane]) memory[addr2+lane]=wdata2[8*lane+:8];
+                    end
+`endif
                 end
             end
         end else held=0;
