@@ -521,6 +521,112 @@ def cases():
          i_type(0x13, 2, 0, 2, 8),                                    # 56: sp += 8
          i_type(0x13, 20, 0, 20, 1), i_type(0x67, 0, 0, 1, 0)]        # 60: x20 += 1; 64: ret
     yield 'fetch_deep_recursion', p, 0, MASK
+    # Memory hand-off 6 (paste into cases() of sim/cpu/test_cpu.py; uses its prefix/i_type/store/
+    # branch/r_type helpers). x30 = 0x2000, x2 = 1 after the prefix.
+    #
+    # A store before a load and a store behind it, in a byte loop whose load value is trained
+    # by value prediction (zero) and then changes. With small caches the store-write scan used
+    # to choose the store behind the value-mispredicted load, which retirement then discarded
+    # ("store write without its store retiring" / "unstable stalled request" with bus waits,
+    # 0.12.0 with 2-line caches; also middle's fold_byte_loop).
+    for n, chg in ((12, 10), (16, 12)):
+        loop = [store(0, 22, 23, 0x40), i_type(3, 24, 4, 21, 0), store(0, 22, 24, 0), i_type(0x13, 21, 0, 21, 1),
+                i_type(0x13, 22, 0, 22, 1), i_type(0x13, 23, 0, 23, -1), branch(1, 23, 0, -24)]
+        p = prefix() + [store(0, 30, 2, 0x100 + chg), i_type(0x13, 21, 0, 30, 0x100),
+                        i_type(0x13, 22, 0, 30, 0x200), i_type(0x13, 23, 0, 0, n)] + loop
+        p += [i_type(3, 25, 3, 30, 0x208), 0x100073]
+        yield f'vp_store_scan_{n}', p, 0, MASK
+    # An older store with a late address and a younger store with an early address write the
+    # same bytes; the load forwards from the younger one and must give its value (correctness;
+    # 0.12.0 also flushed it needlessly and set its load-wait bit).
+    late = [i_type(0x13, 27, 0, 0, 1), i_type(3, 26, 3, 30, 0x178), r_type(0x33, 21, 0, 30, 26),
+            r_type(0x33, 21, 4, 21, 27, 1), r_type(0x33, 21, 4, 21, 27, 1)]
+    p = prefix() + [i_type(3, 25, 3, 30, 0x170)] + late + [
+        store(3, 21, 7, 0x170), store(3, 30, 8, 0x170), i_type(3, 22, 3, 30, 0x170),
+        r_type(0x33, 23, 0, 22, 22), store(3, 30, 23, 0x180), 0x100073]
+    yield 'mdp_forward_from_younger', p, 0, MASK
+    # Frontend (council, after 0.12.0): several calls and returns and up to 4 taken
+    # transfers in one fetch group, on later passes with the lines cached. Nested calls
+    # through ra and t0 (x5); a return to an address pushed earlier in the same group;
+    # a chain of jumps; a taken branch back.
+    p = [i_type(0x13, 10, 0, 0, 4),                                   # 0: x10 = 4
+         jal(1, 36),                                                  # 4: call f (40)
+         jal(1, 40),                                                  # 8: call g (48)
+         jal(1, 28),                                                  # 12: call f (40)
+         jal(5, 52),                                                  # 16: call h via t0 (68)
+         jal(0, 60),                                                  # 20: j 80
+         i_type(0x13, 10, 0, 10, -1),                                 # 24: x10 -= 1
+         branch(1, 10, 0, -24),                                       # 28: bne x10,x0 -> 4
+         0x100073, 0xffffffff,                                        # 32: ebreak; 36
+         i_type(0x13, 20, 0, 20, 1), i_type(0x67, 0, 0, 1, 0),        # 40: f: x20 += 1; 44: ret
+         i_type(0x13, 5, 0, 1, 0), jal(1, -12),                       # 48: g: x5 = ra; 52: call f
+         i_type(0x13, 21, 0, 21, 1), i_type(0x67, 0, 0, 5, 0),        # 56: x21 += 1; 60: jr t0 -> 12
+         0xffffffff,                                                  # 64
+         i_type(0x13, 22, 0, 22, 1), i_type(0x67, 0, 0, 5, 0),        # 68: h: x22 += 1; 72: jr t0 -> 20
+         0xffffffff,                                                  # 76
+         jal(0, 8), 0xffffffff, jal(0, 8), 0xffffffff,                # 80: j 88; 88: j 96
+         i_type(0x13, 23, 0, 23, 1), branch(0, 0, 0, -76)]            # 96: x23 += 1; 100: beq -> 24
+    yield 'fetch_many_calls', p, 0, MASK
+
+    # Recursion 20 deep (deeper than the 16-entry return stack, so it wraps), three
+    # times: several calls, or several returns, per fetch group.
+    p = [(3 << 12) | (2 << 7) | 0x37, i_type(0x13, 12, 0, 0, 3),     # 0: sp = 0x3000; 4: x12 = 3
+         i_type(0x13, 11, 0, 0, 20), jal(1, 20),                      # 8: x11 = 20; 12: call r (32)
+         i_type(0x13, 12, 0, 12, -1), branch(1, 12, 0, -12),          # 16: x12 -= 1; 20: bne -> 8
+         0x100073, 0xffffffff,                                        # 24: ebreak; 28
+         i_type(0x13, 11, 0, 11, -1), branch(0, 11, 0, 24),           # 32: r: x11 -= 1; 36: beq x11,x0 -> 60
+         i_type(0x13, 2, 0, 2, -8), store(3, 2, 1, 0),                # 40: sp -= 8; 44: sd ra,0(sp)
+         jal(1, -16), i_type(3, 1, 3, 2, 0),                          # 48: call r; 52: ld ra,0(sp)
+         i_type(0x13, 2, 0, 2, 8),                                    # 56: sp += 8
+         i_type(0x13, 20, 0, 20, 1), i_type(0x67, 0, 0, 1, 0)]        # 60: x20 += 1; 64: ret
+    yield 'fetch_deep_recursion', p, 0, MASK
+    # Folding at rename (council middle, after 0.12.0): addi/mv/li, lui, auipc, jal and
+    # constant-base jalr finish at rename; rd maps to a (physical register, offset) pair.
+    # An eliminated mv/addi shares its source's physical register, which must stay
+    # allocated after the source architectural register is overwritten and retired.
+    slow = [i_type(0x13, 5, 0, 0, 1), r_type(0x33, 6, 4, 7, 5, 1), r_type(0x33, 6, 4, 6, 5, 1)]   # x6 = x7 / 1 / 1 (late)
+    body = ([i_type(0x13, 11, 0, 6, 0), i_type(0x13, 12, 0, 11, 7), i_type(0x13, 13, 0, 12, -3),   # x11 = x6; x12 = x11+7; x13 = x12-3
+            r_type(0x33, 6, 0, 6, 6)] +                                                         # overwrite the shared source
+           [r_type(0x33, 14, 0, 14, 8) for _ in range(40)] +                                    # reuse freed registers
+           [r_type(0x33, 15, 0, 11, 12), r_type(0x33, 16, 0, 13, 6),
+            store(3, 30, 11, 0x300), store(3, 30, 13, 0x308), i_type(3, 17, 3, 30, 0x308),       # store data with an offset
+            store(0, 30, 12, 0x311), i_type(3, 18, 3, 30, 0x310),                                # forwarded byte with an offset
+            i_type(0x13, 6, 0, 13, 0), i_type(0x13, 11, 0, 11, 1), r_type(0x33, 19, 0, 6, 11),
+            0x100073])
+    yield 'fold_shared_register', prefix() + slow + body, 0, MASK
+
+    # A strcpy-like byte loop: pointer and counter chains folded over many iterations,
+    # a data-dependent branch inside (mispredicts restore folded map entries), then the
+    # copy is read back.
+    loop = [i_type(3, 24, 4, 21, 0), i_type(0x13, 21, 0, 21, 1), store(0, 22, 24, 0),
+            i_type(0x13, 22, 0, 22, 1), branch(0, 24, 0, 8), i_type(0x13, 28, 0, 28, 1),
+            i_type(0x13, 23, 0, 23, -1), branch(1, 23, 0, -28)]
+    p = prefix() + [i_type(0x13, 21, 0, 30, 0), i_type(0x13, 22, 0, 30, 0x400), i_type(0x13, 23, 0, 0, 90)] + loop
+    p += [i_type(3, 25, 3, 30, 0x400), i_type(3, 26, 3, 30, 0x408), i_type(3, 27, 3, 30, 0x450),
+          r_type(0x33, 29, 0, 21, 22), 0x100073]
+    yield 'fold_byte_loop', p, 0, MASK
+
+    # Calls through auipc+jalr (constant base, finished at rename), returns through a
+    # folded link, an absolute jalr from x0, and the links used as data.
+    base = len(prefix()) * 4
+    p = prefix() + [0x00000097, i_type(0x67, 1, 0, 1, 28),          # +0: auipc ra,0; +4: jalr ra,28(ra) -> +28
+                    0x00000297, i_type(0x67, 5, 0, 5, 28),          # +8: auipc t0,0; +12: jalr t0,28(t0) -> +36
+                    i_type(0x67, 0, 0, 0, base + 44),               # +16: jalr x0, abs(+44)
+                    0xffffffff, 0xffffffff,                         # +20, +24
+                    i_type(0x13, 20, 0, 20, 1), i_type(0x67, 0, 0, 1, 0),   # +28: f: x20 += 1; ret -> +8
+                    i_type(0x13, 21, 0, 21, 1), i_type(0x67, 0, 0, 5, 0),   # +36: h: x21 += 1; jr t0 -> +16
+                    r_type(0x33, 22, 0, 1, 5), store(3, 30, 1, 0x320),      # +44: links as data
+                    (0x80000 << 12) | (23 << 7) | 0x37, i_type(0x13, 23, 0, 23, -1),   # lui (negative), addi
+                    i_type(0x13, 24, 0, 0, -1), i_type(0x13, 24, 0, 24, 1),            # -1 + 1 wraps to 0
+                    branch(1, 24, 0, 8), r_type(0x33, 25, 0, 23, 24), 0x100073]
+    yield 'fold_calls_constants', p, 0, MASK
+
+    # Branch and ALU operands with offsets on a late register.
+    p = prefix() + slow + [i_type(0x13, 9, 0, 6, 1), i_type(0x13, 10, 0, 6, 1), branch(0, 9, 10, 8), 0xffffffff,
+                           i_type(0x13, 9, 0, 9, -1), branch(4, 9, 10, 8), 0xffffffff,
+                           r_type(0x33, 11, 0, 9, 10), r_type(0x33, 12, 1, 10, 5), i_type(0x13, 13, 1, 10, 3),
+                           0x100073]
+    yield 'fold_branch_operands', p, 0, MASK
 
 def command(args):
     result = subprocess.run([str(x) for x in args], capture_output=True, text=True, timeout=60)
