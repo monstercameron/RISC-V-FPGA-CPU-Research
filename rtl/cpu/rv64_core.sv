@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MIT
 // Original CPU foundation. RV64IM + B execution, serialized FENCE.I, terminal EEI.
-// Architecture version: see cpu/VERSION and cpu/architecture.md section 9. Pipelined since 0.8.0.
+// Architecture version: see cpu/VERSION and cpu/architecture.md section 9.
 // No RVA23 compliance claim. See cpu/architecture.md and cpu/README.md.
 module rv64_core #(
     parameter [63:0] RESET_PC = 64'h0,
@@ -49,67 +49,17 @@ module rv64_core #(
     output reg [63:0]  retire3_data,
     output reg [63:0]  retire3_next_pc
 );
-    // Pipelined core (0.8.0). Four stages, one instruction per clock at most:
-    //   F  instruction cache read (registered, block-RAM style) and bus fill;
-    //   D  decode for prediction, register read; JAL and backward branches redirect F;
-    //   E  execute: ALU, B, branch decision, address, data-cache read address;
-    //   M  data cache, bus access, retirement and register write; traps act here.
-    // Results are forwarded to E from M (integer results) and from the instruction
-    // that retired last. A load or multiply result used by the next instruction costs
-    // one clock; store data from a load is taken late, in M, without a stall.
-    localparam [2:0] FETCH=0, EXECUTE=1, MEMORY=2, HALTED=3;
-    localparam integer IC_INDEX = $clog2(ICACHE_BEATS);
-    localparam integer IC_TAG = 61 - IC_INDEX;
-    localparam integer DC_INDEX = $clog2(DCACHE_BEATS);
-    localparam integer DC_TAG = 61 - DC_INDEX;
-    generate if (ICACHE_BEATS < 2 || (ICACHE_BEATS & (ICACHE_BEATS - 1)) != 0) begin : bad_icache_size
-        initial $fatal(1, "ICACHE_BEATS must be a power of two of at least 2");
-    end endgenerate
-    generate if (DCACHE_BEATS < 2 || (DCACHE_BEATS & (DCACHE_BEATS - 1)) != 0) begin : bad_dcache_size
-        initial $fatal(1, "DCACHE_BEATS must be a power of two of at least 2");
-    end endgenerate
-
-    reg halted;
-    // No reset loop on the register file (so it can be LUT RAM): after reset a
-    // sequencer writes zero to every register, one per clock, before fetch starts.
-    reg [5:0] init_count;
-    wire init_done = init_count[5];
+    localparam [2:0] FETCH=0, EXECUTE=1, MEMORY=2, HALTED=3, DIVIDE=4, MULTIPLY=5;
+    reg [2:0] state;
+    reg [63:0] pc;
+    reg [31:0] insn;
     reg [63:0] regs [0:31];
-
-    // ---------------- E stage registers (named as in the multicycle core) ----------
-    reg e_valid;
-    reg [63:0] pc;          // E-stage PC
-    reg [31:0] insn;        // E-stage instruction
-    reg [63:0] e_a, e_b;    // operands read in D (refreshed while E waits)
-    reg [63:0] e_pred;      // the PC fetch followed after this instruction
-    reg e_fault;            // instruction fetch failed (cause in e_fcause)
-    reg [1:0] e_fcause;
     wire [6:0] op = insn[6:0];
     wire [2:0] f3 = insn[14:12];
     wire [6:0] f7 = insn[31:25];
     wire [4:0] rd = insn[11:7];
-    wire [4:0] rs1 = insn[19:15];
-    wire [4:0] rs2 = insn[24:20];
-
-    // ---------------- M stage registers -------------------------------------------
-    reg m_valid, m_load, m_store, m_mul, m_div, m_fencei, m_exc, m_sdata_late, m_icdirty;
-    reg [63:0] m_pc, m_next, m_alu, m_addr, m_sdata, m_cause, m_tval;
-    reg [31:0] m_insn;
-    reg [4:0] m_rd;
-    reg [2:0] m_f3;
-    reg [7:0] m_mask;
-    // Last retired instruction, for forwarding into E.
-    reg w_valid;
-    reg [4:0] w_rd;
-    reg [63:0] w_data;
-
-    // Forwarding into E: M's integer result first, then the last retirement.
-    wire m_late = m_valid && (m_load || m_mul || m_div);
-    wire m_fwd = m_valid && !m_late && !m_exc && m_rd != 0;
-    wire [63:0] a = rs1 == 0 ? 64'b0 : (m_fwd && m_rd == rs1) ? m_alu
-                  : (w_valid && w_rd == rs1) ? w_data : e_a;
-    wire [63:0] b = rs2 == 0 ? 64'b0 : (m_fwd && m_rd == rs2) ? m_alu
-                  : (w_valid && w_rd == rs2) ? w_data : e_b;
+    wire [63:0] a = insn[19:15] == 0 ? 64'b0 : regs[insn[19:15]];
+    wire [63:0] b = insn[24:20] == 0 ? 64'b0 : regs[insn[24:20]];
     wire [63:0] imm_i = {{52{insn[31]}},insn[31:20]};
     wire [63:0] imm_s = {{52{insn[31]}},insn[31:25],insn[11:7]};
     wire [63:0] imm_b = {{51{insn[31]}},insn[31],insn[7],insn[30:25],insn[11:8],1'b0};
@@ -208,16 +158,16 @@ module rv64_core #(
         end
     endfunction
     wire [64:0] bm0 = bitmanip(insn, a, b);
+
     reg [63:0] result, next_pc, effective_addr, exception_cause, exception_tval;
     reg [31:0] word_result;
     reg [7:0] byte_mask;
     reg [63:0] access_mask;
 
-    // M extension (0.4.0). Operands are registered as a multiply enters M and the
-    // product is taken there (0.7.1). Divides and remainders complete in E for
-    // divide-by-zero, signed overflow and a dividend smaller than the divisor;
-    // otherwise M runs one shift-subtract step per clock, starting at the quotient's
-    // highest possible bit (clz difference + 1 steps).
+    // M extension (0.4.0). Multiplies complete in EXECUTE. Divides and remainders
+    // complete in EXECUTE for divide-by-zero, signed overflow and a dividend smaller
+    // than the divisor; otherwise DIVIDE runs one shift-subtract step per clock,
+    // starting at the quotient's highest possible bit (clz difference + 1 steps).
     wire m_op = (op == 7'h33 || op == 7'h3b) && f7 == 7'h01;
     wire m_word = op == 7'h3b;
     wire is_div = m_op && f3[2];
@@ -233,11 +183,26 @@ module rv64_core #(
     wire div_by_zero = db == 0;
     wire div_overflow = div_signed && da == (m_word ? 64'hffffffff80000000 : 64'h8000000000000000) && db == {64{1'b1}};
     wire div_start = is_div && !div_by_zero && !div_overflow && mag_a >= mag_b;
+    // One signed 65x65 product serves every multiply (0.6.0): each operand gets its
+    // sign bit (signed operand) or a zero (unsigned) as bit 64; the low 64 bits are
+    // the same either way, and mulh/mulhsu/mulhu take bits 127:64. Since 0.7.1 the
+    // operands are registered in EXECUTE and the product is taken in a MULTIPLY state
+    // one clock later, so the multiplier starts at flip-flops instead of following
+    // the register read and decode in the same clock (as an FPGA DSP block expects).
     wire mul_a_signed = f3 == 1 || f3 == 2;
     wire mul_b_signed = f3 == 1;
     wire signed [64:0] mul_a = {mul_a_signed & a[63], a};
     wire signed [64:0] mul_b = {mul_b_signed & b[63], b};
+    wire mul_start = m_op && !f3[2];
+    reg signed [64:0] mul_op_a, mul_op_b;
+    reg mul_high, mul_word;
+    wire signed [129:0] product = mul_op_a * mul_op_b;
+    wire [63:0] mul_value = mul_high ? product[127:64]
+                          : mul_word ? {{32{product[31]}},product[31:0]} : product[63:0];
     reg [63:0] m_result;
+    reg [63:0] div_rem, div_den, div_quot, div_bit;
+    reg div_neg_q, div_neg_r, div_want_rem, div_is_word;
+
     function automatic [6:0] clz64(input [63:0] value);
         integer k;
         begin
@@ -256,24 +221,367 @@ module rv64_core #(
 
     always @* begin
         case (f3)
-            0, 1, 2, 3: m_result = 64'b0;  // multiplies complete in M
+            0, 1, 2, 3: m_result = 64'b0;  // multiplies complete in MULTIPLY (0.7.1)
             default:
                 if (div_by_zero) m_result = want_rem ? (m_word ? sext_a32 : a) : {64{1'b1}};
                 else if (div_overflow) m_result = want_rem ? 64'b0 : da;
                 else m_result = div_finish(64'b0, mag_a, neg_a ^ neg_b, neg_a, want_rem, m_word);
         endcase
     end
-    wire mul_start = m_op && !f3[2];
-    reg signed [64:0] mul_op_a, mul_op_b;
-    reg mul_high, mul_word;
-    wire signed [129:0] product = mul_op_a * mul_op_b;
-    wire [63:0] mul_value = mul_high ? product[127:64]
-                          : mul_word ? {{32{product[31]}},product[31:0]} : product[63:0];
-    reg [63:0] div_rem, div_den, div_quot, div_bit;
-    reg div_neg_q, div_neg_r, div_want_rem, div_is_word;
+    // Dual issue (0.5.0, widened in 0.5.1). insn2 is the instruction at pc+4, from
+    // the same 8-byte beat or, since 0.5.1, the next beat when it is in the
+    // instruction cache. It executes alongside insn when it is a simple integer
+    // operation (OP, OP-IMM, their 32-bit forms, LUI, AUIPC; no M) or, since 0.5.1,
+    // a conditional branch with an aligned target; it must read no register that
+    // insn writes and not write the same register, and insn must complete this
+    // clock: an integer operation other than a divide, a load that hits the data
+    // cache, or a store to a beat other than insn2's (so it cannot modify insn2).
+    // Since 0.5.2 insn2 may also be an aligned load that hits the data cache, read
+    // through a second port; since 0.5.3 also after a store to a different beat.
+    // Since 0.5.3 insn may be a branch that is not taken, and insn2 may be a JAL or
+    // JALR with an aligned target. Since 0.5.4 insn2 may be an aligned store when insn
+    // does not use the bus, and an integer result of insn (not a load or multiply)
+    // is forwarded to insn2's operands in the same clock.
+    reg [31:0] insn2_next;  // the instruction at pc+4, captured with insn
+    reg insn2_valid;
+    // Branch folding (0.5.5): when insn is a jump or a taken branch, the second slot
+    // holds the instruction at its target, read from the instruction cache in the
+    // same clock; otherwise it holds the instruction at pc+4.
+    wire control0 = (op == 7'h6f || (op == 7'h67 && f3 == 0) || (op == 7'h63 && branch_taken)) && !exception;
+    wire [IC_INDEX-1:0] fold_index = next_pc[3 +: IC_INDEX];
+    wire fold_hit = ic_valid[fold_index] && ic_tag[fold_index] == next_pc[63 -: IC_TAG];
+    wire [31:0] insn2 = control0 ? (next_pc[2] ? ic_data[fold_index][63:32] : ic_data[fold_index][31:0])
+                                 : insn2_next;
+    wire slot2_valid = control0 ? fold_hit : insn2_valid;
+    wire [63:0] fetch_next = pc + 64'd4;  // the instruction after the one being fetched
+    wire [6:0] op2 = insn2[6:0];
+    wire [2:0] f3_2 = insn2[14:12];
+    wire [6:0] f7_2 = insn2[31:25];
+    wire [4:0] rd2 = insn2[11:7];
+    wire [4:0] rs1_2 = insn2[19:15];
+    wire [4:0] rs2_2 = insn2[24:20];
+    // insn's integer result, forwardable to insn2 (0.5.4).
+    wire slot0_forward = (op == 7'h37 || op == 7'h17 || op == 7'h13 || op == 7'h1b ||
+                          ((op == 7'h33 || op == 7'h3b) && f7 != 7'h01) ||
+                          op == 7'h6f || op == 7'h67) && rd != 0;  // links since 0.5.5
+    wire [63:0] a2 = rs1_2 == 0 ? 64'b0 : (slot0_forward && rs1_2 == rd) ? result : regs[rs1_2];
+    wire [63:0] b2 = rs2_2 == 0 ? 64'b0 : (slot0_forward && rs2_2 == rd) ? result : regs[rs2_2];
+    wire [63:0] pc2 = control0 ? next_pc : pc + 64'd4;
+    wire [63:0] imm_i2 = {{52{insn2[31]}},insn2[31:20]};
+    wire [63:0] imm_u2 = {{32{insn2[31]}},insn2[31:12],12'b0};
+    reg simple2, uses_rs1_2, uses_rs2_2, branch2, taken2, load2, jump2, store2;
+    wire [64:0] bm2 = bitmanip(insn2, a2, b2);
+    reg [63:0] result2;
+    reg [31:0] word2;
+    wire [63:0] imm_b2 = {{51{insn2[31]}},insn2[31],insn2[7],insn2[30:25],insn2[11:8],1'b0};
+    wire [63:0] target2 = pc2 + imm_b2;
+    // Second-slot load: address, alignment, data-cache hit and extracted value.
+    wire [63:0] ea2 = a2 + imm_i2;
+    wire [63:0] mask2 = f3_2[1:0] == 0 ? 64'd0 : f3_2[1:0] == 1 ? 64'd1 : f3_2[1:0] == 2 ? 64'd3 : 64'd7;
+    wire [DC_INDEX-1:0] dc_index2 = ea2[3 +: DC_INDEX];
+    wire hit2 = dc_valid[dc_index2] && dc_tag[dc_index2] == ea2[63 -: DC_TAG];
+    wire [63:0] shifted2 = dc_data[dc_index2] >> {ea2[2:0],3'b000};
+    reg [63:0] loaded2;
+    always @* begin
+        case (f3_2)
+            3'b000: loaded2 = {{56{shifted2[7]}},shifted2[7:0]};
+            3'b001: loaded2 = {{48{shifted2[15]}},shifted2[15:0]};
+            3'b010: loaded2 = {{32{shifted2[31]}},shifted2[31:0]};
+            3'b011: loaded2 = shifted2;
+            3'b100: loaded2 = {56'b0,shifted2[7:0]};
+            3'b101: loaded2 = {48'b0,shifted2[15:0]};
+            3'b110: loaded2 = {32'b0,shifted2[31:0]};
+            default: loaded2 = 64'b0;
+        endcase
+    end
+    wire [63:0] imm_j2 = {{43{insn2[31]}},insn2[31],insn2[19:12],insn2[20],insn2[30:21],1'b0};
+    wire [63:0] jump_target2 = op2 == 7'h6f ? pc2 + imm_j2 : (a2 + imm_i2) & ~64'd1;
+    // Second-slot store (0.5.4): address, alignment and bus lanes.
+    wire [63:0] imm_s2 = {{52{insn2[31]}},insn2[31:25],insn2[11:7]};
+    wire [63:0] ea2s = a2 + imm_s2;
+    wire [7:0] smask2 = f3_2[1:0] == 0 ? 8'h01 : f3_2[1:0] == 1 ? 8'h03 : f3_2[1:0] == 2 ? 8'h0f : 8'hff;
+    wire [63:0] store2_wdata = b2 << {ea2s[2:0],3'b000};
+    wire [7:0] store2_wstrb = smask2 << ea2s[2:0];
+    always @* begin
+        simple2=0; uses_rs1_2=1; uses_rs2_2=0; result2=0; word2=0; branch2=0; taken2=0; load2=0; jump2=0;
+        store2=0;
+        case (op2)
+            7'h23: begin
+                store2=1; uses_rs2_2=1;
+                simple2=f3_2<4 && (ea2s & (f3_2[1:0] == 0 ? 64'd0 : f3_2[1:0] == 1 ? 64'd1 :
+                                           f3_2[1:0] == 2 ? 64'd3 : 64'd7))==0;
+            end
+            7'h6f, 7'h67: begin
+                jump2=1; uses_rs1_2=op2 == 7'h67;
+                simple2=(op2 == 7'h6f || f3_2 == 0) && jump_target2[1:0] == 0;
+                result2=pc2 + 64'd4;
+            end
+            7'h03: begin
+                load2=1;
+                simple2=f3_2!=7 && (ea2 & mask2)==0 && hit2;
+                result2=loaded2;
+            end
+            7'h63: begin
+                branch2=1; uses_rs2_2=1;
+                simple2=f3_2!=2 && f3_2!=3;
+                case (f3_2)
+                    0: taken2=a2==b2;
+                    1: taken2=a2!=b2;
+                    4: taken2=$signed(a2)<$signed(b2);
+                    5: taken2=$signed(a2)>=$signed(b2);
+                    6: taken2=a2<b2;
+                    7: taken2=a2>=b2;
+                    default: taken2=0;
+                endcase
+                if (taken2 && target2[1:0]!=0) simple2=0; // would trap: leave it unpaired
+            end
+            7'h37: begin simple2=1; uses_rs1_2=0; result2=imm_u2; end
+            7'h17: begin simple2=1; uses_rs1_2=0; result2=pc2+imm_u2; end
+            7'h13: begin
+                simple2=1;
+                case (f3_2)
+                    0: result2=a2+imm_i2;
+                    2: result2={63'b0,$signed(a2)<$signed(imm_i2)};
+                    3: result2={63'b0,a2<imm_i2};
+                    4: result2=a2^imm_i2;
+                    6: result2=a2|imm_i2;
+                    7: result2=a2&imm_i2;
+                    1: begin simple2=insn2[31:26]==0; result2=a2<<insn2[25:20]; end
+                    5: begin
+                        simple2=insn2[31:26]==0 || insn2[31:26]==6'h10;
+                        if (insn2[30]) result2=$signed(a2)>>>insn2[25:20]; else result2=a2>>insn2[25:20];
+                    end
+                endcase
+            end
+            7'h1b: begin
+                case (f3_2)
+                    0: begin simple2=1; word2=a2[31:0]+imm_i2[31:0]; end
+                    1: begin simple2=f7_2==0; word2=a2[31:0]<<insn2[24:20]; end
+                    5: begin
+                        simple2=f7_2==0 || f7_2==7'h20;
+                        if (insn2[30]) word2=$signed(a2[31:0])>>>insn2[24:20]; else word2=a2[31:0]>>insn2[24:20];
+                    end
+                    default: simple2=0;
+                endcase
+                result2={{32{word2[31]}},word2};
+            end
+            7'h33: begin
+                uses_rs2_2=1;
+                simple2=f7_2==0 || (f7_2==7'h20 && (f3_2==0 || f3_2==5));
+                case (f3_2)
+                    0: result2=insn2[30] ? a2-b2 : a2+b2;
+                    1: result2=a2<<b2[5:0];
+                    2: result2={63'b0,$signed(a2)<$signed(b2)};
+                    3: result2={63'b0,a2<b2};
+                    4: result2=a2^b2;
+                    5: if (insn2[30]) result2=$signed(a2)>>>b2[5:0]; else result2=a2>>b2[5:0];
+                    6: result2=a2|b2;
+                    7: result2=a2&b2;
+                endcase
+            end
+            7'h3b: begin
+                uses_rs2_2=1;
+                simple2=(f7_2==0 && (f3_2==0 || f3_2==1 || f3_2==5)) || (f7_2==7'h20 && (f3_2==0 || f3_2==5));
+                case (f3_2)
+                    0: word2=insn2[30] ? a2[31:0]-b2[31:0] : a2[31:0]+b2[31:0];
+                    1: word2=a2[31:0]<<b2[4:0];
+                    5: if (insn2[30]) word2=$signed(a2[31:0])>>>b2[4:0]; else word2=a2[31:0]>>b2[4:0];
+                    default: word2=0;
+                endcase
+                result2={{32{word2[31]}},word2};
+            end
+            default: simple2=0;
+        endcase
+        if ((op2==7'h13 || op2==7'h1b || op2==7'h33 || op2==7'h3b) && bm2[64]) begin
+            simple2=1; result2=bm2[63:0];  // B extension (0.6.0)
+        end
+    end
+    wire slot0_writes = (load_op || write_rd) && rd != 0;
+    wire [4:0] dest2 = (branch2 || store2) ? 5'b0 : rd2;
+    wire [63:0] next2 = jump2 ? jump_target2 : taken2 ? target2 : pc2 + 64'd4;
+    // Same-register writes need no check: insn2's write lands last, as in program order.
+    wire hazard2 = slot0_writes && !slot0_forward && ((uses_rs1_2 && rs1_2 == rd) || (uses_rs2_2 && rs2_2 == rd));
+    wire can_pair = slot2_valid && simple2 && !hazard2;
+    wire slot0_alu = op == 7'h37 || op == 7'h17 || op == 7'h13 || op == 7'h1b ||
+                     ((op == 7'h33 || op == 7'h3b) && !m_op) || (op == 7'h63 && !branch_taken) || control0;
+    wire pair_alu = can_pair && slot0_alu && !store2;
+    wire pair_load = can_pair && load_hit && !store2;
+    wire pair_store2 = can_pair && store2 && (slot0_alu || load_hit);
+    wire [4:0] slot0_dest = load_hit ? rd : (write_rd ? rd : 5'b0);
+    wire [63:0] slot0_value = load_hit ? load_result : result;
+    wire pair_store = can_pair && store_op && !store2 && effective_addr[63:3] != pc2[63:3] &&
+                      !(load2 && ea2[63:3] == effective_addr[63:3]);
+
+    // Third slot (0.7.0): the instruction at pc2+4, read from the instruction cache,
+    // when it is a simple integer or B operation. Its operands come from the register
+    // file or from the first slot's forwarded result, never from the second slot (so
+    // forwarding stays one ALU deep). It issues only with a pair whose second
+    // instruction is not a store and does not transfer control, and not when a
+    // first-slot store writes its beat.
+    function automatic [66:0] simple_alu(input [31:0] ins, input [63:0] x, input [63:0] y, input [63:0] pcv);
+        reg [6:0] o, g7;
+        reg [2:0] g3;
+        reg [63:0] r, im;
+        reg [31:0] w;
+        reg ok, use1, use2;
+        reg [64:0] bmv;
+        begin
+            o = ins[6:0]; g3 = ins[14:12]; g7 = ins[31:25];
+            im = {{52{ins[31]}}, ins[31:20]};
+            ok = 0; use1 = 1; use2 = 0; r = 0; w = 0;
+            case (o)
+                7'h37: begin ok = 1; use1 = 0; r = {{32{ins[31]}}, ins[31:12], 12'b0}; end
+                7'h17: begin ok = 1; use1 = 0; r = pcv + {{32{ins[31]}}, ins[31:12], 12'b0}; end
+                7'h13: begin
+                    ok = 1;
+                    case (g3)
+                        0: r = x + im;
+                        2: r = {63'b0, $signed(x) < $signed(im)};
+                        3: r = {63'b0, x < im};
+                        4: r = x ^ im;
+                        6: r = x | im;
+                        7: r = x & im;
+                        1: begin ok = ins[31:26] == 0; r = x << ins[25:20]; end
+                        5: begin
+                            ok = ins[31:26] == 0 || ins[31:26] == 6'h10;
+                            if (ins[30]) r = $signed(x) >>> ins[25:20]; else r = x >> ins[25:20];
+                        end
+                    endcase
+                end
+                7'h1b: begin
+                    case (g3)
+                        0: begin ok = 1; w = x[31:0] + im[31:0]; end
+                        1: begin ok = g7 == 0; w = x[31:0] << ins[24:20]; end
+                        5: begin
+                            ok = g7 == 0 || g7 == 7'h20;
+                            if (ins[30]) w = $signed(x[31:0]) >>> ins[24:20]; else w = x[31:0] >> ins[24:20];
+                        end
+                        default: ok = 0;
+                    endcase
+                    r = {{32{w[31]}}, w};
+                end
+                7'h33: begin
+                    use2 = 1;
+                    ok = g7 == 0 || (g7 == 7'h20 && (g3 == 0 || g3 == 5));
+                    case (g3)
+                        0: if (ins[30]) r = x - y; else r = x + y;
+                        1: r = x << y[5:0];
+                        2: r = {63'b0, $signed(x) < $signed(y)};
+                        3: r = {63'b0, x < y};
+                        4: r = x ^ y;
+                        5: if (ins[30]) r = $signed(x) >>> y[5:0]; else r = x >> y[5:0];
+                        6: r = x | y;
+                        7: r = x & y;
+                    endcase
+                end
+                7'h3b: begin
+                    use2 = 1;
+                    ok = (g7 == 0 && (g3 == 0 || g3 == 1 || g3 == 5)) || (g7 == 7'h20 && (g3 == 0 || g3 == 5));
+                    case (g3)
+                        0: if (ins[30]) w = x[31:0] - y[31:0]; else w = x[31:0] + y[31:0];
+                        1: w = x[31:0] << y[4:0];
+                        5: if (ins[30]) w = $signed(x[31:0]) >>> y[4:0]; else w = x[31:0] >> y[4:0];
+                        default: w = 0;
+                    endcase
+                    r = {{32{w[31]}}, w};
+                end
+                default: ok = 0;
+            endcase
+            bmv = bitmanip(ins, x, y);
+            if ((o == 7'h13 || o == 7'h1b || o == 7'h33 || o == 7'h3b) && bmv[64]) begin
+                ok = 1; r = bmv[63:0]; use2 = o == 7'h33 || o == 7'h3b;
+            end
+            simple_alu = {ok, use1, use2, r};
+        end
+    endfunction
+    wire [63:0] pc3 = pc2 + 64'd4;
+    wire [IC_INDEX-1:0] index3 = pc3[3 +: IC_INDEX];
+    wire hit3 = ic_valid[index3] && ic_tag[index3] == pc3[63 -: IC_TAG];
+    wire [31:0] insn3 = pc3[2] ? ic_data[index3][63:32] : ic_data[index3][31:0];
+    wire [4:0] rd3 = insn3[11:7];
+    wire [4:0] rs1_3 = insn3[19:15];
+    wire [4:0] rs2_3 = insn3[24:20];
+    wire [63:0] a3 = rs1_3 == 0 ? 64'b0 : (slot0_forward && rs1_3 == rd) ? result : regs[rs1_3];
+    wire [63:0] b3 = rs2_3 == 0 ? 64'b0 : (slot0_forward && rs2_3 == rd) ? result : regs[rs2_3];
+    wire [66:0] alu3 = simple_alu(insn3, a3, b3, pc3);
+    wire uses_rs1_3 = alu3[65], uses_rs2_3 = alu3[64];
+    wire [63:0] result3 = alu3[63:0];
+    wire reads3 = (uses_rs1_3 && rs1_3 != 0) || (uses_rs2_3 && rs2_3 != 0);
+    wire hazard3 = (dest2 != 0 && ((uses_rs1_3 && rs1_3 == dest2) || (uses_rs2_3 && rs2_3 == dest2))) ||
+                   (slot0_writes && !slot0_forward && ((uses_rs1_3 && rs1_3 == rd) || (uses_rs2_3 && rs2_3 == rd)));
+    wire issue3 = (pair_alu || pair_load || pair_store) && !store2 && !jump2 && !(branch2 && taken2) &&
+                  hit3 && alu3[66] && !hazard3 && !(store_op && effective_addr[63:3] == pc3[63:3]);
+
+    // One DIVIDE step, and whether it is the last.
     wire div_take = div_rem >= div_den;
     wire [63:0] div_rem_next = div_take ? div_rem - div_den : div_rem;
     wire [63:0] div_quot_next = div_take ? div_quot | div_bit : div_quot;
+
+    // Instruction cache (0.2.0): direct-mapped, one 8-byte beat per line, filled by
+    // every bus fetch. A successor that hits skips FETCH. Reset and fence.i clear
+    // every line; a successful store clears the line holding its beat, so fetched
+    // instructions always reflect completed stores, as without the cache.
+    localparam integer IC_INDEX = $clog2(ICACHE_BEATS);
+    localparam integer IC_TAG = 61 - IC_INDEX;
+    generate if (ICACHE_BEATS < 2 || (ICACHE_BEATS & (ICACHE_BEATS - 1)) != 0) begin : bad_icache_size
+        initial $fatal(1, "ICACHE_BEATS must be a power of two of at least 2");
+    end endgenerate
+    reg [ICACHE_BEATS-1:0] ic_valid;
+
+    // Data cache (0.3.0): direct-mapped, one 8-byte beat per line, write-through
+    // with no allocation on stores. A successful load fills its line; a successful
+    // store updates a line that holds its beat. A load that hits completes in
+    // EXECUTE with no bus request. All addresses are treated as cacheable.
+    localparam integer DC_INDEX = $clog2(DCACHE_BEATS);
+    localparam integer DC_TAG = 61 - DC_INDEX;
+    generate if (DCACHE_BEATS < 2 || (DCACHE_BEATS & (DCACHE_BEATS - 1)) != 0) begin : bad_dcache_size
+        initial $fatal(1, "DCACHE_BEATS must be a power of two of at least 2");
+    end endgenerate
+    reg [DCACHE_BEATS-1:0] dc_valid;
+    reg [DC_TAG-1:0] dc_tag [0:DCACHE_BEATS-1];
+    reg [63:0] dc_data [0:DCACHE_BEATS-1];
+    reg [IC_TAG-1:0] ic_tag [0:ICACHE_BEATS-1];
+    reg [63:0] ic_data [0:ICACHE_BEATS-1];
+
+    reg [63:0] pending_addr, pending_wdata, pending_next_pc;
+    reg [7:0] pending_wstrb;
+    reg [2:0] pending_f3;
+    reg [4:0] pending_rd;
+    reg pending_load;
+    // Data accesses (0.2.1) start in EXECUTE as soon as the address is known and
+    // no exception is pending; if the bus has not completed by the end of that
+    // clock, MEMORY holds the identical request from the pending registers.
+    wire [DC_INDEX-1:0] dc_index = effective_addr[3 +: DC_INDEX];
+    wire load_hit = state == EXECUTE && load_op && !exception &&
+                    dc_valid[dc_index] && dc_tag[dc_index] == effective_addr[63 -: DC_TAG];
+    wire issue_data = state == EXECUTE && (load_op || store_op) && !exception && !load_hit;
+    wire [63:0] access_addr = state == MEMORY ? pending_addr : effective_addr;
+    wire [2:0] access_f3 = state == MEMORY ? pending_f3 : f3;
+    wire [63:0] issue_wdata = b << {effective_addr[2:0],3'b000};
+    wire [7:0] issue_wstrb = store_op ? byte_mask << effective_addr[2:0] : 8'b0;
+    wire [63:0] read_beat = load_hit ? dc_data[dc_index] : mem_rdata;
+    wire [63:0] shifted_read = read_beat >> {access_addr[2:0],3'b000};
+    reg [63:0] load_result;
+
+    wire issue_store2 = state == EXECUTE && !exception && pair_store2;
+    assign mem_valid = !reset && ((state == FETCH && pc[1:0] == 0) || state == MEMORY || issue_data || issue_store2);
+    assign mem_instr = state == FETCH;
+    assign mem_addr = state == FETCH ? {pc[63:3],3'b0} : issue_store2 ? {ea2s[63:3],3'b0} : {access_addr[63:3],3'b0};
+    assign mem_wdata = state == MEMORY ? pending_wdata : issue_data ? issue_wdata : issue_store2 ? store2_wdata : 64'b0;
+    assign mem_wstrb = state == MEMORY ? pending_wstrb : issue_data ? issue_wstrb : issue_store2 ? store2_wstrb : 8'b0;
+
+    always @* begin
+        case (access_f3)
+            3'b000: load_result = {{56{shifted_read[7]}},shifted_read[7:0]};
+            3'b001: load_result = {{48{shifted_read[15]}},shifted_read[15:0]};
+            3'b010: load_result = {{32{shifted_read[31]}},shifted_read[31:0]};
+            3'b011: load_result = shifted_read;
+            3'b100: load_result = {56'b0,shifted_read[7:0]};
+            3'b101: load_result = {48'b0,shifted_read[15:0]};
+            3'b110: load_result = {32'b0,shifted_read[31:0]};
+            default: load_result = 64'b0;
+        endcase
+    end
 
     always @* begin
         legal=1; write_rd=0; load_op=0; store_op=0; branch_taken=0;
@@ -397,216 +705,83 @@ module rv64_core #(
         end
     end
 
-    // ---------------- caches -------------------------------------------------------
-    // Instruction cache: direct-mapped, one 8-byte beat per line, filled by bus fetches.
-    // Tags and data are read through a register (block-RAM style); valid bits are
-    // flip-flops so reset and fence.i clear them at once.
-    reg [ICACHE_BEATS-1:0] ic_valid;
-    reg [IC_TAG-1:0] ic_tag [0:ICACHE_BEATS-1];
-    reg [63:0] ic_data [0:ICACHE_BEATS-1];
-    reg [IC_TAG-1:0] ic_tq;  // tag and data of f_pc's line, read at the last edge
-    reg [63:0] ic_q;
-    reg [IC_TAG-1:0] ic_stq; // instruction-cache tag at M's store address, read as it entered M
-    // Data cache: direct-mapped, write-through, no allocation on stores; read at the
-    // edge where an instruction enters M, written when M retires.
-    reg [DCACHE_BEATS-1:0] dc_valid;
-    reg [DC_TAG-1:0] dc_tag [0:DCACHE_BEATS-1];
-    reg [63:0] dc_data [0:DCACHE_BEATS-1];
-    reg [DC_TAG-1:0] dq_tag;
-    reg [63:0] dq_data;
-
-    // ---------------- F stage -----------------------------------------------------
-    reg f_valid;
-    reg [63:0] f_pc;
-    reg fetch_active;        // a fetch was presented and has not completed
-    reg [63:0] fetch_addr;
-    wire [IC_INDEX-1:0] f_idx = f_pc[3 +: IC_INDEX];
-    wire f_misaligned = f_pc[1:0] != 0;
-    wire f_hit = ic_valid[f_idx] && ic_tq == f_pc[63 -: IC_TAG];
-    // Branch target buffer, read with f_pc: direct-mapped on pc[7:2], 10-bit partial
-    // tags, 2-bit counters for conditional branches; entries marked as returns take
-    // their target from a 4-entry return-address stack. Both are updated in E.
-    localparam integer BTB_BITS = 6;
-    localparam integer BTB_TAG = 10;
-    localparam integer BTB_ENTRIES = 1 << BTB_BITS;
-    reg [BTB_ENTRIES-1:0] btb_valid, btb_ret;
-    reg [BTB_TAG-1:0] btb_tag [0:BTB_ENTRIES-1];
-    reg [63:0] btb_target [0:BTB_ENTRIES-1];
-    reg [1:0] btb_ctr [0:BTB_ENTRIES-1];
-    reg [63:0] ras [0:3];
-    reg [1:0] ras_sp;
-    wire [BTB_BITS-1:0] f_bidx = f_pc[2 +: BTB_BITS];
-    wire f_bhit = btb_valid[f_bidx] && btb_tag[f_bidx] == f_pc[2+BTB_BITS +: BTB_TAG];
-    wire f_btaken = f_bhit && (btb_ret[f_bidx] || btb_ctr[f_bidx][1]);
-    wire [63:0] f_btarget = btb_ret[f_bidx] ? ras[ras_sp] : btb_target[f_bidx];
-
-    // ---------------- D stage -----------------------------------------------------
-    reg d_valid, d_fault;
-    reg [1:0] d_fcause;
-    reg [63:0] d_pc;
-    reg [31:0] d_insn;
-    reg [63:0] d_pred;       // where fetch went after this instruction
-    reg d_fpred, d_bhit, e_bhit;  // predicted taken by the BTB; BTB entry matched
-    reg [1:0] d_bctr, e_bctr;
-    wire [4:0] d_rs1 = d_insn[19:15];
-    wire [4:0] d_rs2 = d_insn[24:20];
-    wire [63:0] d_a = d_rs1 == 0 ? 64'b0 : regs[d_rs1];
-    wire [63:0] d_b = d_rs2 == 0 ? 64'b0 : regs[d_rs2];
-    // Static prediction when the BTB did not predict: JAL and backward conditional
-    // branches are taken.
-    wire d_jal = d_insn[6:0] == 7'h6f;
-    wire d_back = d_insn[6:0] == 7'h63 && d_insn[31];
-    wire [63:0] d_offset = d_jal ? {{43{d_insn[31]}},d_insn[31],d_insn[19:12],d_insn[20],d_insn[30:21],1'b0}
-                                 : {{51{d_insn[31]}},d_insn[31],d_insn[7],d_insn[30:25],d_insn[11:8],1'b0};
-    wire [63:0] d_target = d_pc + d_offset;
-    wire d_predict = d_valid && !d_fault && !d_fpred && (d_jal || d_back) && d_target[1:0] == 0;
-
-    // ---------------- M stage -----------------------------------------------------
-    wire [DC_INDEX-1:0] m_idx = m_addr[3 +: DC_INDEX];
-    wire [IC_INDEX-1:0] m_ic_idx = m_addr[3 +: IC_INDEX];
-    wire m_hit = dc_valid[m_idx] && dq_tag == m_addr[63 -: DC_TAG];
-    wire [63:0] m_sval = m_sdata_late ? w_data : m_sdata;
-    wire [63:0] m_wdata = m_sval << {m_addr[2:0],3'b000};
-    wire [7:0] m_wstrb = m_store ? m_mask << m_addr[2:0] : 8'b0;
-    wire m_bus = m_valid && !m_exc && (m_store || (m_load && !m_hit));
-
-    // ---------------- bus ---------------------------------------------------------
-    // One bus. A data access has priority over starting a fetch; a presented fetch is
-    // held until it completes. No fetch starts while M holds a faulting instruction.
-    wire f_want = f_valid && init_done && !halted && !f_misaligned && !f_hit;
-    wire data_req = m_bus && !fetch_active && !halted;
-    wire fetch_req = !halted && (fetch_active || (f_want && !m_bus && !(m_valid && m_exc)));
-    wire [63:0] fetch_beat = fetch_active ? fetch_addr : {f_pc[63:3],3'b000};
-    assign mem_valid = !reset && (fetch_req || data_req);
-    assign mem_instr = fetch_req;
-    assign mem_addr = fetch_req ? fetch_beat : {m_addr[63:3],3'b000};
-    assign mem_wdata = fetch_req ? 64'b0 : m_wdata;
-    assign mem_wstrb = fetch_req ? 8'b0 : m_wstrb;
-    wire fetch_done = fetch_req && mem_ready;
-    wire fill = fetch_done && !mem_error;
-    wire [IC_INDEX-1:0] fill_idx = fetch_beat[3 +: IC_INDEX];
-    wire fetch_for_f = fetch_done && f_valid && fetch_beat[63:3] == f_pc[63:3];
-    wire data_done = data_req && mem_ready;
-
-    // F output: from the cache, or straight from a fetch completing this clock.
-    wire [63:0] f_beat = fetch_for_f ? mem_rdata : ic_q;
-    wire [31:0] f_word = f_pc[2] ? f_beat[63:32] : f_beat[31:0];
-    wire f_fault = f_misaligned || (fetch_for_f && mem_error);
-    wire f_ready = f_valid && init_done && !halted && (f_misaligned || f_hit || fetch_for_f);
-
-    // Load data.
-    wire [63:0] read_beat = m_hit ? dq_data : mem_rdata;
-    wire [63:0] shifted_read = read_beat >> {m_addr[2:0],3'b000};
-    reg [63:0] load_result;
-    always @* begin
-        case (m_f3)
-            3'b000: load_result = {{56{shifted_read[7]}},shifted_read[7:0]};
-            3'b001: load_result = {{48{shifted_read[15]}},shifted_read[15:0]};
-            3'b010: load_result = {{32{shifted_read[31]}},shifted_read[31:0]};
-            3'b011: load_result = shifted_read;
-            3'b100: load_result = {56'b0,shifted_read[7:0]};
-            3'b101: load_result = {48'b0,shifted_read[15:0]};
-            3'b110: load_result = {32'b0,shifted_read[31:0]};
-            default: load_result = 64'b0;
-        endcase
-    end
-    reg [63:0] store_line;  // M's line with the store's bytes merged (store hits)
-    integer lane;
-    always @* begin
-        store_line = dq_data;
-        for (lane = 0; lane < 8; lane = lane + 1)
-            if (m_wstrb[lane]) store_line[8*lane +: 8] = m_wdata[8*lane +: 8];
-    end
-    wire [63:0] m_value = m_load ? load_result : m_mul ? mul_value
-                        : m_div ? div_finish(div_quot_next,div_rem_next,div_neg_q,div_neg_r,div_want_rem,div_is_word)
-                        : m_alu;
-    // M completes this clock (retires), or traps.
-    wire m_done = m_valid && !m_exc && !halted &&
-                  (m_div ? div_bit == 64'd1 : m_bus ? data_done && !mem_error : 1'b1);
-    wire m_bus_fault = m_valid && data_done && mem_error;
-    wire m_trap = !halted && ((m_valid && m_exc && !fetch_active) || m_bus_fault);
-    // A store to the beat of a younger instruction already fetched, or fence.i,
-    // flushes everything younger and refetches after it.
-    wire m_smc = m_store && ((e_valid && pc[63:3] == m_addr[63:3]) ||
-                             (d_valid && d_pc[63:3] == m_addr[63:3]) ||
-                             (f_valid && f_pc[63:3] == m_addr[63:3]));
-    wire m_flush = m_done && (m_fencei || m_smc);
-
-    // ---------------- stage control -----------------------------------------------
-    wire uses1 = !(op == 7'h37 || op == 7'h17 || op == 7'h6f);
-    wire uses2 = op == 7'h33 || op == 7'h3b || op == 7'h63 || op == 7'h23;
-    wire late_hit1 = m_late && m_rd != 0 && uses1 && rs1 == m_rd;
-    wire late_hit2 = m_late && m_rd != 0 && uses2 && rs2 == m_rd;
-    wire e_hazard = late_hit1 || (late_hit2 && !store_op);
-    wire e_exc = e_fault || exception;
-    wire e_jump = op == 7'h6f || (op == 7'h67 && f3 == 0);
-    wire e_control = e_jump || op == 7'h63;
-    wire e_taken = e_jump || branch_taken;
-    wire e_call = e_jump && (rd == 1 || rd == 5);
-    wire e_return = op == 7'h67 && f3 == 0 && rd == 0 && (rs1 == 1 || rs1 == 5);
-    wire m_free = !m_valid || m_done;
-    wire e_go = e_valid && m_free && !e_hazard && !m_flush && !m_trap;
-    wire e_redirect = e_go && !e_exc && next_pc != e_pred;
-    wire d_go = d_valid && (!e_valid || e_go) && !m_flush && !e_redirect && !m_trap;
-    wire f_go = f_ready && (!d_valid || d_go) && !m_flush && !e_redirect && !(d_go && d_predict);
-    reg [63:0] fetch_next;
-    always @* begin
-        if (m_flush) fetch_next = m_next;
-        else if (e_redirect) fetch_next = next_pc;
-        else if (d_go && d_predict) fetch_next = d_target;
-        else if (f_go && f_btaken) fetch_next = f_btarget;
-        else if (f_go) fetch_next = f_pc + 64'd4;
-        else fetch_next = f_pc;
-    end
-    wire [IC_INDEX-1:0] next_idx = fetch_next[3 +: IC_INDEX];
-    wire [DC_INDEX-1:0] e_dc_idx = effective_addr[3 +: DC_INDEX];
-    wire [IC_INDEX-1:0] e_ic_idx = effective_addr[3 +: IC_INDEX];
-    // The data-cache line M writes when it retires (load fill or store hit).
-    wire dc_write = m_done && ((m_load && !m_hit) || (m_store && m_hit));
-    wire [63:0] dc_wline = m_load ? mem_rdata : store_line;
-
-    // Debug view for the testbenches and the visualizer: what the core waits for.
-    wire [2:0] state = halted ? HALTED : (m_valid && m_bus && !m_done) ? MEMORY
-                     : (!m_done && f_valid && !f_ready) ? FETCH : EXECUTE;
-
-    always @(posedge clk) begin
-        // Cache read ports, with the write of the same edge passed through.
-        ic_q <= (fill && fill_idx == next_idx) ? mem_rdata : ic_data[next_idx];
-        ic_tq <= (fill && fill_idx == next_idx) ? fetch_beat[63 -: IC_TAG] : ic_tag[next_idx];
-        if (fill) begin
-            ic_tag[fill_idx] <= fetch_beat[63 -: IC_TAG];
-            ic_data[fill_idx] <= mem_rdata;
+    task automatic report_trap(input [63:0] cause, input [63:0] tval);
+        begin
+            trap_valid<=1; trap_pc<=pc; trap_cause<=cause; trap_tval<=tval;
+            state<=HALTED;
         end
-        if (e_go) begin
-            dq_data <= (dc_write && m_idx == e_dc_idx) ? dc_wline : dc_data[e_dc_idx];
-            dq_tag <= (dc_write && m_idx == e_dc_idx) ? m_addr[63 -: DC_TAG] : dc_tag[e_dc_idx];
-            ic_stq <= (fill && fill_idx == e_ic_idx) ? fetch_beat[63 -: IC_TAG] : ic_tag[e_ic_idx];
+    endtask
+    // flush: fence.i clears the cache. stored: a store to store_addr completed.
+    // pair: insn2 retires on the second slot in the same clock; successor follows it.
+    task automatic retire(input [4:0] dest, input [63:0] data, input [63:0] successor,
+                          input flush, input stored, input [63:0] store_addr, input pair);
+        reg [63:0] after_successor;
+        reg triple;
+        begin
+            // A third instruction issues with the pair when issue3 allows (0.7.0).
+            triple = pair && issue3;
+            if (triple) successor = pc3 + 64'd4;
+            after_successor = successor + 64'd4;
+            retire_valid<=1; retire_pc<=pc; retire_insn<=insn;
+            retire_rd<=dest; retire_data<=dest==0 ? 64'b0 : data;
+            retire_next_pc<=pair ? pc2 : successor;
+            if (dest!=0) regs[dest]<=data;
+            if (pair) begin
+                retire2_valid<=1; retire2_pc<=pc2; retire2_insn<=insn2;
+                retire2_rd<=dest2; retire2_data<=dest2==0 ? 64'b0 : result2;
+                retire2_next_pc<=triple ? pc3 : successor;
+                if (dest2!=0) regs[dest2]<=result2;
+            end
+            if (triple) begin
+                retire3_valid<=1; retire3_pc<=pc3; retire3_insn<=insn3;
+                retire3_rd<=rd3; retire3_data<=rd3==0 ? 64'b0 : result3;
+                retire3_next_pc<=successor;
+                if (rd3!=0) regs[rd3]<=result3;
+            end
+            pc<=successor;
+            insn2_valid<=0;
+            if (flush) ic_valid<=0;
+            else if (stored && ic_tag[store_addr[3 +: IC_INDEX]]==store_addr[63 -: IC_TAG])
+                ic_valid[store_addr[3 +: IC_INDEX]]<=1'b0;
+            if (!flush && ic_valid[successor[3 +: IC_INDEX]] &&
+                ic_tag[successor[3 +: IC_INDEX]]==successor[63 -: IC_TAG] &&
+                !(stored && store_addr[63:3]==successor[63:3])) begin
+                insn<=successor[2] ? ic_data[successor[3 +: IC_INDEX]][63:32]
+                                   : ic_data[successor[3 +: IC_INDEX]][31:0];
+                if (!successor[2]) begin
+                    insn2_next<=ic_data[successor[3 +: IC_INDEX]][63:32];
+                    insn2_valid<=1'b1;
+                end else begin
+                    insn2_next<=ic_data[after_successor[3 +: IC_INDEX]][31:0];
+                    insn2_valid<=ic_valid[after_successor[3 +: IC_INDEX]] &&
+                        ic_tag[after_successor[3 +: IC_INDEX]]==after_successor[63 -: IC_TAG] &&
+                        !(stored && store_addr[63:3]==after_successor[63:3]);
+                end
+                state<=EXECUTE;
+            end else state<=FETCH;
         end
-        if (dc_write) begin
-            dc_tag[m_idx] <= m_addr[63 -: DC_TAG];
-            dc_data[m_idx] <= dc_wline;
-        end
-        // Register file: the reset sequencer, or M's retirement.
-        if (!init_done) regs[init_count[4:0]] <= 64'b0;
-        else if (m_done && m_rd != 0) regs[m_rd] <= m_value;
-    end
+    endtask
 
+    // Record a completed data access in the data cache.
+    task automatic dcache_update(input is_load, input [63:0] addr, input [63:0] beat,
+                                 input [63:0] wdata, input [7:0] wstrb);
+        integer lane;
+        begin
+            if (is_load) begin
+                dc_valid[addr[3 +: DC_INDEX]]<=1'b1;
+                dc_tag[addr[3 +: DC_INDEX]]<=addr[63 -: DC_TAG];
+                dc_data[addr[3 +: DC_INDEX]]<=beat;
+            end else if (dc_valid[addr[3 +: DC_INDEX]] && dc_tag[addr[3 +: DC_INDEX]]==addr[63 -: DC_TAG]) begin
+                for (lane=0;lane<8;lane=lane+1)
+                    if (wstrb[lane]) dc_data[addr[3 +: DC_INDEX]][8*lane+:8]<=wdata[8*lane+:8];
+            end
+        end
+    endtask
+
+    integer i;
     always @(posedge clk) begin
         if (reset) begin
-            halted<=0; init_count<=0;
-            f_valid<=0; f_pc<=RESET_PC; fetch_active<=0; fetch_addr<=0;
-            d_valid<=0; d_fault<=0; d_fcause<=0; d_pc<=0; d_insn<=0;
-            d_pred<=0; d_fpred<=0; d_bhit<=0; d_bctr<=0; e_bhit<=0; e_bctr<=0;
-            btb_valid<=0; btb_ret<=0; ras_sp<=0; ras[0]<=0; ras[1]<=0; ras[2]<=0; ras[3]<=0;
-            e_valid<=0; pc<=0; insn<=0; e_a<=0; e_b<=0; e_pred<=0; e_fault<=0; e_fcause<=0;
-            m_valid<=0; m_load<=0; m_store<=0; m_mul<=0; m_div<=0; m_fencei<=0; m_exc<=0;
-            m_sdata_late<=0; m_icdirty<=0; m_pc<=0; m_next<=0; m_alu<=0; m_addr<=0; m_sdata<=0;
-            m_cause<=0; m_tval<=0; m_insn<=0; m_rd<=0; m_f3<=0; m_mask<=0;
-            w_valid<=0; w_rd<=0; w_data<=0;
-            ic_valid<=0; dc_valid<=0;
-            mul_op_a<=0; mul_op_b<=0; mul_high<=0; mul_word<=0;
-            div_rem<=0; div_den<=0; div_quot<=0; div_bit<=0;
-            div_neg_q<=0; div_neg_r<=0; div_want_rem<=0; div_is_word<=0;
+            state<=FETCH; pc<=RESET_PC; insn<=0;
             trap_valid<=0; trap_pc<=0; trap_cause<=0; trap_tval<=0;
             retire_valid<=0; retire_pc<=0; retire_insn<=0;
             retire_rd<=0; retire_data<=0; retire_next_pc<=0;
@@ -614,98 +789,108 @@ module rv64_core #(
             retire2_rd<=0; retire2_data<=0; retire2_next_pc<=0;
             retire3_valid<=0; retire3_pc<=0; retire3_insn<=0;
             retire3_rd<=0; retire3_data<=0; retire3_next_pc<=0;
+            insn2_next<=0; insn2_valid<=0;
+            pending_addr<=0; pending_wdata<=0; pending_wstrb<=0;
+            pending_f3<=0; pending_rd<=0; pending_load<=0; pending_next_pc<=0;
+            ic_valid<=0; dc_valid<=0;
+            div_rem<=0; div_den<=0; div_quot<=0; div_bit<=0;
+            mul_op_a<=0; mul_op_b<=0; mul_high<=0; mul_word<=0;
+            div_neg_q<=0; div_neg_r<=0; div_want_rem<=0; div_is_word<=0;
+            for (i=0;i<32;i=i+1) regs[i]<=0;
         end else begin
-            retire_valid<=0;
-            if (!init_done) begin
-                init_count<=init_count+6'd1;
-                if (init_count==6'd31) f_valid<=1;
-            end
-            // Bus fetch bookkeeping.
-            if (fetch_req) begin
-                if (mem_ready) fetch_active<=0;
-                else begin fetch_active<=1; fetch_addr<=fetch_beat; end
-            end
-            if (fill) ic_valid[fill_idx]<=1'b1;
-
-            if (m_trap) begin
-                trap_valid<=1; trap_pc<=m_pc;
-                trap_cause<=m_exc ? m_cause : (m_load ? 64'd5 : 64'd7);
-                trap_tval<=m_exc ? m_tval : m_addr;
-                halted<=1; f_valid<=0; d_valid<=0; e_valid<=0; m_valid<=0;
-            end else if (!halted) begin
-                // ---- M: retire
-                if (m_done) begin
-                    retire_valid<=1; retire_pc<=m_pc; retire_insn<=m_insn; retire_rd<=m_rd;
-                    retire_data<=m_rd==0 ? 64'b0 : m_value; retire_next_pc<=m_next;
-                    w_valid<=1; w_rd<=m_rd; w_data<=m_value;
-                    if (m_load && !m_hit) dc_valid[m_idx]<=1'b1;
-                    if (m_fencei) ic_valid<=0;
-                    else if (m_store && ic_valid[m_ic_idx] && (ic_stq == m_addr[63 -: IC_TAG] || m_icdirty))
-                        ic_valid[m_ic_idx]<=1'b0;
-                end
-                if (m_valid && m_div && !m_done) begin
-                    div_rem<=div_rem_next; div_quot<=div_quot_next;
-                    div_den<=div_den >> 1; div_bit<=div_bit >> 1;
-                end
-                if (m_valid && !m_done && fill && fill_idx == m_ic_idx) m_icdirty<=1;
-                // ---- E -> M
-                if (e_go) begin
-                    m_valid<=1; m_pc<=pc; m_insn<=insn; m_next<=next_pc;
-                    m_exc<=e_exc;
-                    m_cause<=e_fault ? {62'b0,e_fcause} : exception_cause;
-                    m_tval<=e_fault ? pc : exception_tval;
-                    m_rd<=(e_exc || !(write_rd || load_op)) ? 5'b0 : rd;
-                    m_load<=load_op && !e_exc; m_store<=store_op && !e_exc;
-                    m_f3<=f3; m_mask<=byte_mask; m_addr<=effective_addr;
-                    m_sdata<=b; m_sdata_late<=store_op && late_hit2;
-                    m_mul<=mul_start && !e_exc; m_div<=div_start && !e_exc;
-                    m_fencei<=op==7'h0f && f3==1 && !e_exc;
-                    m_alu<=result; m_icdirty<=0;
-                    if (mul_start) begin
-                        mul_op_a<=mul_a; mul_op_b<=mul_b; mul_high<=f3!=0; mul_word<=m_word;
+            retire_valid<=0; retire2_valid<=0; retire3_valid<=0;
+            case (state)
+                FETCH: begin
+                    if (pc[1:0]!=0) report_trap(0,pc);
+                    else if (mem_ready) begin
+                        if (mem_error) report_trap(1,pc);
+                        else begin
+                            insn<=pc[2] ? mem_rdata[63:32] : mem_rdata[31:0];
+                            if (!pc[2]) begin
+                                insn2_next<=mem_rdata[63:32]; insn2_valid<=1'b1;
+                            end else begin // next beat, if cached. Not pc2: in FETCH,
+                                // insn still holds the previous instruction (0.5.5 fix).
+                                insn2_next<=ic_data[fetch_next[3 +: IC_INDEX]][31:0];
+                                insn2_valid<=ic_valid[fetch_next[3 +: IC_INDEX]] &&
+                                    ic_tag[fetch_next[3 +: IC_INDEX]]==fetch_next[63 -: IC_TAG];
+                            end
+                            ic_valid[pc[3 +: IC_INDEX]]<=1'b1;
+                            ic_tag[pc[3 +: IC_INDEX]]<=pc[63 -: IC_TAG];
+                            ic_data[pc[3 +: IC_INDEX]]<=mem_rdata;
+                            state<=EXECUTE;
+                        end
                     end
-                    if (div_start) begin
+                end
+                EXECUTE: begin
+                    if (exception) report_trap(exception_cause,exception_tval);
+                    else if (mul_start) begin
+                        mul_op_a<=mul_a; mul_op_b<=mul_b; mul_high<=f3!=0; mul_word<=m_word;
+                        state<=MULTIPLY;
+                    end
+                    else if (div_start) begin
                         div_rem<=mag_a; div_quot<=0;
                         div_den<=mag_b << (clz64(mag_b) - clz64(mag_a));
                         div_bit<=64'd1 << (clz64(mag_b) - clz64(mag_a));
                         div_neg_q<=neg_a ^ neg_b; div_neg_r<=neg_a;
                         div_want_rem<=want_rem; div_is_word<=m_word;
+                        state<=DIVIDE;
                     end
-                end else if (m_done || m_flush) m_valid<=0;
-                // ---- BTB and return stack, from the instruction leaving E
-                if (e_go && !e_exc && e_control) begin
-                    if (e_taken) begin
-                        btb_valid[pc[2 +: BTB_BITS]]<=1'b1;
-                        btb_tag[pc[2 +: BTB_BITS]]<=pc[2+BTB_BITS +: BTB_TAG];
-                        btb_target[pc[2 +: BTB_BITS]]<=next_pc;
-                        btb_ret[pc[2 +: BTB_BITS]]<=e_return;
-                        btb_ctr[pc[2 +: BTB_BITS]]<=!e_bhit ? 2'd2 : e_bctr==2'd3 ? 2'd3 : e_bctr+2'd1;
-                    end else if (e_bhit)
-                        btb_ctr[pc[2 +: BTB_BITS]]<=e_bctr==2'd0 ? 2'd0 : e_bctr-2'd1;
-                    if (e_call) begin
-                        ras[ras_sp+2'd1]<=pc+64'd4; ras_sp<=ras_sp+2'd1;
-                    end else if (e_return) ras_sp<=ras_sp-2'd1;
+                    else if (pair_store2) begin
+                        if (mem_ready && !mem_error) begin
+                            dcache_update(1'b0,ea2s,mem_rdata,store2_wdata,store2_wstrb);
+                            retire(slot0_dest,slot0_value,next2,1'b0,1'b1,ea2s,1'b1);
+                        end else begin
+                            // insn retires alone; insn2's store faults or waits in MEMORY.
+                            retire(slot0_dest,slot0_value,pc2,1'b0,1'b0,64'b0,1'b0);
+                            if (mem_ready) begin
+                                trap_valid<=1; trap_pc<=pc2; trap_cause<=7; trap_tval<=ea2s;
+                                state<=HALTED;
+                            end else begin
+                                insn<=insn2; pending_addr<=ea2s; pending_wdata<=store2_wdata;
+                                pending_wstrb<=store2_wstrb; pending_load<=0; pending_f3<=f3_2;
+                                pending_rd<=0; pending_next_pc<=pc2+64'd4; state<=MEMORY;
+                            end
+                        end
+                    end
+                    else if (load_hit) retire(rd,load_result,pair_load ? next2 : next_pc,1'b0,1'b0,64'b0,pair_load);
+                    else if (load_op || store_op) begin
+                        if (mem_ready) begin // completed in the same clock it was issued
+                            if (mem_error) report_trap(load_op ? 5 : 7,effective_addr);
+                            else begin
+                                dcache_update(load_op,effective_addr,mem_rdata,issue_wdata,issue_wstrb);
+                                retire(load_op ? rd : 5'b0,load_result,pair_store ? next2 : next_pc,
+                                       1'b0,store_op,effective_addr,pair_store);
+                            end
+                        end else begin
+                            pending_addr<=effective_addr; pending_wdata<=issue_wdata;
+                            pending_wstrb<=issue_wstrb;
+                            pending_load<=load_op; pending_f3<=f3; pending_rd<=rd;
+                            pending_next_pc<=next_pc; state<=MEMORY;
+                        end
+                    end else retire(write_rd ? rd : 5'b0,result,pair_alu ? next2 : next_pc,
+                                    op==7'h0f && f3==1,1'b0,64'b0,pair_alu);
                 end
-                // ---- D -> E
-                if (m_flush || e_redirect) e_valid<=0;
-                else if (d_go) begin
-                    e_valid<=1; pc<=d_pc; insn<=d_insn; e_a<=d_a; e_b<=d_b;
-                    e_pred<=d_predict ? d_target : d_pred;
-                    e_bhit<=d_bhit; e_bctr<=d_bctr;
-                    e_fault<=d_fault; e_fcause<=d_fcause;
-                end else if (e_go) e_valid<=0;
-                else if (e_valid) begin e_a<=a; e_b<=b; end  // waiting: keep forwarded values
-                // ---- F -> D
-                if (m_flush || e_redirect || (d_go && d_predict)) d_valid<=0;
-                else if (f_go) begin
-                    d_valid<=1; d_pc<=f_pc; d_insn<=f_word;
-                    d_pred<=f_btaken ? f_btarget : f_pc + 64'd4; d_fpred<=f_btaken;
-                    d_bhit<=f_bhit; d_bctr<=btb_ctr[f_bidx];
-                    d_fault<=f_fault; d_fcause<=f_misaligned ? 2'd0 : 2'd1;
-                end else if (d_go) d_valid<=0;
-                // ---- F
-                if (init_done) f_pc<=fetch_next;
-            end
+                MEMORY: if (mem_ready) begin
+                    if (mem_error) report_trap(pending_load ? 5 : 7,pending_addr);
+                    else begin
+                        dcache_update(pending_load,pending_addr,mem_rdata,pending_wdata,pending_wstrb);
+                        retire(pending_load ? pending_rd : 5'b0,load_result,pending_next_pc,
+                               1'b0,!pending_load,pending_addr,1'b0);
+                    end
+                end
+                DIVIDE: begin
+                    if (div_bit == 64'd1)
+                        retire(rd,div_finish(div_quot_next,div_rem_next,div_neg_q,div_neg_r,div_want_rem,div_is_word),
+                               next_pc,1'b0,1'b0,64'b0,1'b0);
+                    else begin
+                        div_rem<=div_rem_next; div_quot<=div_quot_next;
+                        div_den<=div_den >> 1; div_bit<=div_bit >> 1;
+                    end
+                end
+                MULTIPLY: retire(rd,mul_value,next_pc,1'b0,1'b0,64'b0,1'b0);
+                HALTED: begin end
+                default: report_trap(2,0);
+            endcase
         end
     end
 endmodule

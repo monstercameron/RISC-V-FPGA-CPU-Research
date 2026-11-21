@@ -15,8 +15,12 @@ from reference import MASK, execute
 ROOT = Path(__file__).resolve().parents[2]
 # Programs written to exercise an issue slot, and the testbench counter that must be
 # non-zero for them (checked with the default caches and no bus wait cycles).
-# The single-issue pipelined core (0.8.0) has no second or third slot.
-SLOT_USE = {}
+# Two implementations of the same architecture (0.8.0): the multicycle multi-issue
+# core and the pipelined single-issue core. Both define module rv64_core.
+CORES = {'multicycle': 'rtl/cpu/rv64_core.sv', 'pipe': 'rtl/cpu/rv64_pipe.sv'}
+# Programs written to exercise an issue slot of the multicycle core, and the testbench
+# counter that must be non-zero for them (default caches, no bus wait cycles).
+SLOT_USE = {'multicycle': {'dual_issue_fold': 'slot2', 'triple_issue': 'slot3'}, 'pipe': {}}
 OUT = ROOT / 'build/cpu'
 
 
@@ -370,6 +374,7 @@ def main():
     parser.add_argument('--image', type=Path, help='Optional raw firmware binary for an additional differential test')
     parser.add_argument('--icache-beats', type=int, help='Override the core instruction-cache size (power of two >= 2)')
     parser.add_argument('--dcache-beats', type=int, help='Override the core data-cache size (power of two >= 2)')
+    parser.add_argument('--core', choices=sorted(CORES), default='multicycle', help='Core implementation to test')
     args = parser.parse_args()
     cache = [f'-Ptb_core.ICACHE_BEATS={args.icache_beats}'] if args.icache_beats else []
     cache += [f'-Ptb_core.DCACHE_BEATS={args.dcache_beats}'] if args.dcache_beats else []
@@ -377,15 +382,16 @@ def main():
         parser.error('iverilog and vvp are required; use the documented Ubuntu/WSL launcher')
     OUT.mkdir(parents=True, exist_ok=True)
     executable = OUT / 'cpu.vvp'
+    core_src = ROOT / CORES[args.core]
     command(['iverilog', '-g2012', '-Wall', '-s', 'tb_core', *cache, '-o', executable,
-             ROOT / 'rtl/cpu/rv64_core.sv', ROOT / 'sim/cpu/tb_core.sv'])
+             core_src, ROOT / 'sim/cpu/tb_core.sv'])
     command(['iverilog', '-g2012', '-Wall', '-s', 'rv64_bram_soc', '-o', OUT/'soc.vvp',
-             ROOT/'rtl/cpu/rv64_core.sv', ROOT/'rtl/cpu/rv64_bram_soc.sv'])
+             core_src, ROOT/'rtl/cpu/rv64_bram_soc.sv'])
     command(['iverilog','-g2012','-Wall','-s','tb_reset','-o',OUT/'reset.vvp',
-             ROOT/'rtl/cpu/rv64_core.sv',ROOT/'sim/cpu/tb_reset.sv'])
+             core_src,ROOT/'sim/cpu/tb_reset.sv'])
     reset_result=command(['vvp',OUT/'reset.vvp']).strip()
     command(['iverilog','-g2012','-Wall','-s','tb_soc','-o',OUT/'bram-soc.vvp',
-             ROOT/'rtl/cpu/rv64_core.sv',ROOT/'rtl/cpu/rv64_bram_soc.sv',ROOT/'sim/cpu/tb_soc.sv'])
+             core_src,ROOT/'rtl/cpu/rv64_bram_soc.sv',ROOT/'sim/cpu/tb_soc.sv'])
     smoke=image_for([0x00500093,0x00700113,0x002081b3,0x00003237,0x00323023,0x00100073])
     smoke_hex=OUT/'soc-smoke.hex'
     smoke_hex.write_text(''.join(f'{int.from_bytes(smoke[i:i+8],"little"):016x}\n' for i in range(0,len(smoke),8)),encoding='ascii')
@@ -419,8 +425,8 @@ def main():
                     if a!=e: raise AssertionError(f'{name} stall={stalls} event {index}:\nactual {a}\nexpect {e}')
             # Structural coverage: these programs exist to exercise an issue slot, so
             # check that the slot was used (default caches, where the lines stay cached).
-            if args.icache_beats is None and stalls == 0 and name in SLOT_USE:
-                field = SLOT_USE[name]
+            if args.icache_beats is None and stalls == 0 and name in SLOT_USE[args.core]:
+                field = SLOT_USE[args.core][name]
                 used = re.search(field + r'=(\d+)', output)
                 if not used or int(used[1]) == 0:
                     raise AssertionError(f'{name}: expected {field} > 0, simulator said {output.strip()}')
@@ -432,13 +438,14 @@ def main():
         for outcome in ('taken','not_taken'):
             if branch_name+':'+outcome not in coverage: raise AssertionError('Missing branch outcome')
     report={'status':'PASS','cases':len(workloads),'runs':len(records),'instruction_names_covered':len(required),
+            'core':args.core,'core_source':CORES[args.core],
             'icache_beats':args.icache_beats or 'RTL default','dcache_beats':args.dcache_beats or 'RTL default',
             'reset_test':reset_result,'bram_soc_tests':soc_results,
             'coverage':sorted(coverage),'validation_scope':'local directed/random differential simulation; no official ISA certification or synthesis',
             'rtl_sha256':{str(p.relative_to(ROOT)):hashlib.sha256(p.read_bytes()).hexdigest() for p in sorted((ROOT/'rtl/cpu').glob('*.sv'))},
             'simulator':command(['iverilog','-V']).splitlines()[0],'results':records}
     (OUT/'verification.json').write_text(json.dumps(report,indent=2)+'\n',encoding='utf-8')
-    print(f'PASS: {len(workloads)} programs x 3 wait patterns = {len(records)} runs; {len(required)} instruction names covered.')
+    print(f'PASS ({args.core} core): {len(workloads)} programs x 3 wait patterns = {len(records)} runs; {len(required)} instruction names covered.')
     print('Includes precise traps, invalid encodings, bus faults, x0, all memory lanes, branch outcomes and ordered retirement.')
 
 
