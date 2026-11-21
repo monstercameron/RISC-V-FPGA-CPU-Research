@@ -15,12 +15,13 @@ from reference import MASK, execute
 ROOT = Path(__file__).resolve().parents[2]
 # Programs written to exercise an issue slot, and the testbench counter that must be
 # non-zero for them (checked with the default caches and no bus wait cycles).
-# Two implementations of the same architecture (0.8.0): the multicycle multi-issue
-# core and the pipelined single-issue core. Both define module rv64_core.
-CORES = {'multicycle': 'rtl/cpu/rv64_core.sv', 'pipe': 'rtl/cpu/rv64_pipe.sv'}
+# Implementations of the same architecture: the multicycle multi-issue core, the
+# pipelined single-issue core (0.8.0) and the out-of-order core (0.9.0). All define
+# module rv64_core.
+CORES = {'multicycle': 'rtl/cpu/rv64_core.sv', 'pipe': 'rtl/cpu/rv64_pipe.sv', 'ooo': 'rtl/cpu/rv64_ooo.sv'}
 # Programs written to exercise an issue slot of the multicycle core, and the testbench
 # counter that must be non-zero for them (default caches, no bus wait cycles).
-SLOT_USE = {'multicycle': {'dual_issue_fold': 'slot2', 'triple_issue': 'slot3'}, 'pipe': {}}
+SLOT_USE = {'multicycle': {'dual_issue_fold': 'slot2', 'triple_issue': 'slot3'}, 'pipe': {}, 'ooo': {}}
 OUT = ROOT / 'build/cpu'
 
 

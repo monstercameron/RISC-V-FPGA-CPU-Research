@@ -57,7 +57,7 @@ def build(isa, folder):
 def main():
     import argparse
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('--core', choices=('multicycle', 'pipe'), default='multicycle',
+    parser.add_argument('--core', choices=('multicycle', 'pipe', 'ooo'), default='multicycle',
                         help='rtl/cpu/rv64_core.sv (multicycle) or rtl/cpu/rv64_pipe.sv (pipelined)')
     args = parser.parse_args()
     for tool in ('clang', 'ld.lld', 'llvm-objcopy', 'llvm-objdump', 'iverilog', 'vvp'):
@@ -66,7 +66,7 @@ def main():
     OUT.mkdir(parents=True, exist_ok=True)
     vvp = OUT / 'tb_core.vvp'
     run(['iverilog', '-g2012', '-Wall', '-s', 'tb_core', f'-Ptb_core.MEM_BYTES={RAM}', '-o', vvp,
-         ROOT / ('rtl/cpu/rv64_core.sv' if args.core == 'multicycle' else 'rtl/cpu/rv64_pipe.sv'),
+         ROOT / {'multicycle': 'rtl/cpu/rv64_core.sv', 'pipe': 'rtl/cpu/rv64_pipe.sv', 'ooo': 'rtl/cpu/rv64_ooo.sv'}[args.core],
          ROOT / 'sim/cpu/tb_core.sv'])
     results = {}
     for isa in ('rv64im_zifencei', 'rv64im_zba_zbb_zbs_zifencei'):

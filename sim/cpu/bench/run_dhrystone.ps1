@@ -6,14 +6,15 @@
 # M extension (architecture 0.4.0 and later). -Record also saves the result to
 # cpu/dhrystone-results.json (cpu/dhrystone-rv64im-results.json for rv64im).
 # -Core pipe runs the pipelined core (rtl/cpu/rv64_pipe.sv, 0.8.0) instead of the
-# multicycle core; its build folder and record names end in -pipe.
+# multicycle core; its build folder and record names end in -pipe. -Core ooo runs the
+# out-of-order core (rtl/cpu/rv64_ooo.sv, 0.9.0); names end in -ooo.
 param(
     [string]$Distribution = 'Ubuntu-24.04',
     [string]$LLVMDirectory = 'C:\Program Files\LLVM\bin',
     [ValidateSet(32,64,128,256,512,1024)][int]$RamKiB = 64,
     [ValidateSet('rv64i_zifencei','rv64im_zifencei','rv64im_zba_zbb_zbs_zifencei')][string]$Isa = 'rv64i_zifencei',
     [ValidateSet('reference','fast')][string]$Runtime = 'reference',
-    [ValidateSet('multicycle','pipe')][string]$Core = 'multicycle',
+    [ValidateSet('multicycle','pipe','ooo')][string]$Core = 'multicycle',
     [switch]$Record,
     [switch]$NoDevlog
 )
@@ -22,7 +23,7 @@ $repoPath = (Resolve-Path (Join-Path $PSScriptRoot '../../..')).Path
 $label = $Isa.Split('_')[0] + $(if ($Isa -match '_zbb') { 'b' } else { '' })
 $outDir = if ($Isa -eq 'rv64i_zifencei') { 'build/cpu/bench/dhrystone' } else { 'build/cpu/bench/dhrystone-' + $label }
 if ($Runtime -eq 'fast') { $outDir += '-fastrt' }
-if ($Core -eq 'pipe') { $outDir += '-pipe' }
+if ($Core -ne 'multicycle') { $outDir += '-' + $Core }
 & python -B (Join-Path $PSScriptRoot 'build_bench.py') --benchmark dhrystone --ram-kib $RamKiB --isa $Isa --runtime $Runtime --out-dir $outDir `
     --clang (Join-Path $LLVMDirectory 'clang.exe') `
     --objcopy (Join-Path $LLVMDirectory 'llvm-objcopy.exe') `

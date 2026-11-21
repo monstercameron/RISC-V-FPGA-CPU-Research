@@ -76,7 +76,7 @@ def main():
     parser.add_argument('--stalls', type=int, nargs='+', default=[0, 7],
                         help='Maximum random memory wait cycles for each differential run')
     parser.add_argument('--max-cycles', type=int, default=50_000_000)
-    parser.add_argument('--core', choices=('multicycle', 'pipe'), default='multicycle',
+    parser.add_argument('--core', choices=('multicycle', 'pipe', 'ooo'), default='multicycle',
                         help='Core implementation: rtl/cpu/rv64_core.sv (multicycle) or rv64_pipe.sv (pipelined)')
     parser.add_argument('--record', action='store_true',
                         help='Also write the result to cpu/<benchmark>-results.json')
@@ -95,7 +95,7 @@ def main():
         if sha(out / name) != digest:
             raise SystemExit(f'Stale or damaged build artifact: {name}')
     ram_bytes, mailbox = build['ram_bytes'], build['mailbox_address']
-    core_file = 'rtl/cpu/rv64_core.sv' if args.core == 'multicycle' else 'rtl/cpu/rv64_pipe.sv'
+    core_file = {'multicycle': 'rtl/cpu/rv64_core.sv', 'pipe': 'rtl/cpu/rv64_pipe.sv', 'ooo': 'rtl/cpu/rv64_ooo.sv'}[args.core]
     rtl = [ROOT / core_file, ROOT / 'rtl/cpu/rv64_bram_soc.sv']
 
     # 1. Timing on the core plus synchronous RAM wrapper.
@@ -178,7 +178,7 @@ def main():
             'architecture_version': (ROOT / 'cpu/VERSION').read_text(encoding='ascii').strip(),
             'isa': build['isa'], 'abi': build['abi'],
             'environment': 'bare metal, laboratory terminal trap',
-            'class': 'multicycle' if args.core == 'multicycle' else 'pipelined', 'core': args.core,
+            'class': {'multicycle': 'multicycle', 'pipe': 'pipelined', 'ooo': 'out-of-order'}[args.core], 'core': args.core,
             'rtl_sha256': {p.relative_to(ROOT).as_posix(): sha(p) for p in rtl},
             'platform': f'rv64_bram_soc, {ram_bytes // 1024} KiB synchronous RAM, no added wait cycles in the timing run',
             'hardware': 'none (Icarus Verilog simulation)',
@@ -236,7 +236,7 @@ def main():
     if args.record:
         label = build['isa'].split('_')[0] + ('b' if '_zbb' in build['isa'] else '')
         suffix = ('' if build['isa'] == 'rv64i_zifencei' else '-' + label) + \
-            ('' if build.get('runtime', 'reference') == 'reference' else '-fastrt') +             ('' if args.core == 'multicycle' else '-pipe')
+            ('' if build.get('runtime', 'reference') == 'reference' else '-fastrt') +             ('' if args.core == 'multicycle' else '-' + args.core)
         (ROOT / f'cpu/{args.benchmark}{suffix}-results.json').write_bytes((json.dumps(report, indent=2) + '\n').encode())
     print(f'PASS: Dhrystone, {runs} runs; all {len(checks)} result checks match.')
     print(f'PASS: differential traces match the reference model at wait cycles {args.stalls}.')

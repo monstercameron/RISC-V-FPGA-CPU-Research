@@ -29,12 +29,53 @@ Modelled penalties (each configurable):
              fence, ecall/ebreak and CSR issue alone. "2a" also requires the
              pair to lie in one aligned 8-byte beat.
 
+Out-of-order mode (--ooo) adds a small FPGA-scale out-of-order core:
+  front end  fetches up to W consecutive instructions a clock; a group ends
+             after a taken or predicted-taken transfer (a correct prediction
+             costs no bubble, as in the in-order BTB model). An instruction
+             fetched at clock f can be renamed at f + --ooo-fe (default 3).
+             The front end holds (fe + 1) * W instructions (back-pressure).
+  rename     W a clock, in order; needs a free ROB entry (freed the clock
+             after retire) and a free issue-queue entry (freed the clock after
+             issue). Earliest issue is the clock after rename.
+  issue      unified issue queue, oldest-first select. Ports: N ALU ports
+             (ALU ops, branches, jumps; port 0 also takes multiply, pipelined,
+             latency --ooo-mul-lat, and divide, unpipelined, latency from the
+             measured clocks or --div-cost) and M memory ports shared by loads
+             and stores. Latency is issue-to-dependent-issue: ALU 1, load
+             --load-lat. A store issues when its address and data are ready.
+             CSR, fence and system instructions serialise: they issue at the
+             ROB head and younger instructions rename after they retire.
+  memory     a: conservative, a load issues only after every older store has
+             retired (stores write the cache at retirement).
+             b: loads never wait for stores. The trace has no addresses, so
+             this stands for store-to-load forwarding with perfect
+             disambiguation and forwarding that never delays the load: an
+             optimistic bound.
+             c: (not in the default grid) a load issues the clock after every
+             older store has issued, i.e. once all older store addresses and
+             data are known, so a store queue can compare addresses exactly
+             and forward with no extra latency. Between a and b.
+  retire     W a clock, in order, at or after the result clock.
+  recovery   a mispredicted transfer resolves in its issue clock e.
+             retire: flush when it retires at clock c; fetch resumes at c + 1.
+             early: fetch resumes at e + 1; rename waits until the branch has
+             retired (the front end refills meanwhile).
+             checkpoint: fetch resumes at e + 1, rename at e + 2 or later.
+  Scheduling is computed in program order: with oldest-first select an older
+  instruction never waits for a younger one, so each instruction takes the
+  first clock at or after its operands are ready with a free port. Wrong-path
+  instructions are not in the trace and are not modelled (they would occupy
+  ROB, queue and ports before the flush), so recovery costs are optimistic.
+
 Not modelled: instruction- or data-cache misses (always hit; the trace has no
 load addresses), bus contention, wrong-path effects on predictor state, RAS
 repair. These are model estimates, not measurements of any RTL.
 SPDX-License-Identifier: MIT
 """
 import argparse
+import heapq
+import itertools
 from pathlib import Path
 
 DMIPS_DIVISOR = 1757
@@ -162,6 +203,169 @@ def simulate(recs, pred, width, aligned, a):
     return t_prev + 2 + pend, stalls
 
 
+RECOVERY = ('retire', 'early', 'checkpoint')
+ORDERS = ('a', 'c', 'b')
+
+
+def simulate_ooo(recs, pred, cfg, a):
+    """Out-of-order timing; cfg = (W, rob, iq, alus, mem_ports, load_lat, order, recovery).
+
+    Returns (cycles, mispredicts)."""
+    W, ROB, IQ, NALU, NMEM, LLAT, order, recov = cfg
+    FE, MULLAT = a.ooo_fe, a.ooo_mul_lat
+    n = len(recs)
+    size = 8 * n + 4096
+    nz = bytearray(size)    # ALU ports 1..NALU-1 used per clock
+    p0 = bytearray(size)    # port 0 used per clock
+    mem = bytearray(size)   # memory ports used per clock
+    ready = [0] * 32        # clock at which a dependent may issue
+    ren, ret = [0] * n, [0] * n
+    iqheap = []             # the IQ largest issue times so far (min at [0])
+    cap = (FE + 1) * W
+    f_prev, f_cnt, end_group = -1, 0, True
+    redirect = ren_floor = 0
+    last_store_ret, div_free = -1, 0
+    store_issued = -1       # latest issue clock of any older store
+    r_prev = ret_prev = 0
+    miss = 0
+    conservative, known = order == 'a', order == 'c'
+    nz_max = NALU - 1
+    fixed_div = None if a.div_cost == 'measured' else int(a.div_cost)
+    for i in range(n):
+        pc, kind, rd, srcs, sdata, npc, _, mclk, _ = recs[i]
+        # fetch
+        f = f_prev if not end_group and f_cnt < W else f_prev + 1
+        if f < redirect: f = redirect
+        if i >= cap and f < ren[i - cap]: f = ren[i - cap]
+        if f != f_prev: f_cnt = 0
+        f_cnt += 1
+        f_prev = f
+        pen, ptaken, _ = pred[i]
+        end_group = ptaken or npc != pc + 4
+        # rename
+        r = f + FE
+        if r < r_prev: r = r_prev
+        if r < ren_floor: r = ren_floor
+        if i >= W and r <= ren[i - W]: r = ren[i - W] + 1
+        if i >= ROB and r <= ret[i - ROB]: r = ret[i - ROB] + 1
+        if len(iqheap) >= IQ and r <= iqheap[0]: r = iqheap[0] + 1
+        ren[i] = r_prev = r
+        # issue
+        t = r + 1
+        for s in srcs:
+            if ready[s] > t: t = ready[s]
+        if kind == LOAD:
+            if conservative and t <= last_store_ret: t = last_store_ret + 1
+            elif known and t <= store_issued: t = store_issued + 1
+        elif kind == STORE:
+            if sdata and ready[sdata] > t: t = ready[sdata]
+        elif kind == ALONE:
+            if t <= ret_prev: t = ret_prev + 1
+        elif kind == DIV:
+            if t < div_free: t = div_free
+        if t + 256 >= size:
+            grow = bytearray(size); nz += grow; p0 += grow; mem += bytearray(size); size *= 2
+        if kind == LOAD or kind == STORE:
+            while mem[t] >= NMEM: t += 1
+            mem[t] += 1
+            lat = LLAT if kind == LOAD else 1
+        elif kind == MUL or kind == DIV:
+            while p0[t]: t += 1
+            p0[t] = 1
+            if kind == MUL: lat = MULLAT
+            else:
+                lat = fixed_div if fixed_div is not None else max(1, mclk)
+                div_free = t + lat
+        else:
+            while True:
+                if nz[t] < nz_max: nz[t] += 1; break
+                if not p0[t]: p0[t] = 1; break
+                t += 1
+            lat = 1
+        done = t + lat
+        if rd: ready[rd] = done
+        if len(iqheap) < IQ: heapq.heappush(iqheap, t)
+        elif t > iqheap[0]: heapq.heapreplace(iqheap, t)
+        # retire
+        c = done if done > ret_prev else ret_prev
+        if i >= W and c <= ret[i - W]: c = ret[i - W] + 1
+        ret[i] = ret_prev = c
+        if kind == STORE:
+            last_store_ret = c
+            if t > store_issued: store_issued = t
+        elif kind == ALONE and ren_floor <= c: ren_floor = c + 1
+        if pen:
+            miss += 1
+            if recov == 'retire':
+                if redirect <= c: redirect = c + 1
+            else:
+                if redirect <= t: redirect = t + 1
+                floor = c + 1 if recov == 'early' else t + 2
+                if ren_floor < floor: ren_floor = floor
+    return ret_prev + 1, miss
+
+
+def ooo_grid(a):
+    ints = lambda s: [int(x) for x in s.split(',')]
+    return list(itertools.product(ints(a.ooo_widths), ints(a.rob), ints(a.iq), ints(a.alus),
+                                  ints(a.mem_ports), ints(a.load_lat), a.mem_order.split(','),
+                                  a.recovery.split(',')))
+
+
+def check_monotone(results):
+    """Count configurations where adding one resource (or relaxing ordering or
+    recovery) increased cycles; return (checked, violations, worst)."""
+    checked, bad, worst = 0, 0, (0, None, None)
+    values = [sorted({c[pos] for (_, c) in results}) for pos in range(6)]
+    for k, cyc in results.items():
+        scheme, cfg = k
+        for pos, v in enumerate(cfg):
+            if pos < 5:    # W, ROB, IQ, ALUs, memory ports: larger is better
+                nxt = [x for x in values[pos] if x > v][:1]
+            elif pos == 5:  # load latency: smaller is better
+                nxt = [x for x in values[pos] if x < v][-1:]
+            elif pos == 6:  # memory ordering, strictest first
+                present = [x for x in ORDERS if any(c[6] == x for (_, c) in results)]
+                nxt = present[present.index(v) + 1:][:1]
+            else:
+                j = RECOVERY.index(v) + 1
+                nxt = list(RECOVERY[j:j + 1])
+            for nv in nxt:
+                k2 = (scheme, cfg[:pos] + (nv,) + cfg[pos + 1:])
+                if k2 in results:
+                    checked += 1
+                    d = results[k2] - cyc
+                    if d > 0:
+                        bad += 1
+                        if d > worst[0]: worst = (d, k, k2)
+    return checked, bad, worst
+
+
+def run_ooo(recs, a):
+    grid = ooo_grid(a)
+    n = len(recs)
+    print(f'\nout-of-order: fe={a.ooo_fe} mul_lat={a.ooo_mul_lat} div={a.div_cost}; '
+          'order: loads wait for older stores to a retire, c issue, b never wait')
+    hdr = (f"{'pred':<9}{'W':>2}{'ROB':>5}{'IQ':>5}{'ALU':>4}{'MEM':>4}{'LL':>3}{'ord':>4}"
+           f"{'recovery':>11}{'cycles':>9}{'CPI':>7}{'cyc/run':>9}{'DMIPS/MHz':>10}{'IPC':>6}{'mis/run':>8}")
+    print(hdr); print('-' * len(hdr))
+    results = {}
+    for scheme in a.ooo_schemes.split(','):
+        pred = predict(recs, scheme, a.ras, a.btb_tagless)
+        for cfg in grid:
+            cyc, miss = simulate_ooo(recs, pred, cfg, a)
+            results[(scheme, cfg)] = cyc
+            run = cyc / a.runs
+            W, rob, iq, alus, mp, ll, order, recov = cfg
+            print(f"{scheme:<9}{W:>2}{rob:>5}{iq:>5}{alus:>4}{mp:>4}{ll:>3}{order:>4}{recov:>11}"
+                  f"{cyc:>9}{cyc / n:>7.3f}{run:>9.2f}{1e6 / (run * DMIPS_DIVISOR):>10.3f}"
+                  f"{n / cyc:>6.2f}{miss / a.runs:>8.2f}", flush=True)
+    checked, bad, worst = check_monotone(results)
+    print(f'monotonicity: {checked} one-step resource increases checked, {bad} increased cycles'
+          + (f'; worst +{worst[0]} cycles: {worst[1]} -> {worst[2]}' if bad else ''))
+    return results
+
+
 def main():
     p = argparse.ArgumentParser(description=__doc__.split('\n')[0])
     p.add_argument('traces', nargs='*', help='profile.trace files (default: the Dhrystone builds present)')
@@ -173,6 +377,20 @@ def main():
     p.add_argument('--mul-stall', type=int, default=3, help='stall cycles per multiply')
     p.add_argument('--div-cost', default='measured', help="cycles per divide, or 'measured'")
     p.add_argument('--late-store-data', action=argparse.BooleanOptionalAction, default=True)
+    o = p.add_argument_group('out-of-order mode (comma-separated lists sweep a grid)')
+    o.add_argument('--ooo', action='store_true', help='also model out-of-order configurations')
+    o.add_argument('--ooo-schemes', default='btb256,perfect', help='predictors for the OoO grid')
+    o.add_argument('--ooo-widths', default='1,2,4', help='fetch/rename/retire width W')
+    o.add_argument('--rob', default='16,32,64', help='reorder-buffer entries')
+    o.add_argument('--iq', default='8,16', help='unified issue-queue entries')
+    o.add_argument('--alus', default='2,3', help='ALU ports (port 0 also multiply/divide)')
+    o.add_argument('--mem-ports', default='1', help='memory ports shared by loads and stores')
+    o.add_argument('--load-lat', default='2', help='load issue to dependent issue, clocks')
+    o.add_argument('--mem-order', default='a,b',
+                   help='a: loads wait for older stores to retire; c: to issue; b: never wait')
+    o.add_argument('--recovery', default='retire,early,checkpoint', help='mispredict recovery')
+    o.add_argument('--ooo-fe', type=int, default=3, help='fetch-to-rename depth, clocks')
+    o.add_argument('--ooo-mul-lat', type=int, default=3, help='multiply latency, clocks')
     a = p.parse_args()
     root = Path(__file__).resolve().parents[3] / 'build' / 'cpu' / 'bench'
     traces = a.traces or [str(root / d / 'profile.trace') for d in
@@ -199,6 +417,8 @@ def main():
                 print(f"{'w' + w + ' ' + scheme:<14}{cyc:>9}{cyc / n:>7.3f}{run:>9.2f}"
                       f"{1e6 / (run * DMIPS_DIVISOR):>10.3f}{n / cyc:>6.2f}"
                       + ''.join(f'{st[c] / a.runs:>9.2f}' for c in CAUSES))
+        if a.ooo:
+            run_ooo(recs, a)
 
 
 if __name__ == '__main__':

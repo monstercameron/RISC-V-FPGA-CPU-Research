@@ -121,7 +121,7 @@ def add_index_row(root, record, log_name):
     text += (f'\n| {record["time"]} | `{record["commit"]}` | {dirty} | '
              f'{record.get("architecture_version", "unrecorded")} | {record["compiler"]} `-{record["optimization"]}` `{record["isa"].split("_")[0] + ("b" if "_zbb" in record["isa"] else "")}`'
              f'{"" if record.get("runtime", "reference") == "reference" else " fast runtime"}'
-             f'{"" if record.get("core", "multicycle") == "multicycle" else " pipelined core"} | '
+             f'{ {"multicycle": "", "pipe": " pipelined core", "ooo": " out-of-order core"}.get(record.get("core", "multicycle"), "") } | '
              f'{record["cycles_per_run"]:,.1f} | {record["dmips_per_mhz"]:.4f} | {record["rubric_total"]:.1f} | '
              f'[{log_name}]({LOG_DIR}/{log_name}) |\n')
     path.write_text(text, encoding='utf-8', newline='\n')
