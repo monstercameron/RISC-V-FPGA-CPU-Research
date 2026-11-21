@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Original CPU foundation, wide out-of-order implementation (architecture 0.14.3).
+// Original CPU foundation, wide out-of-order implementation (architecture 0.14.4).
 // RV64IM + B execution, serialized FENCE.I, terminal EEI. Same module name and
 // contract as rv64_core.sv and rv64_pipe.sv, plus a wider retirement trace (rt_*);
 // build with one of the three files. Architecture version: cpu/VERSION,
@@ -126,7 +126,8 @@ module rv64_core #(
     localparam integer BTB_BITS = 10;    // 1024 entries (256 until 0.11.1)
     localparam integer BTB_TAG = 10;
     localparam integer BTB_ENTRIES = 1 << BTB_BITS;
-    localparam integer RAS_N = 16;
+    localparam integer RAS_N = 64;     // return stack entries (16 until 0.14.1)
+    localparam integer RAS_B = 6;
     localparam integer LP_BITS = 10;     // loop predictor: 1024 entries (256 in 0.11.0)
     localparam integer LP_N = 1 << LP_BITS;
     localparam integer LP_TAG = 10;
@@ -427,7 +428,7 @@ module rv64_core #(
     reg [P_B-1:0] rb_opdst [0:ROB_N-1];
     reg [P_B-1:0] rb_sps2 [0:ROB_N-1];
     reg [7:0] rb_wstrb [0:ROB_N-1];
-    reg [3:0] rb_rsp [0:ROB_N-1];      // return-stack pointer after this instruction's fetch
+    reg [RAS_B-1:0] rb_rsp [0:ROB_N-1];      // return-stack pointer after this instruction's fetch
     reg [ROB_B-1:0] rb_head, rb_tail;
     reg [ROB_B:0] rb_count;
     // Issue queue.
@@ -494,7 +495,7 @@ module rv64_core #(
     reg [29:0] btb_target [0:BTB_ENTRIES-1];
     reg [1:0] btb_ctr [0:BTB_ENTRIES-1];
     reg [63:0] ras [0:RAS_N-1];
-    reg [3:0] ras_sp;
+    reg [RAS_B-1:0] ras_sp;
     // Fetch.
     reg [63:0] f_pc;
     reg [63:0] q_pc [0:Q_N-1];
@@ -502,7 +503,7 @@ module rv64_core #(
     reg [31:0] q_insn [0:Q_N-1];
     reg [Q_N-1:0] q_fpred, q_bhit, q_fault, q_fmis;
     reg [1:0] q_bctr [0:Q_N-1];
-    reg [3:0] q_rsp [0:Q_N-1];
+    reg [RAS_B-1:0] q_rsp [0:Q_N-1];
     // Loop predictor (0.11.0): for each conditional branch, the run length of its usual
     // direction before one opposite outcome. An instance's iteration number comes from
     // the youngest earlier instance still in flight, else from the retired count, so
@@ -577,8 +578,8 @@ module rv64_core #(
     reg [7:0] g_li [0:FW-1];
     reg [LP_BITS-1:0] g_lpi;
     reg [7:0] lp_it;
-    reg [3:0] d_redirect_sp;
-    reg [3:0] g_ras_pop_sp;
+    reg [RAS_B-1:0] d_redirect_sp;
+    reg [RAS_B-1:0] g_ras_pop_sp;
     reg f_stale;                    // the held fetch was issued before a redirect
     reg [FW-1:0] g_lpmask;
     reg g_lpu, g_lpd, lp_found, lp_d;
@@ -737,11 +738,11 @@ module rv64_core #(
     reg [1:0] g_bc [0:FW-1];
     reg [6:0] g_n;
     reg [63:0] g_next;
-    reg [3:0] g_sp [0:FW-1];
+    reg [RAS_B-1:0] g_sp [0:FW-1];
     reg [4:0] g_taken;
     reg [4:0] g_cr;
     reg [63:0] gras [0:RAS_N-1];      // the fetch group's copy of the return stack
-    reg [3:0] cur_sp;
+    reg [RAS_B-1:0] cur_sp;
     reg [BTB_BITS-1:0] bi;
     reg [IC_INDEX-1:0] fi;
     reg [6:0] n_ren;
