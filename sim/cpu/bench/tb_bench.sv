@@ -7,12 +7,14 @@
 // times that retirement window, prints it and stops there; markers are then only
 // reported. The LZMA benchmark runner uses both; Dhrystone uses neither.
 `timescale 1ns/1ps
-module tb_bench #(parameter integer RAM_WORDS = 8192);
+// ICACHE_BEATS/DCACHE_BEATS set the core's cache sizes (8-byte beats); the defaults keep the SoC's 4 KiB.
+module tb_bench #(parameter integer RAM_WORDS = 8192, parameter integer ICACHE_BEATS = 512,
+                  parameter integer DCACHE_BEATS = 512);
     reg clk=0,reset=1;
     always #5 clk=~clk;
     wire trapped,retired,retired2,retired3;
     wire [63:0] pc,cause,tval,rpc;
-    rv64_bram_soc #(.RAM_WORDS(RAM_WORDS)) dut(.clk(clk),.reset(reset),.trapped(trapped),
+    rv64_bram_soc #(.RAM_WORDS(RAM_WORDS),.ICACHE_BEATS(ICACHE_BEATS),.DCACHE_BEATS(DCACHE_BEATS)) dut(.clk(clk),.reset(reset),.trapped(trapped),
         .trap_pc(pc),.trap_cause(cause),.trap_tval(tval),.retire_valid(retired),.retire_pc(rpc),.retire2_valid(retired2),
         .retire3_valid(retired3));
 

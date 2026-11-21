@@ -148,7 +148,7 @@ def check_words(words, expected, what):
     return checks
 
 
-def run(args, root, out, build, snap, rtl, core_file, command, sha, sim):
+def run(args, root, out, build, snap, rtl, core_file, command, sha, sim, caches):
     if 'lzma' not in build:
         raise SystemExit('build.json is not an lzma build')
     ram_bytes, mailbox = build['ram_bytes'], build['mailbox_address']
@@ -175,7 +175,7 @@ def run(args, root, out, build, snap, rtl, core_file, command, sha, sim):
     arena_used = words.get(15)
 
     timing_sim = sim.build('tb_bench', [*rtl, snap / 'sim/cpu/bench/tb_bench.sv'], out / 'tb_bench.vvp',
-                           params={'RAM_WORDS': ram_bytes // 8}, defines=wide)
+                           params={'RAM_WORDS': ram_bytes // 8, **caches}, defines=wide)
     trace_sim = sim.build('tb_core', [rtl[0], snap / 'sim/cpu/tb_core.sv'], out / 'tb_core.vvp',
                           params={'MEM_BYTES': ram_bytes}, defines=wide)
     jobs = max(1, args.jobs)
@@ -328,6 +328,8 @@ def run(args, root, out, build, snap, rtl, core_file, command, sha, sim):
             'environment': 'bare metal, laboratory terminal trap',
             'class': {'multicycle': 'multicycle', 'pipe': 'pipelined', 'ooo': 'out-of-order'}[args.core],
             'core': args.core,
+            'core_source': args.core_source or core_file,
+            'cache_beats': {'icache': caches['ICACHE_BEATS'], 'dcache': caches['DCACHE_BEATS']},
             'rtl_sha256': {p.relative_to(snap).as_posix(): sha(p) for p in rtl},
             'platform': f'rv64_bram_soc, {ram_bytes // 1024} KiB synchronous RAM, no added wait cycles in the timing run',
             'hardware': f'none ({sim.label} simulation)',

@@ -91,6 +91,12 @@ def main():
     parser.add_argument('--devlog', action='store_true',
                         help='Write this run, its rubric scorecard and profile to devlog/devlog-<commit>.md '
                              'and add a row to the run index in DEVLOG.md')
+    parser.add_argument('--core-source', help='Time and check this core file instead of the released one '
+                        '(a candidate; it is snapshotted and hashed under the released name)')
+    parser.add_argument('--icache-beats', type=int,
+                        help='Instruction-cache size in 8-byte beats (default 512 = 4 KiB for dhrystone, '
+                             '8192 = 64 KiB for lzma)')
+    parser.add_argument('--dcache-beats', type=int, help='Data-cache size in 8-byte beats (defaults as --icache-beats)')
     simulator.add_argument(parser)
     lzma_options = parser.add_argument_group('lzma only')
     lzma_options.add_argument('--lzma-mode', choices=('full', 'sampled'),
@@ -103,6 +109,8 @@ def main():
     lzma_options.add_argument('--differential-every', type=int, default=1,
                               help='Trace-check every K-th piece of each phase (always the first)')
     args = parser.parse_args()
+    if args.devlog and (args.core_source or args.icache_beats or args.dcache_beats):
+        parser.error('--devlog records the released core in its standard configuration only')
     if args.benchmark == 'lzma' and args.devlog:
         parser.error('--devlog records Dhrystone runs only; log LZMA runs in DEVLOG.md by hand')
     try:
@@ -125,17 +133,24 @@ def main():
     sources = [core_file, 'rtl/cpu/rv64_bram_soc.sv', 'sim/cpu/bench/tb_bench.sv', 'sim/cpu/tb_core.sv', 'cpu/VERSION']
     for name in sources:
         (snap / name).parent.mkdir(parents=True, exist_ok=True)
-        shutil.copyfile(ROOT / name, snap / name)
+        source = Path(args.core_source).resolve() if (args.core_source and name == core_file) else ROOT / name
+        shutil.copyfile(source, snap / name)
+    # Cache sizes of the measured configuration (8-byte beats). 7-Zip runs default to 64 KiB each,
+    # the L1 sizes of the Cortex-X925 they are compared with; Dhrystone keeps the SoC's 4 KiB.
+    default_beats = 8192 if args.benchmark == 'lzma' else 512
+    args.icache_beats = args.icache_beats or default_beats
+    args.dcache_beats = args.dcache_beats or default_beats
+    caches = {'ICACHE_BEATS': args.icache_beats, 'DCACHE_BEATS': args.dcache_beats}
     rtl = [snap / core_file, snap / 'rtl/cpu/rv64_bram_soc.sv']
     if args.benchmark == 'lzma':
         import lzma_run
-        lzma_run.run(args, ROOT, out, build, snap, rtl, core_file, command, sha, sim)
+        lzma_run.run(args, ROOT, out, build, snap, rtl, core_file, command, sha, sim, caches)
         return
 
     # 1. Timing on the core plus synchronous RAM wrapper.
     wide = ['WIDE_TRACE'] if args.core == 'ooo' else []
     timing_sim = sim.build('tb_bench', [*rtl, snap / 'sim/cpu/bench/tb_bench.sv'], out / 'tb_bench.vvp',
-                           params={'RAM_WORDS': ram_bytes // 8}, defines=wide)
+                           params={'RAM_WORDS': ram_bytes // 8, **caches}, defines=wide)
     started = time.perf_counter()
     output = command([*timing_sim, f'+image={out / "bench-words.hex"}', f'+mailbox={mailbox:x}',
                       f'+max_cycles={args.max_cycles}', f'+profile={out / "profile.trace"}'])
@@ -218,6 +233,8 @@ def main():
             'isa': build['isa'], 'abi': build['abi'],
             'environment': 'bare metal, laboratory terminal trap',
             'class': {'multicycle': 'multicycle', 'pipe': 'pipelined', 'ooo': 'out-of-order'}[args.core], 'core': args.core,
+            'core_source': args.core_source or core_file,
+            'cache_beats': {'icache': args.icache_beats, 'dcache': args.dcache_beats},
             'rtl_sha256': {p.relative_to(snap).as_posix(): sha(p) for p in rtl},
             'platform': f'rv64_bram_soc, {ram_bytes // 1024} KiB synchronous RAM, no added wait cycles in the timing run',
             'hardware': f'none ({sim.label} simulation)',

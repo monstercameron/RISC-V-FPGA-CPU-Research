@@ -98,7 +98,8 @@ kernel gives 8.34 / 2.59 MIPS/MHz against 1.91 / 1.93 from `7z b -md22` (compres
 | Arm Cortex-X925, native (user's laptop, ~4.27 GHz) | 8.34 | 2.59 | n/a |
 | Multicycle core (`rv64_core.sv`) | 1.61 (19% of X925) | 1.69 (65%) | 1.36 / 1.66 |
 | Pipelined core (`rv64_pipe.sv`) | 0.96 (12%) | 0.89 (34%) | 0.82 / 0.87 |
-| Out-of-order core (`rv64_ooo.sv`), whole program under Verilator | 3.39 (41%) | 2.56 (99%) | 2.87 / 2.50 |
+| Out-of-order core (`rv64_ooo.sv`), 4 KiB caches, Verilator | 3.39 (41%) | 2.56 (99%) | 2.87 / 2.50 |
+| **Out-of-order core, 64 KiB I / 64 KiB D caches (measured configuration from 2026-11-21 18:07)** | **7.46 (89%)** | **2.89 (112%)** | 6.32 / 2.83 |
 
 All simulated figures are idealized-model simulation (1-clock memory, 4 KiB caches). The multicycle and
 pipelined results are whole-program runs checked against the reference model and an independent liblzma
@@ -110,4 +111,14 @@ out-of-order LZMA windows); its result mailbox passed and equals the multicycle 
 sampled Icarus estimate (13 of 21 compress pieces) gave 3.32 / 2.555. Against the goal (10.9 / 3.35),
 out-of-order compression is at 31% and decompression at 76%. Benchmark design and commands:
 [lzma-benchmark.md](lzma-benchmark.md).
+
+### Measured configuration
+
+From 2026-11-21 18:07 the 7-Zip kernel is measured with 64 KiB instruction and 64 KiB data caches
+(`run_bench.py --benchmark lzma`, default `--icache-beats 8192 --dcache-beats 8192`), the L1 sizes of
+the Cortex-X925 it is compared with; the SoC's 4 KiB caches (`--icache-beats 512 --dcache-beats 512`)
+stay as the FPGA-class figure. The bus behind the caches is unchanged (2 clocks per 8-byte read, one
+miss at a time), so a miss costs far less than DRAM would. Baseline at architecture 0.14.6: 485,401
+compress-kernel clocks (7.46 MIPS/MHz, 68% of the goal) and 151,758 decompress (2.89, 86% of the goal).
+Dhrystone keeps the 4 KiB configuration, so its history stays comparable.
 
