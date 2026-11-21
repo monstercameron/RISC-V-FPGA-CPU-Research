@@ -27,6 +27,15 @@ LOADS = {0: 'lb', 1: 'lh', 2: 'lw', 3: 'ld', 4: 'lbu', 5: 'lhu', 6: 'lwu'}
 STORES = {0: 'sb', 1: 'sh', 2: 'sw', 3: 'sd'}
 OP_IMM = {0: 'addi', 1: 'slli', 2: 'slti', 3: 'sltiu', 4: 'xori', 5: 'srli', 6: 'ori', 7: 'andi'}
 OP = {0: 'add', 1: 'sll', 2: 'slt', 3: 'sltu', 4: 'xor', 5: 'srl', 6: 'or', 7: 'and'}
+MULDIV = {0: 'mul', 1: 'mulh', 2: 'mulhsu', 3: 'mulhu', 4: 'div', 5: 'divu', 6: 'rem', 7: 'remu'}
+MULDIVW = {0: 'mulw', 4: 'divw', 5: 'divuw', 6: 'remw', 7: 'remuw'}
+ZB_OP = {(0x10, 2): 'sh1add', (0x10, 4): 'sh2add', (0x10, 6): 'sh3add', (0x20, 4): 'xnor', (0x20, 6): 'orn',
+         (0x20, 7): 'andn', (0x05, 4): 'min', (0x05, 5): 'minu', (0x05, 6): 'max', (0x05, 7): 'maxu',
+         (0x05, 1): 'clmul', (0x05, 3): 'clmulh', (0x05, 2): 'clmulr', (0x30, 1): 'rol', (0x30, 5): 'ror',
+         (0x24, 1): 'bclr', (0x14, 1): 'bset', (0x34, 1): 'binv', (0x24, 5): 'bext'}
+ZB_OPW = {(0x04, 0): 'add.uw', (0x10, 2): 'sh1add.uw', (0x10, 4): 'sh2add.uw', (0x10, 6): 'sh3add.uw',
+          (0x04, 4): 'zext.h', (0x30, 1): 'rolw', (0x30, 5): 'rorw'}
+ZBB_UNARY = {0x600: 'clz', 0x601: 'ctz', 0x602: 'cpop', 0x604: 'sext.b', 0x605: 'sext.h'}
 
 
 def decode(ins):
@@ -39,14 +48,32 @@ def decode(ins):
     if op == 0x63: return BRANCHES.get(f3, '?'), 'branch'
     if op == 0x03: return LOADS.get(f3, '?'), 'load'
     if op == 0x23: return STORES.get(f3, '?'), 'store'
-    if op == 0x13: return ('srai' if f3 == 5 and alt else OP_IMM[f3]), 'alu'
-    if op == 0x1b: return {0: 'addiw', 1: 'slliw', 5: 'sraiw' if alt else 'srliw'}.get(f3, '?'), 'alu'
+    f7, f12 = ins >> 25, ins >> 20
+    if op == 0x13:
+        # B extension immediates (Zbb/Zbs) share OP-IMM (found by a Codex review, 2026-11-21).
+        if f3 == 1 and f12 in ZBB_UNARY: return ZBB_UNARY[f12], 'alu'
+        if f3 == 1 and (ins >> 26) in (0x0a, 0x12, 0x1a): return {0x0a: 'bseti', 0x12: 'bclri', 0x1a: 'binvi'}[ins >> 26], 'alu'
+        if f3 == 5 and f12 == 0x287: return 'orc.b', 'alu'
+        if f3 == 5 and f12 == 0x6b8: return 'rev8', 'alu'
+        if f3 == 5 and (ins >> 26) == 0x18: return 'rori', 'alu'
+        if f3 == 5 and (ins >> 26) == 0x12: return 'bexti', 'alu'
+        return ('srai' if f3 == 5 and alt else OP_IMM[f3]), 'alu'
+    if op == 0x1b:
+        if f3 == 1 and (ins >> 26) == 0x02: return 'slli.uw', 'alu'
+        if f3 == 1 and f12 in ZBB_UNARY: return ZBB_UNARY[f12] + 'w', 'alu'
+        if f3 == 5 and f7 == 0x30: return 'roriw', 'alu'
+        return {0: 'addiw', 1: 'slliw', 5: 'sraiw' if alt else 'srliw'}.get(f3, '?'), 'alu'
     if op == 0x33:
+        if f7 == 0x01: return MULDIV[f3], 'muldiv'
+        if (f7, f3) in ZB_OP: return ZB_OP[(f7, f3)], 'alu'
         name = OP[f3]
         if f3 == 0 and alt: name = 'sub'
         if f3 == 5 and alt: name = 'sra'
         return name, 'alu'
-    if op == 0x3b: return {0: 'subw' if alt else 'addw', 1: 'sllw', 5: 'sraw' if alt else 'srlw'}.get(f3, '?'), 'alu'
+    if op == 0x3b:
+        if f7 == 0x01: return MULDIVW.get(f3, '?'), 'muldiv'
+        if (f7, f3) in ZB_OPW: return ZB_OPW[(f7, f3)], 'alu'
+        return {0: 'subw' if alt else 'addw', 1: 'sllw', 5: 'sraw' if alt else 'srlw'}.get(f3, '?'), 'alu'
     if op == 0x0f: return ('fence.i' if f3 == 1 else 'fence'), 'fence'
     return '?', 'system'
 

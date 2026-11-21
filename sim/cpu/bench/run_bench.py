@@ -121,6 +121,12 @@ def main():
     if words.get(1) != 0:
         raise AssertionError(f'main() returned {words.get(1)}, expected 0')
     runs = words.get(3)
+    # The run count must be the build's fixed NUMBER_OF_RUNS, not only self-consistent
+    # (found by a Codex review, 2026-11-21: a wrong count would pass its own check).
+    header = (ROOT / 'sim/cpu/bench/vendor/dhrystone/dhrystone.h').read_text(encoding='latin-1')
+    fixed = re.search(r'#define\s+NUMBER_OF_RUNS\s+(\d+)', header)
+    if fixed is None or runs != int(fixed[1]):
+        raise AssertionError(f'Dhrystone reported {runs} runs; the build fixes {fixed[1] if fixed else "?"}')
     checks = []
     for offset, (name, expect) in enumerate(DHRYSTONE_RESULTS):
         expected, actual = expect(runs), words.get(2 + offset)
