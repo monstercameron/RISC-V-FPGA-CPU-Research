@@ -49,7 +49,7 @@ module rv64_core #(
     output reg [63:0]  retire3_data,
     output reg [63:0]  retire3_next_pc
 );
-    localparam [2:0] FETCH=0, EXECUTE=1, MEMORY=2, HALTED=3, DIVIDE=4;
+    localparam [2:0] FETCH=0, EXECUTE=1, MEMORY=2, HALTED=3, DIVIDE=4, MULTIPLY=5;
     reg [2:0] state;
     reg [63:0] pc;
     reg [31:0] insn;
@@ -185,13 +185,20 @@ module rv64_core #(
     wire div_start = is_div && !div_by_zero && !div_overflow && mag_a >= mag_b;
     // One signed 65x65 product serves every multiply (0.6.0): each operand gets its
     // sign bit (signed operand) or a zero (unsigned) as bit 64; the low 64 bits are
-    // the same either way, and mulh/mulhsu/mulhu take bits 127:64.
+    // the same either way, and mulh/mulhsu/mulhu take bits 127:64. Since 0.7.1 the
+    // operands are registered in EXECUTE and the product is taken in a MULTIPLY state
+    // one clock later, so the multiplier starts at flip-flops instead of following
+    // the register read and decode in the same clock (as an FPGA DSP block expects).
     wire mul_a_signed = f3 == 1 || f3 == 2;
     wire mul_b_signed = f3 == 1;
     wire signed [64:0] mul_a = {mul_a_signed & a[63], a};
     wire signed [64:0] mul_b = {mul_b_signed & b[63], b};
-    wire signed [129:0] product = mul_a * mul_b;
-    wire [31:0] p_w = product[31:0];
+    wire mul_start = m_op && !f3[2];
+    reg signed [64:0] mul_op_a, mul_op_b;
+    reg mul_high, mul_word;
+    wire signed [129:0] product = mul_op_a * mul_op_b;
+    wire [63:0] mul_value = mul_high ? product[127:64]
+                          : mul_word ? {{32{product[31]}},product[31:0]} : product[63:0];
     reg [63:0] m_result;
     reg [63:0] div_rem, div_den, div_quot, div_bit;
     reg div_neg_q, div_neg_r, div_want_rem, div_is_word;
@@ -214,8 +221,7 @@ module rv64_core #(
 
     always @* begin
         case (f3)
-            0: m_result = m_word ? {{32{p_w[31]}},p_w} : product[63:0];
-            1, 2, 3: m_result = product[127:64];
+            0, 1, 2, 3: m_result = 64'b0;  // multiplies complete in MULTIPLY (0.7.1)
             default:
                 if (div_by_zero) m_result = want_rem ? (m_word ? sext_a32 : a) : {64{1'b1}};
                 else if (div_overflow) m_result = want_rem ? 64'b0 : da;
@@ -397,7 +403,7 @@ module rv64_core #(
     wire hazard2 = slot0_writes && !slot0_forward && ((uses_rs1_2 && rs1_2 == rd) || (uses_rs2_2 && rs2_2 == rd));
     wire can_pair = slot2_valid && simple2 && !hazard2;
     wire slot0_alu = op == 7'h37 || op == 7'h17 || op == 7'h13 || op == 7'h1b ||
-                     ((op == 7'h33 || op == 7'h3b) && !is_div) || (op == 7'h63 && !branch_taken) || control0;
+                     ((op == 7'h33 || op == 7'h3b) && !m_op) || (op == 7'h63 && !branch_taken) || control0;
     wire pair_alu = can_pair && slot0_alu && !store2;
     wire pair_load = can_pair && load_hit && !store2;
     wire pair_store2 = can_pair && store2 && (slot0_alu || load_hit);
@@ -788,6 +794,7 @@ module rv64_core #(
             pending_f3<=0; pending_rd<=0; pending_load<=0; pending_next_pc<=0;
             ic_valid<=0; dc_valid<=0;
             div_rem<=0; div_den<=0; div_quot<=0; div_bit<=0;
+            mul_op_a<=0; mul_op_b<=0; mul_high<=0; mul_word<=0;
             div_neg_q<=0; div_neg_r<=0; div_want_rem<=0; div_is_word<=0;
             for (i=0;i<32;i=i+1) regs[i]<=0;
         end else begin
@@ -816,6 +823,10 @@ module rv64_core #(
                 end
                 EXECUTE: begin
                     if (exception) report_trap(exception_cause,exception_tval);
+                    else if (mul_start) begin
+                        mul_op_a<=mul_a; mul_op_b<=mul_b; mul_high<=f3!=0; mul_word<=m_word;
+                        state<=MULTIPLY;
+                    end
                     else if (div_start) begin
                         div_rem<=mag_a; div_quot<=0;
                         div_den<=mag_b << (clz64(mag_b) - clz64(mag_a));
@@ -876,6 +887,7 @@ module rv64_core #(
                         div_den<=div_den >> 1; div_bit<=div_bit >> 1;
                     end
                 end
+                MULTIPLY: retire(rd,mul_value,next_pc,1'b0,1'b0,64'b0,1'b0);
                 HALTED: begin end
                 default: report_trap(2,0);
             endcase

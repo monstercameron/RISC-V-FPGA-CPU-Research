@@ -57,7 +57,7 @@ module tb_bench #(parameter integer RAM_WORDS = 8192);
         end
         case (dut.cpu.state)
             0: in_fetch=in_fetch+1;
-            1,4: in_execute=in_execute+1; // EXECUTE, and DIVIDE steps since 0.4.0
+            1,4,5: in_execute=in_execute+1; // EXECUTE, DIVIDE (0.4.0) and MULTIPLY (0.7.1)
             2: in_memory=in_memory+1;
             default: begin end
         endcase
