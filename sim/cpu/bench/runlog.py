@@ -46,8 +46,10 @@ def previous_runs(root):
 
 
 def trend(report, compiler, previous):
-    settings = (compiler, report['optimization'], report['scope']['isa'], report['ram_bytes'])
-    same = [p for p in previous if (p['compiler'], p['optimization'], p['isa'], p['ram_bytes']) == settings]
+    settings = (compiler, report['optimization'], report['scope']['isa'], report['ram_bytes'],
+                report.get('runtime', 'reference'))
+    same = [p for p in previous if (p['compiler'], p['optimization'], p['isa'], p['ram_bytes'],
+                                    p.get('runtime', 'reference')) == settings]
     if not same:
         return 'first run with these build settings'
     last = same[-1]
@@ -68,7 +70,8 @@ def entry(report, card, prof, profile_markdown, when, commit, dirty, previous):
         f'## Run {when}', '',
         f'- **Architecture:** version {card["architecture_version"]}',
         f'- **Commit:** `{commit}`, uncommitted changes: {dirty}',
-        f'- **Build:** {compiler}, `-{report["optimization"]}`, `{report["scope"]["isa"]}`, {report["ram_bytes"] // 1024} KiB RAM',
+        f'- **Build:** {compiler}, `-{report["optimization"]}`, `{report["scope"]["isa"]}`, {report["ram_bytes"] // 1024} KiB RAM, '
+        f'{report.get("runtime", "reference")} runtime',
         f'- **RTL:** {rtl}',
         f'- **Result:** {report["cycles_per_run"]:,.1f} clocks per run, {report["instructions_per_run"]:,.1f} instructions per run, '
         f'CPI {report["clocks_per_instruction"]:.3f}, **{report["dmips_per_mhz"]:.4f} DMIPS/MHz** '
@@ -99,7 +102,8 @@ def entry(report, card, prof, profile_markdown, when, commit, dirty, previous):
     lines += ['```', '']
     record = {'time': when, 'architecture_version': card['architecture_version'], 'commit': commit, 'dirty': dirty,
               'compiler': compiler, 'optimization': report['optimization'], 'isa': report['scope']['isa'],
-              'ram_bytes': report['ram_bytes'], 'cycles_per_run': report['cycles_per_run'],
+              'ram_bytes': report['ram_bytes'], 'runtime': report.get('runtime', 'reference'),
+              'cycles_per_run': report['cycles_per_run'],
               'cpi': report['clocks_per_instruction'], 'dmips_per_mhz': report['dmips_per_mhz'],
               'rubric_total': round(card['total'], 2), 'rtl_sha256': report['scope']['rtl_sha256']}
     lines += [f'<!-- dhrystone-run {json.dumps(record, separators=(",", ":"))} -->', '']
@@ -113,7 +117,8 @@ def add_index_row(root, record, log_name):
         text += '\n\n---\n\n' + INDEX_HEADING + '\n' + INDEX_INTRO
     dirty = record['dirty'].split(' (')[0]
     text += (f'\n| {record["time"]} | `{record["commit"]}` | {dirty} | '
-             f'{record.get("architecture_version", "unrecorded")} | {record["compiler"]} `-{record["optimization"]}` | '
+             f'{record.get("architecture_version", "unrecorded")} | {record["compiler"]} `-{record["optimization"]}` `{record["isa"].split("_")[0]}`'
+             f'{"" if record.get("runtime", "reference") == "reference" else " fast runtime"} | '
              f'{record["cycles_per_run"]:,.1f} | {record["dmips_per_mhz"]:.4f} | {record["rubric_total"]:.1f} | '
              f'[{log_name}]({LOG_DIR}/{log_name}) |\n')
     path.write_text(text, encoding='utf-8', newline='\n')

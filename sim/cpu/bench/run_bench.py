@@ -173,6 +173,7 @@ def main():
             'debug_trace': 'retirement trace ports present in the RTL',
         },
         'compiler': build['compiler'], 'optimization': build['optimization'], 'ram_bytes': ram_bytes,
+        'runtime': build.get('runtime', 'reference'),
         'build_commands': build['commands'],
         'number_of_runs': runs,
         'timed_region': {'cycles': region_cycles, 'retired_instructions': region_retired,
@@ -221,7 +222,8 @@ def main():
     (out / 'profile.md').write_text(bench_profile.markdown(profile) + '\n', encoding='utf-8')
     log_path = runlog.write(ROOT, report, card, profile, bench_profile.markdown(profile)) if args.devlog else None
     if args.record:
-        suffix = '' if build['isa'] == 'rv64i_zifencei' else '-' + build['isa'].split('_')[0]
+        suffix = ('' if build['isa'] == 'rv64i_zifencei' else '-' + build['isa'].split('_')[0]) + \
+            ('' if build.get('runtime', 'reference') == 'reference' else '-fastrt')
         (ROOT / f'cpu/{args.benchmark}{suffix}-results.json').write_bytes((json.dumps(report, indent=2) + '\n').encode())
     print(f'PASS: Dhrystone, {runs} runs; all {len(checks)} result checks match.')
     print(f'PASS: differential traces match the reference model at wait cycles {args.stalls}.')

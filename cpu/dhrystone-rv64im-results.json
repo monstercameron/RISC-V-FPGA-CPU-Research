@@ -2,15 +2,15 @@
   "status": "PASS",
   "benchmark": "Dhrystone (riscv-tests edition, version string \"C, Version 2.2\")",
   "label": "Non-compliant run, simulation (rubric evidence class E1)",
-  "timestamp_utc": "2026-11-21T03:19:24.093756+00:00",
+  "timestamp_utc": "2026-11-21T03:24:21.504897+00:00",
   "scope": {
-    "architecture_version": "0.5.0",
+    "architecture_version": "0.5.1",
     "isa": "rv64im_zifencei",
     "abi": "lp64",
     "environment": "bare metal, laboratory terminal trap",
     "class": "multicycle",
     "rtl_sha256": {
-      "rtl/cpu/rv64_core.sv": "ecd87864afb3935e262e3f9fd669647a23778766d1bc690ec6c05fdbb30c4620",
+      "rtl/cpu/rv64_core.sv": "58d055bc8e34f85970c5ad0d3e5dd93c32042cd96b58d5ae1fd892523fd509e5",
       "rtl/cpu/rv64_bram_soc.sv": "94a9e078dbd90cf124fb58f360ee95d6e7e7cc3d29f5ff03a0af8d6811e0760d"
     },
     "platform": "rv64_bram_soc, 64 KiB synchronous RAM, no added wait cycles in the timing run",
@@ -178,18 +178,18 @@
   ],
   "number_of_runs": 500,
   "timed_region": {
-    "cycles": 217862,
+    "cycles": 198880,
     "retired_instructions": 276529,
     "definition": "from the start-marker store to the instruction before the stop-marker store"
   },
   "whole_program": {
-    "cycles_after_reset": 225026,
+    "cycles_after_reset": 204699,
     "retired_instructions": 283428
   },
-  "cycles_per_run": 435.724,
+  "cycles_per_run": 397.76,
   "instructions_per_run": 553.058,
-  "clocks_per_instruction": 0.7878450361444912,
-  "dmips_per_mhz": 1.3062212858926163,
+  "clocks_per_instruction": 0.7192012410994868,
+  "dmips_per_mhz": 1.430892909227359,
   "result_checks": [
     {
       "name": "magic",
@@ -299,23 +299,23 @@
       "max_wait_cycles": 0,
       "events": 323227,
       "result": "PASS",
-      "simulator_summary": "DONE retirements=283428 cycles=224559"
+      "simulator_summary": "DONE retirements=283428 cycles=204232"
     },
     {
       "max_wait_cycles": 7,
       "events": 323227,
       "result": "PASS",
-      "simulator_summary": "DONE retirements=283428 cycles=381261"
+      "simulator_summary": "DONE retirements=283428 cycles=349674"
     }
   ],
   "profile": {
-    "per_instruction_clock_sum": 217862,
+    "per_instruction_clock_sum": 198880,
     "state_clocks_per_run": {
       "fetch": 0.576,
-      "execute": 435.072,
+      "execute": 397.108,
       "memory": 0.076
     },
-    "fetch_share_of_clocks": 0.0013219377404044763,
+    "fetch_share_of_clocks": 0.0014481094127111827,
     "bus_fetches_per_run": 0.288,
     "classes_per_run": {
       "jump": {
@@ -328,9 +328,9 @@
       },
       "alu": {
         "instructions": 238.026,
-        "clocks": 120.332,
+        "clocks": 104.36,
         "fetch": 0.292,
-        "execute": 120.04,
+        "execute": 104.068,
         "memory": 0.0,
         "fetch_misses": 0.146
       },
@@ -352,23 +352,14 @@
       },
       "branch": {
         "instructions": 87.002,
-        "clocks": 87.03,
+        "clocks": 65.038,
         "fetch": 0.028,
-        "execute": 87.002,
+        "execute": 65.01,
         "memory": 0.0,
         "fetch_misses": 0.014
       }
     },
     "functions_per_run": {
-      "strcmp": {
-        "calls": 1.0,
-        "instructions": 124.0,
-        "clocks": 105.044,
-        "fetch": 0.032,
-        "execute": 105.0,
-        "memory": 0.012,
-        "fetch_misses": 0.016
-      },
       "strcpy": {
         "calls": 1.0,
         "instructions": 157.0,
@@ -378,11 +369,20 @@
         "memory": 0.01,
         "fetch_misses": 0.0
       },
+      "strcmp": {
+        "calls": 1.0,
+        "instructions": 124.0,
+        "clocks": 86.052,
+        "fetch": 0.032,
+        "execute": 86.008,
+        "memory": 0.012,
+        "fetch_misses": 0.016
+      },
       "main": {
         "instructions": 68.02,
-        "clocks": 60.16,
+        "clocks": 51.172,
         "fetch": 0.136,
-        "execute": 60.018,
+        "execute": 51.03,
         "memory": 0.006,
         "fetch_misses": 0.068
       },
@@ -398,28 +398,28 @@
       "Proc_8": {
         "calls": 1.0,
         "instructions": 30.0,
-        "clocks": 22.064,
+        "clocks": 21.066,
         "fetch": 0.06,
-        "execute": 22.0,
+        "execute": 21.002,
         "memory": 0.004,
         "fetch_misses": 0.03
-      },
-      "Proc_6": {
-        "calls": 1.0,
-        "instructions": 23.0,
-        "clocks": 20.06,
-        "fetch": 0.052,
-        "execute": 20.002,
-        "memory": 0.006,
-        "fetch_misses": 0.026
       },
       "Func_2": {
         "calls": 1.0,
         "instructions": 23.0,
-        "clocks": 19.064,
+        "clocks": 18.066,
         "fetch": 0.052,
-        "execute": 19.002,
+        "execute": 18.004,
         "memory": 0.01,
+        "fetch_misses": 0.026
+      },
+      "Proc_6": {
+        "calls": 1.0,
+        "instructions": 23.0,
+        "clocks": 17.062,
+        "fetch": 0.052,
+        "execute": 17.004,
+        "memory": 0.006,
         "fetch_misses": 0.026
       },
       "Func_1": {
@@ -440,22 +440,22 @@
         "memory": 0.0,
         "fetch_misses": 0.006
       },
-      "Proc_4": {
-        "calls": 1.0,
-        "instructions": 12.0,
-        "clocks": 11.026,
-        "fetch": 0.024,
-        "execute": 11.0,
-        "memory": 0.002,
-        "fetch_misses": 0.012
-      },
       "Proc_2": {
         "calls": 1.0,
         "instructions": 12.0,
-        "clocks": 11.024,
+        "clocks": 10.026,
         "fetch": 0.024,
-        "execute": 11.0,
+        "execute": 10.002,
         "memory": 0.0,
+        "fetch_misses": 0.012
+      },
+      "Proc_4": {
+        "calls": 1.0,
+        "instructions": 12.0,
+        "clocks": 9.03,
+        "fetch": 0.024,
+        "execute": 9.004,
+        "memory": 0.002,
         "fetch_misses": 0.012
       },
       "Proc_3": {
@@ -470,9 +470,9 @@
       "Proc_5": {
         "calls": 1.0,
         "instructions": 7.0,
-        "clocks": 7.016,
+        "clocks": 5.02,
         "fetch": 0.016,
-        "execute": 7.0,
+        "execute": 5.004,
         "memory": 0.0,
         "fetch_misses": 0.008
       },
@@ -552,100 +552,100 @@
       {
         "name": "Measured",
         "instructions_per_run": 553.058,
-        "clocks_per_run": 435.724,
-        "cpi": 0.7878450361444912,
-        "dmips_per_mhz": 1.3062212858926163,
+        "clocks_per_run": 397.76,
+        "cpi": 0.7192012410994868,
+        "dmips_per_mhz": 1.430892909227359,
         "speedup": 1.0,
         "assumption": "Clocks measured on the core and synchronous RAM."
       },
       {
         "name": "Instruction cache, 2 beats (16 bytes)",
         "instructions_per_run": 553.058,
-        "clocks_per_run": 435.724,
-        "cpi": 0.7878450361444912,
-        "dmips_per_mhz": 1.3062212858926163,
+        "clocks_per_run": 397.76,
+        "cpi": 0.7192012410994868,
+        "dmips_per_mhz": 1.430892909227359,
         "speedup": 1.0,
         "assumption": "Direct-mapped, filled on every fetch; a hit costs no fetch clocks. Stores to cached code are ignored by this estimate."
       },
       {
         "name": "Instruction cache, 4 beats (32 bytes)",
         "instructions_per_run": 553.058,
-        "clocks_per_run": 435.724,
-        "cpi": 0.7878450361444912,
-        "dmips_per_mhz": 1.3062212858926163,
+        "clocks_per_run": 397.76,
+        "cpi": 0.7192012410994868,
+        "dmips_per_mhz": 1.430892909227359,
         "speedup": 1.0,
         "assumption": "Direct-mapped, filled on every fetch; a hit costs no fetch clocks. Stores to cached code are ignored by this estimate."
       },
       {
         "name": "Instruction cache, 8 beats (64 bytes)",
         "instructions_per_run": 553.058,
-        "clocks_per_run": 435.724,
-        "cpi": 0.7878450361444912,
-        "dmips_per_mhz": 1.3062212858926163,
+        "clocks_per_run": 397.76,
+        "cpi": 0.7192012410994868,
+        "dmips_per_mhz": 1.430892909227359,
         "speedup": 1.0,
         "assumption": "Direct-mapped, filled on every fetch; a hit costs no fetch clocks. Stores to cached code are ignored by this estimate."
       },
       {
         "name": "Instruction cache, 16 beats (128 bytes)",
         "instructions_per_run": 553.058,
-        "clocks_per_run": 435.724,
-        "cpi": 0.7878450361444912,
-        "dmips_per_mhz": 1.3062212858926163,
+        "clocks_per_run": 397.76,
+        "cpi": 0.7192012410994868,
+        "dmips_per_mhz": 1.430892909227359,
         "speedup": 1.0,
         "assumption": "Direct-mapped, filled on every fetch; a hit costs no fetch clocks. Stores to cached code are ignored by this estimate."
       },
       {
         "name": "Instruction cache, 32 beats (256 bytes)",
         "instructions_per_run": 553.058,
-        "clocks_per_run": 435.724,
-        "cpi": 0.7878450361444912,
-        "dmips_per_mhz": 1.3062212858926163,
+        "clocks_per_run": 397.76,
+        "cpi": 0.7192012410994868,
+        "dmips_per_mhz": 1.430892909227359,
         "speedup": 1.0,
         "assumption": "Direct-mapped, filled on every fetch; a hit costs no fetch clocks. Stores to cached code are ignored by this estimate."
       },
       {
         "name": "Instruction cache, 64 beats (512 bytes)",
         "instructions_per_run": 553.058,
-        "clocks_per_run": 435.724,
-        "cpi": 0.7878450361444912,
-        "dmips_per_mhz": 1.3062212858926163,
+        "clocks_per_run": 397.76,
+        "cpi": 0.7192012410994868,
+        "dmips_per_mhz": 1.430892909227359,
         "speedup": 1.0,
         "assumption": "Direct-mapped, filled on every fetch; a hit costs no fetch clocks. Stores to cached code are ignored by this estimate."
       },
       {
         "name": "Issue loads and stores in EXECUTE",
         "instructions_per_run": 553.058,
-        "clocks_per_run": 435.648,
-        "cpi": 0.7877076183691403,
-        "dmips_per_mhz": 1.306449159813139,
-        "speedup": 1.0001744527692082,
+        "clocks_per_run": 397.684,
+        "cpi": 0.719063823324136,
+        "dmips_per_mhz": 1.4311663621726656,
+        "speedup": 1.0001911065066735,
         "assumption": "The data request starts in EXECUTE, so each load or store that waited in MEMORY waits one clock less."
       },
       {
         "name": "Issue the next fetch in EXECUTE",
         "instructions_per_run": 553.058,
-        "clocks_per_run": 435.436,
-        "cpi": 0.7873242951010563,
-        "dmips_per_mhz": 1.307085228539382,
-        "speedup": 1.0006614060390047,
+        "clocks_per_run": 397.472,
+        "cpi": 0.718680500056052,
+        "dmips_per_mhz": 1.4319297046691952,
+        "speedup": 1.0007245793414379,
         "assumption": "A fetch that misses starts one clock earlier, during the previous instruction's EXECUTE. Upper bound: not possible after a load or store, which uses the bus."
       },
       {
         "name": "Hardware multiply and divide (M)",
         "instructions_per_run": 553.058,
-        "clocks_per_run": 435.724,
-        "cpi": 0.7878450361444912,
-        "dmips_per_mhz": 1.3062212858926163,
+        "clocks_per_run": 397.76,
+        "cpi": 0.7192012410994868,
+        "dmips_per_mhz": 1.430892909227359,
         "speedup": 1.0,
         "assumption": "Each helper call becomes one 1-clock instruction. Best case: an iterative divider takes longer."
       },
       {
         "name": "No fetch clocks at all",
         "instructions_per_run": 553.058,
-        "clocks_per_run": 435.148,
-        "cpi": 0.7868035540576215,
-        "dmips_per_mhz": 1.307950314776293,
-        "speedup": 1.0013236875729636,
+        "clocks_per_run": 397.184,
+        "cpi": 0.7181597590126171,
+        "dmips_per_mhz": 1.4329680036816044,
+        "speedup": 1.001450209474702,
         "assumption": "Perfect instruction supply: a lower bound for fetch work."
       },
       {
@@ -654,7 +654,7 @@
         "clocks_per_run": 553.058,
         "cpi": 1.0,
         "dmips_per_mhz": 1.029099956196772,
-        "speedup": 0.7878450361444912,
+        "speedup": 0.7192012410994868,
         "assumption": "The floor for a core that executes one instruction per clock."
       }
     ]
@@ -700,8 +700,8 @@
     "python": "3.12.3"
   },
   "wall_seconds": {
-    "timing_run": 17.421452302999995,
-    "reference_model": 0.42071578800002385
+    "timing_run": 18.588937802000004,
+    "reference_model": 0.42718639499999256
   },
   "build_input_sha256": {
     "sim/cpu/bench/vendor/dhrystone/dhrystone_main.c": "45f1aeb092b50ccbd2f37782e5b054b446c93c49771a45a36c940386f72d338d",

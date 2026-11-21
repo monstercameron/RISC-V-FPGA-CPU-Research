@@ -99,13 +99,17 @@ def main():
     parser.add_argument('--ram-kib', type=int, default=64, help='RAM size in KiB, a power of two from 32 to 1024')
     parser.add_argument('--opt', choices=['O1', 'O2', 'O3', 'Os'], default='O2')
     parser.add_argument('--isa', choices=ISAS, default=ISAS[0])
+    parser.add_argument('--runtime', choices=('reference', 'fast'), default='reference',
+                        help='reference: byte-at-a-time strcpy/strcmp (compared across cores); '
+                             'fast: word-at-a-time (a labelled, separate configuration)')
     for name in ('clang', 'objcopy', 'objdump', 'nm'):
         parser.add_argument('--' + name, default=tool('clang' if name == 'clang' else 'llvm-' + name))
     parser.add_argument('--out-dir', help='Default: build/cpu/bench/<benchmark>, plus -rv64im for that ISA')
     args = parser.parse_args()
     if args.ram_kib not in (32, 64, 128, 256, 512, 1024):
         parser.error('--ram-kib must be a power of two from 32 to 1024')
-    suffix = '' if args.isa == ISAS[0] else '-' + args.isa.split('_')[0]
+    suffix = ('' if args.isa == ISAS[0] else '-' + args.isa.split('_')[0]) + \
+        ('' if args.runtime == 'reference' else '-fastrt')
     out = (ROOT / (args.out_dir or f'build/cpu/bench/{args.benchmark}{suffix}')).resolve()
     if not out.is_relative_to((ROOT / 'build').resolve()):
         parser.error('--out-dir must be inside the repository build/ directory')
@@ -136,6 +140,8 @@ def main():
     for source, kind in spec['sources']:
         obj = out / (source.stem + '.o')
         flags = spec['vendor_flags'] if kind == 'vendor' else port_flags
+        if source.name == 'runtime.c' and args.runtime == 'fast':
+            flags = flags + ['-DBENCH_FAST_STRINGS']
         command = common + flags + ['-c', source, '-o', obj]
         run(command, out / f'compile-{source.stem}.log')
         commands.append([shown(x) for x in command])
@@ -180,7 +186,7 @@ def main():
     report = {
         'benchmark': args.benchmark,
         'compiler': run([args.clang, '--version']).splitlines()[0],
-        'isa': args.isa, 'abi': ABI, 'optimization': args.opt,
+        'isa': args.isa, 'abi': ABI, 'optimization': args.opt, 'runtime': args.runtime,
         'ram_bytes': ram_bytes, 'ram_words': ram_bytes // 8,
         'mailbox_address': mailbox, 'stack_top': mailbox, 'stack_reserve_bytes': STACK_RESERVE,
         'payload_bytes': len(payload),

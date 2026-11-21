@@ -136,6 +136,10 @@ Times are US Eastern (UTC-05:00). Each timestamp names its source:
 | about 22:42 | 0.5.0 runs: `rv64im` 435.7 clocks per run, CPI 0.788, 1.3062 DMIPS/MHz (estimate 434.8); `rv64i` 471.8 clocks, 1.2063 DMIPS/MHz; [devlog-ba03c09.md](devlog/devlog-ba03c09.md) | record |
 | about 22:45 | Issue-width model on the 0.5.0 stream (matches 0.5.0 within 0.4%): pairing across beats 417.1; plus branch second 395.1; plus load or store second 391.1; two memory ports 367.1; 3-wide 317.0; 4-wide 293.0; even 8-wide in-order 283.0 clocks per run, about 2.0 DMIPS/MHz. In-order issue saturates near 2.0 on Dhrystone because dependencies and branches end issue groups | output |
 | after 22:45 | 0.5.1 written: second slot from the next beat, and conditional branches in it. Regression 117/117 with default and 2-line caches, with new tests `misaligned_branch_after_alu` and `branch_depends_on_alu` | output |
+| about 22:55 | Commit `4ca8908`, pair across beats and pair branches (0.5.1); tagged `cpu-v0.5.1`, local only | git |
+| about 22:57 | 0.5.1 runs: `rv64im` 397.8 clocks per run, CPI 0.719, 1.4309 DMIPS/MHz (estimate 395.1); `rv64i` 424.9 clocks, 1.3396 DMIPS/MHz; [devlog-4ca8908.md](devlog/devlog-4ca8908.md) | record |
+| after 22:57 | Fast-runtime option added (`--runtime fast`, a separate labelled configuration). First version handled only strings with equal alignment: unlogged run 413.8 clocks per run, slower than the reference 397.8. A trace replay showed why: every call is misaligned against the other string (`strcpy` from `0x11f5` to `0xfe4e`, `strcmp` of `0xfe6d` with `0xfe4e`), so the word path never ran | output |
+| after 22:57 | Second version reads aligned words and shifts neighbours together, as C libraries do: unlogged run 360.8 clocks per run, 470.1 instructions, 1.5773 DMIPS/MHz with `rv64im` on 0.5.1 | output |
 
 ### Optimization loop
 
@@ -153,6 +157,8 @@ Each step changes the core, passes the main regression, is committed and tagged 
 | 0.4.0, `rv64im` build | M extension: hardware divide replaces the software routine | 555.7 | 1.005 | 1.0242 | 3.94x | 1.08x |
 | 0.5.0, `rv64im` build | Limited dual issue within an 8-byte beat | 435.7 | 0.788 | 1.3062 | 5.02x | 1.28x |
 | 0.5.0, `rv64i` build | Same core, `rv64i` build | 471.8 | 0.786 | 1.2063 | 4.64x | 1.27x |
+| 0.5.1, `rv64im` build | Pair across beats; branches in the second slot | 397.8 | 0.719 | 1.4309 | 5.50x | 1.10x |
+| 0.5.1, `rv64i` build | Same core, `rv64i` build | 424.9 | 0.708 | 1.3396 | 5.15x | 1.11x |
 
 Every step measured what the previous profile estimated. The loop stopped after 0.4.0 because the core completes about one instruction per clock; see findings 23 to 27.
 
@@ -526,3 +532,5 @@ One row per benchmark run, oldest first. Each run's full record (result, rubric 
 | 2026-11-20 21:49:53 -0500 | `88db627` | yes | 0.4.0 | clang version 23.1.5 `-O2` | 600.8 | 0.9473 | 37.1 | [devlog-88db627.md](devlog/devlog-88db627.md) |
 | 2026-11-20 22:19:24 -0500 | `ba03c09` | yes | 0.5.0 | clang version 23.1.5 `-O2` | 435.7 | 1.3062 | 37.1 | [devlog-ba03c09.md](devlog/devlog-ba03c09.md) |
 | 2026-11-20 22:20:37 -0500 | `ba03c09` | yes | 0.5.0 | clang version 23.1.5 `-O2` | 471.8 | 1.2063 | 37.1 | [devlog-ba03c09.md](devlog/devlog-ba03c09.md) |
+| 2026-11-20 22:24:21 -0500 | `4ca8908` | yes | 0.5.1 | clang version 23.1.5 `-O2` | 397.8 | 1.4309 | 37.1 | [devlog-4ca8908.md](devlog/devlog-4ca8908.md) |
+| 2026-11-20 22:25:39 -0500 | `4ca8908` | yes | 0.5.1 | clang version 23.1.5 `-O2` | 424.9 | 1.3396 | 37.1 | [devlog-4ca8908.md](devlog/devlog-4ca8908.md) |
