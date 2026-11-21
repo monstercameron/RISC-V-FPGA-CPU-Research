@@ -281,6 +281,18 @@ def cases():
     p = prefix() + [store(3, 30, 3, 0x380), i_type(0x13, 20, 0, 0, 44), i_type(0x13, 21, 0, 0, 3)] + body
     yield 'value_change_after_repeats', p + [0x100073], 0, MASK
 
+    # 0.11.2 fusion: a producer that overwrites its own source (addi x10, x10, 5) is fused
+    # with the next instruction, which also waits for a divide; the producer retires
+    # and frees its old register first, and new results reuse it before the consumer
+    # executes. Loads, stores and a branch consume fused producers as well.
+    body = [r_type(0x33, 6, 4, 6, 5, 1), r_type(0x33, 6, 4, 6, 5, 1),          # x6 = x6 / x5 (slow)
+            i_type(0x13, 10, 0, 10, 5), r_type(0x33, 11, 0, 10, 6),            # fused: x11 = (x10 + 5) + x6
+            i_type(0x13, 12, 0, 30, 0x40), store(3, 12, 11, 0),                # fused store address
+            i_type(0x13, 13, 0, 30, 0x40), i_type(3, 14, 3, 13, 0),            # fused load address
+            r_type(0x33, 15, 0, 15, 14)] +            [i_type(0x13, r, 0, r, 1) for r in list(range(16, 20)) + list(range(21, 29))] +            [i_type(0x13, 20, 0, 20, -1), branch(1, 20, 0, -4 * 22)]            # fused branch operand
+    p = prefix() + [i_type(0x13, 5, 0, 0, 1), i_type(0x13, 6, 0, 0, 1000), i_type(0x13, 20, 0, 0, 6)] + body
+    yield 'fused_pairs', p + [0x100073], 0, MASK
+
     # 0.11.1 memory-dependence speculation (memory agent): a store's address arrives
     # late (a fill and two divides), so a younger load to its bytes can issue first
     # and must be flushed and replayed; disjoint bytes and other beats must not be.

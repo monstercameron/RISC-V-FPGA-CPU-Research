@@ -111,11 +111,11 @@ module rv64_core #(
     localparam integer MUL_LAT = 3;
     localparam integer DIV_LAT = 7;
     localparam integer MQ_N = 8;         // multiplies in flight
-    localparam integer BTB_BITS = 8;
+    localparam integer BTB_BITS = 10;    // 1024 entries (256 until 0.11.1)
     localparam integer BTB_TAG = 10;
     localparam integer BTB_ENTRIES = 1 << BTB_BITS;
     localparam integer RAS_N = 16;
-    localparam integer LP_BITS = 8;      // loop predictor (0.11.0): 256 entries
+    localparam integer LP_BITS = 10;     // loop predictor: 1024 entries (256 in 0.11.0)
     localparam integer LP_N = 1 << LP_BITS;
     localparam integer LP_TAG = 10;
     localparam integer TAKEN_MAX = 2;    // predicted-taken transfers followed per fetch group (0.10.1)
@@ -502,7 +502,25 @@ module rv64_core #(
     reg [Q_N-1:0] q_lp, q_ld;                  // loop predictor decided; predicted direction
     reg [7:0] q_li [0:Q_N-1];                  // iteration number of this instance
     reg [ROB_N-1:0] rb_lp, rb_ld;
-    reg [ROB_N-1:0] rb_fence;                  // FENCE (not FENCE.I), 0.11.0
+    reg [ROB_N-1:0] rb_fence;
+    // Fusion: operand 1 / 2 of this entry is the result of the simple ALU instruction just
+    // before it, computed here from that instruction's own sources.
+    reg [IQ_N-1:0] iq_fz1, iq_fz2;
+    reg [31:0] iq_fzi [0:IQ_N-1];
+    reg [63:0] iq_fzpc [0:IQ_N-1];
+    reg [P_B-1:0] iq_fza [0:IQ_N-1];
+    reg [P_B-1:0] iq_fzb [0:IQ_N-1];
+    reg [NP-1:0] ex_fz1, ex_fz2;
+    reg [31:0] ex_fzi [0:NP-1];
+    reg [63:0] ex_fzpc [0:NP-1];
+    reg [P_B-1:0] ex_fza [0:NP-1];
+    reg [P_B-1:0] ex_fzb [0:NP-1];
+    reg pv_ok;
+    reg [4:0] pv_rd;
+    reg [31:0] pv_insn;
+    reg [63:0] pv_pc;
+    reg [P_B-1:0] pv_a, pv_b;
+    reg cur_fz;                  // FENCE (not FENCE.I), 0.11.0
     // Value prediction: a load, multiply or divide whose last VP_CONF results were the
     // same gives that value to its consumers at rename; its own result is compared when
     // it executes, and a wrong guess refetches after it retires.
@@ -519,7 +537,8 @@ module rv64_core #(
     reg [VP_BITS-1:0] vpi;
     reg [7:0] rb_li [0:ROB_N-1];
     reg [7:0] g_li [0:7];
-    reg [7:0] g_lpi, lp_it;
+    reg [LP_BITS-1:0] g_lpi;
+    reg [7:0] lp_it;
     reg [3:0] d_redirect_sp;
     reg [3:0] g_ras_pop_sp;
     reg f_stale;                    // the held fetch was issued before a redirect
@@ -680,6 +699,30 @@ module rv64_core #(
 
     initial if (RW < 3 || RW > 8) $fatal(1, "rv64_ooo.sv supports RW from 3 to 8, got %0d", RW);
 
+    // Fused producer's value for execute port pp.
+    function [63:0] fz_value(input integer pp);
+        reg [66:0] t;
+        begin
+            t = simple_alu(ex_fzi[pp], prf[ex_fza[pp]], prf[ex_fzb[pp]], ex_fzpc[pp]);
+            fz_value = t[63:0];
+        end
+    endfunction
+    // Operand values at execute: the register, or (fused, producer not yet written) the
+    // producer's value computed from its sources.
+    function [63:0] opa(input integer pp);
+        opa = (ex_fz1[pp] && !prf_written[ex_ps1[pp]]) ? fz_value(pp) : prf[ex_ps1[pp]];
+    endfunction
+    function [63:0] opb(input integer pp);
+        opb = (ex_fz2[pp] && !prf_written[ex_ps2[pp]]) ? fz_value(pp) : prf[ex_ps2[pp]];
+    endfunction
+    // Source readiness in the issue queue.
+    function rdy1(input integer kk);
+        rdy1 = prf_ready[iq_ps1[kk]] || (iq_fz1[kk] && prf_ready[iq_fza[kk]] && prf_ready[iq_fzb[kk]]);
+    endfunction
+    function rdy2(input integer kk);
+        rdy2 = prf_ready[iq_ps2[kk]] || (iq_fz2[kk] && prf_ready[iq_fza[kk]] && prf_ready[iq_fzb[kk]]);
+    endfunction
+
     task automatic squash_after(input [ROB_B-1:0] keep_age);  // keep entries with age <= keep_age
         reg [ROB_B-1:0] en;
         begin
@@ -782,9 +825,9 @@ module rv64_core #(
                 bestv = 0; best = 0; best_age = 0;
                 for (k = 0; k < IQ_N; k = k + 1) begin
                     a_age = iq_rob[k] - rb_head;
-                    ok = iq_valid[k] && !iq_issued[k] && !chosen[k] && prf_ready[iq_ps1[k]];
+                    ok = iq_valid[k] && !iq_issued[k] && !chosen[k] && rdy1(k);
                     if (p < N_ALU) begin
-                        ok = ok && prf_ready[iq_ps2[k]] &&
+                        ok = ok && rdy2(k) &&
                              (iq_cls[k] == C_ALU || (p < N_BR && iq_cls[k] == C_FULL &&
                               !(iq_mdu[k] && iq_insn[k][14] && (dv_busy || dv_pend || divtaken))));
                     end else if (p < N_ALU + N_LD) ok = ok && iq_cls[k] == C_LD && (!ou_valid || a_age < ou_age || !mdp_wait[iq_pc[k][9:2]]) && (!fo_valid || a_age < fo_age);
@@ -927,7 +970,7 @@ module rv64_core #(
             // ---- execute: results of the instructions selected last clock
             mp_any = 0; b_rob = 0; mp_fix = 0;
             for (p = 0; p < N_BR; p = p + 1) if (ex_valid[p] && ex_cls[p] == C_FULL) begin
-                ef = exec_full(ex_insn[p], ex_pc[p], prf[ex_ps1[p]], prf[ex_ps2[p]]);
+                ef = exec_full(ex_insn[p], ex_pc[p], opa(p), opb(p));
                 op = ex_insn[p][6:0];
                 if (!ef[197] && !ef[0] && ((op == 7'h63 && (ef[64:1] != ex_pc[p] + 64'd4) != ex_ptaken[p]) ||
                                            (op == 7'h67 && ef[64:1] != ex_pred[p]))) begin
@@ -942,11 +985,11 @@ module rv64_core #(
                 x_rob = ex_rob[p];
                 if (p < N_ALU) begin
                     if (ex_cls[p] == C_ALU) begin
-                        sa = simple_alu(ex_insn[p], prf[ex_ps1[p]], prf[ex_ps2[p]], ex_pc[p]);
+                        sa = simple_alu(ex_insn[p], opa(p), opb(p), ex_pc[p]);
                         if (ex_writes[p]) begin prf[ex_pdst[p]] = sa[63:0]; prf_written[ex_pdst[p]] = 1; end
                         rb_value[x_rob] = sa[63:0]; rb_done[x_rob] = 1; rb_exc[x_rob] = 0; rb_next[x_rob] = ex_pc[p] + 64'd4;
                     end else begin
-                        ef = exec_full(ex_insn[p], ex_pc[p], prf[ex_ps1[p]], prf[ex_ps2[p]]);
+                        ef = exec_full(ex_insn[p], ex_pc[p], opa(p), opb(p));
                         op = ex_insn[p][6:0]; f3_ = ex_insn[p][14:12];
                         rb_next[x_rob] = ef[64:1];
                         if (ef[0]) begin
@@ -956,11 +999,11 @@ module rv64_core #(
                                 for (k = 0; k < MQ_N; k = k + 1) if (!mq_valid[k] && !placed) begin
                                     placed = 1; mq_valid[k] = 1; mq_cnt[k] = MUL_LAT - 2; mq_rob[k] = x_rob;
                                     mq_pdst[k] = ex_pdst[p]; mq_writes[k] = ex_writes[p];
-                                    mq_val[k] = mul_value(f3_, op == 7'h3b, prf[ex_ps1[p]], prf[ex_ps2[p]]);
+                                    mq_val[k] = mul_value(f3_, op == 7'h3b, opa(p), opb(p));
                                 end
                             end else begin
                                 dv_busy = 1; dv_cnt = DIV_LAT - 2; dv_rob = x_rob; dv_pdst = ex_pdst[p]; dv_writes = ex_writes[p];
-                                dv_val = div_value(f3_, op == 7'h3b, prf[ex_ps1[p]], prf[ex_ps2[p]]);
+                                dv_val = div_value(f3_, op == 7'h3b, opa(p), opb(p));
                             end
                         end else begin
                             if (ex_writes[p] && !ef[197]) begin prf[ex_pdst[p]] = ef[128:65]; prf_written[ex_pdst[p]] = 1; end
@@ -981,7 +1024,7 @@ module rv64_core #(
                     // Load: forward from the youngest older store to its beat, else the cache;
                     // if neither can answer now, the load stays queued and replays.
                     f3_ = ex_insn[p][14:12];
-                    ea = prf[ex_ps1[p]] + {{52{ex_insn[p][31]}}, ex_insn[p][31:20]};
+                    ea = opa(p) + {{52{ex_insn[p][31]}}, ex_insn[p][31:20]};
                     bytes_ = size_bytes(f3_[1:0]) << ea[2:0];
                     rb_addr[x_rob] = ea; rb_wstrb[x_rob] = bytes_;   // checked by older stores' addresses
                     fdone = 0;
@@ -1041,7 +1084,7 @@ module rv64_core #(
                 end else begin
                     // Store: record the address; the data register is read at retirement.
                     f3_ = ex_insn[p][14:12];
-                    ea = prf[ex_ps1[p]] + {{52{ex_insn[p][31]}}, ex_insn[p][31:25], ex_insn[p][11:7]};
+                    ea = opa(p) + {{52{ex_insn[p][31]}}, ex_insn[p][31:25], ex_insn[p][11:7]};
                     ok = !f3_[2] && (ea[2:0] & (f3_[1:0] == 0 ? 3'd0 : f3_[1:0] == 1 ? 3'd1 : f3_[1:0] == 2 ? 3'd3 : 3'd7)) == 0;
                     rb_done[x_rob] = 1; rb_sta[x_rob] = 1; rb_exc[x_rob] = !ok;
                     rb_cause[x_rob] = f3_[2] ? 64'd2 : 64'd6; rb_tval[x_rob] = f3_[2] ? {32'b0, ex_insn[p]} : ea;
@@ -1085,10 +1128,12 @@ module rv64_core #(
                 k = pick[p];
                 // Sources are checked again: a load that did not answer this clock takes
                 // back the wakeup it gave when it issued.
-                if (iq_valid[k] && !rflush && !(mp_any && (iq_rob[k] - rb_head) > o_age) && prf_ready[iq_ps1[k]] &&
-                    (iq_cls[k] == C_LD || iq_cls[k] == C_ST || prf_ready[iq_ps2[k]])) begin
+                if (iq_valid[k] && !rflush && !(mp_any && (iq_rob[k] - rb_head) > o_age) && rdy1(k) &&
+                    (iq_cls[k] == C_LD || iq_cls[k] == C_ST || rdy2(k))) begin
                     ex_valid[p] = 1; ex_iq[p] = k; ex_cls[p] = iq_cls[k]; ex_rob[p] = iq_rob[k]; ex_pc[p] = iq_pc[k];
                     ex_insn[p] = iq_insn[k]; ex_ps1[p] = iq_ps1[k]; ex_ps2[p] = iq_ps2[k]; ex_pdst[p] = iq_pdst[k];
+                    ex_fz1[p] = iq_fz1[k]; ex_fz2[p] = iq_fz2[k]; ex_fzi[p] = iq_fzi[k]; ex_fzpc[p] = iq_fzpc[k];
+                    ex_fza[p] = iq_fza[k]; ex_fzb[p] = iq_fzb[k];
                     ex_writes[p] = iq_writes[k]; ex_pred[p] = iq_pred[k]; ex_alt[p] = iq_alt[k]; ex_ptaken[p] = iq_ptaken[k];
                     if (iq_cls[k] == C_LD) iq_issued[k] = 1;
                     else iq_valid[k] = 0;
@@ -1128,7 +1173,7 @@ module rv64_core #(
             d_redirect = 0; n_ren = 0;
             if (!rflush && !mp_any) begin
                 stop = 0;
-                nfi = 0; nfp = 0; ui = 0; up = 0;
+                nfi = 0; nfp = 0; ui = 0; up = 0; pv_ok = 0;
                 for (k = 0; k < IQ_N; k = k + 1) if (!iq_valid[k] && nfi < FW) begin fiq[nfi] = k; nfi = nfi + 1; end
                 for (k = 1; k < PRF_N; k = k + 1) if (free_mask[k] && nfp < FW) begin fpl[nfp] = k; nfp = nfp + 1; end
                 for (s = 0; s < FW; s = s + 1) if (!stop) begin
@@ -1183,7 +1228,13 @@ module rv64_core #(
                                 iq_pdst[slot] = writes_ ? fp : 0; iq_writes[slot] = writes_;
                                 iq_mdu[slot] = (op == 7'h33 || op == 7'h3b) && wi[31:25] == 7'h01;
                                 iq_pred[slot] = d_want; iq_ptaken[slot] = tkp; iq_alt[slot] = tkp ? npc : tgt;
+                                iq_fz1[slot] = pv_ok && uses1_ && rs1_ == pv_rd;
+                                iq_fz2[slot] = pv_ok && uses2_ && rs2_ == pv_rd && cls_ != C_ST;
+                                iq_fzi[slot] = pv_insn; iq_fzpc[slot] = pv_pc; iq_fza[slot] = pv_a; iq_fzb[slot] = pv_b;
                             end
+                            cur_fz = pv_ok && ((uses1_ && rs1_ == pv_rd) || (uses2_ && rs2_ == pv_rd && cls_ != C_ST));
+                            pv_ok = !isfault && cls_ == C_ALU && writes_ && !cur_fz;
+                            pv_rd = rd_; pv_insn = wi; pv_pc = wpc; pv_a = ps1_; pv_b = ps2_;
                             rb_tail = rb_tail + 1; rb_count_new = rb_count_new + 1; n_ren = n_ren + 1;
                             if (!isfault) ui = ui + 1;
                             if (writes_) up = up + 1;
@@ -1252,6 +1303,10 @@ module rv64_core #(
                                     g_lpu = 1;
                                     g_lpd = lp_it < lp_trip[g_lpi] ? lp_dir[g_lpi] : !lp_dir[g_lpi];
                                     tkp = g_lpd;
+                                    tgt = npc + {{51{wi[31]}},wi[31],wi[7],wi[30:25],wi[11:8],1'b0};
+                                end else if (lp_trip[g_lpi] == 0 && lp_ret[g_lpi] >= 4) begin
+                                    // Gone one way at least 4 times and never exited: that way.
+                                    g_lpu = 1; g_lpd = lp_dir[g_lpi]; tkp = g_lpd;
                                     tgt = npc + {{51{wi[31]}},wi[31],wi[7],wi[30:25],wi[11:8],1'b0};
                                 end
                             end
