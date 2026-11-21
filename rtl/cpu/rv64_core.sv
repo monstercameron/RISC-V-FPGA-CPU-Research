@@ -73,17 +73,25 @@ module rv64_core #(
     reg [2:0] pending_f3;
     reg [4:0] pending_rd;
     reg pending_load;
-    wire [63:0] shifted_read = mem_rdata >> {pending_addr[2:0],3'b000};
+    // Data accesses (0.2.1) start in EXECUTE as soon as the address is known and
+    // no exception is pending; if the bus has not completed by the end of that
+    // clock, MEMORY holds the identical request from the pending registers.
+    wire issue_data = state == EXECUTE && (load_op || store_op) && !exception;
+    wire [63:0] access_addr = state == MEMORY ? pending_addr : effective_addr;
+    wire [2:0] access_f3 = state == MEMORY ? pending_f3 : f3;
+    wire [63:0] issue_wdata = b << {effective_addr[2:0],3'b000};
+    wire [7:0] issue_wstrb = store_op ? byte_mask << effective_addr[2:0] : 8'b0;
+    wire [63:0] shifted_read = mem_rdata >> {access_addr[2:0],3'b000};
     reg [63:0] load_result;
 
-    assign mem_valid = !reset && ((state == FETCH && pc[1:0] == 0) || state == MEMORY);
+    assign mem_valid = !reset && ((state == FETCH && pc[1:0] == 0) || state == MEMORY || issue_data);
     assign mem_instr = state == FETCH;
-    assign mem_addr = state == FETCH ? {pc[63:3],3'b0} : {pending_addr[63:3],3'b0};
-    assign mem_wdata = state == MEMORY ? pending_wdata : 64'b0;
-    assign mem_wstrb = state == MEMORY ? pending_wstrb : 8'b0;
+    assign mem_addr = state == FETCH ? {pc[63:3],3'b0} : {access_addr[63:3],3'b0};
+    assign mem_wdata = state == MEMORY ? pending_wdata : issue_data ? issue_wdata : 64'b0;
+    assign mem_wstrb = state == MEMORY ? pending_wstrb : issue_data ? issue_wstrb : 8'b0;
 
     always @* begin
-        case (pending_f3)
+        case (access_f3)
             3'b000: load_result = {{56{shifted_read[7]}},shifted_read[7:0]};
             3'b001: load_result = {{48{shifted_read[15]}},shifted_read[15:0]};
             3'b010: load_result = {{32{shifted_read[31]}},shifted_read[31:0]};
@@ -216,9 +224,9 @@ module rv64_core #(
             state<=HALTED;
         end
     endtask
-    // flush: fence.i clears the cache. stored: a store to pending_addr completed.
+    // flush: fence.i clears the cache. stored: a store to store_addr completed.
     task automatic retire(input [4:0] dest, input [63:0] data, input [63:0] successor,
-                          input flush, input stored);
+                          input flush, input stored, input [63:0] store_addr);
         begin
             retire_valid<=1; retire_pc<=pc; retire_insn<=insn;
             retire_rd<=dest; retire_data<=dest==0 ? 64'b0 : data;
@@ -226,11 +234,11 @@ module rv64_core #(
             if (dest!=0) regs[dest]<=data;
             pc<=successor;
             if (flush) ic_valid<=0;
-            else if (stored && ic_tag[pending_addr[3 +: IC_INDEX]]==pending_addr[63 -: IC_TAG])
-                ic_valid[pending_addr[3 +: IC_INDEX]]<=1'b0;
+            else if (stored && ic_tag[store_addr[3 +: IC_INDEX]]==store_addr[63 -: IC_TAG])
+                ic_valid[store_addr[3 +: IC_INDEX]]<=1'b0;
             if (!flush && ic_valid[successor[3 +: IC_INDEX]] &&
                 ic_tag[successor[3 +: IC_INDEX]]==successor[63 -: IC_TAG] &&
-                !(stored && pending_addr[63:3]==successor[63:3])) begin
+                !(stored && store_addr[63:3]==successor[63:3])) begin
                 insn<=successor[2] ? ic_data[successor[3 +: IC_INDEX]][63:32]
                                    : ic_data[successor[3 +: IC_INDEX]][31:0];
                 state<=EXECUTE;
@@ -268,17 +276,21 @@ module rv64_core #(
                 EXECUTE: begin
                     if (exception) report_trap(exception_cause,exception_tval);
                     else if (load_op || store_op) begin
-                        pending_addr<=effective_addr;
-                        pending_wdata<=b<<{effective_addr[2:0],3'b000};
-                        pending_wstrb<=store_op ? byte_mask<<effective_addr[2:0] : 8'b0;
-                        pending_load<=load_op; pending_f3<=f3; pending_rd<=rd;
-                        pending_next_pc<=next_pc; state<=MEMORY;
-                    end else retire(write_rd ? rd : 5'b0,result,next_pc,op==7'h0f && f3==1,1'b0);
+                        if (mem_ready) begin // completed in the same clock it was issued
+                            if (mem_error) report_trap(load_op ? 5 : 7,effective_addr);
+                            else retire(load_op ? rd : 5'b0,load_result,next_pc,1'b0,store_op,effective_addr);
+                        end else begin
+                            pending_addr<=effective_addr; pending_wdata<=issue_wdata;
+                            pending_wstrb<=issue_wstrb;
+                            pending_load<=load_op; pending_f3<=f3; pending_rd<=rd;
+                            pending_next_pc<=next_pc; state<=MEMORY;
+                        end
+                    end else retire(write_rd ? rd : 5'b0,result,next_pc,op==7'h0f && f3==1,1'b0,64'b0);
                 end
                 MEMORY: if (mem_ready) begin
                     if (mem_error) report_trap(pending_load ? 5 : 7,pending_addr);
                     else retire(pending_load ? pending_rd : 5'b0,load_result,pending_next_pc,
-                                1'b0,!pending_load);
+                                1'b0,!pending_load,pending_addr);
                 end
                 HALTED: begin end
                 default: report_trap(2,0);
