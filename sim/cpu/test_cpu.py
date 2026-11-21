@@ -606,6 +606,35 @@ def cases():
             i_type(0x13, 28, 0, 28, -1), branch(1, 28, 0, -4 * 34)]
     yield 'retire_wide_stores', prefix() + [i_type(0x13, 28, 0, 0, 3)] + body + [0x100073], 0, MASK
     yield 'retire_wide_store_fault', [(2 << 12) | (1 << 7) | 0x37] + folded(24) + [store(3, 1, 10, 0)] + folded(10, 18) + [0x100073], 3, 8192
+    # Rename-stage constant ALU and branch resolution (council middle, after 0.14.1).
+    # Constants from li/lui/auipc feed simple and B ops (chains in one rename group),
+    # mixed with a late non-constant register; results go to stores, a load and branches.
+    li = lambda rd, v: i_type(0x13, rd, 0, 0, v)
+    slow = [i_type(0x13, 5, 0, 0, 1), r_type(0x33, 6, 4, 7, 5, 1), r_type(0x33, 6, 4, 6, 5, 1)]   # x6 late
+    p = prefix() + slow + [li(10, 5), li(11, -7), r_type(0x33, 12, 0, 10, 11), i_type(0x13, 13, 1, 12, 3),
+         r_type(0x33, 14, 4, 13, 10), r_type(0x33, 15, 0, 14, 11, 0x20), r_type(0x33, 16, 3, 11, 10),
+         r_type(0x33, 17, 2, 11, 10), i_type(0x13, 18, 7, 11, 0xff), r_type(0x33, 19, 4, 10, 12, 0x10),
+         i_type(0x13, 20, 1, 11, 0x604), (0x12345 << 12) | (21 << 7) | 0x37, i_type(0x1b, 21, 0, 21, 0x678),
+         r_type(0x3b, 22, 0, 21, 21), r_type(0x33, 23, 0, 6, 10), r_type(0x33, 24, 7, 12, 6),
+         store(3, 30, 15, 0x600), store(2, 30, 19, 0x608), i_type(3, 25, 3, 30, 0x600), r_type(0x33, 26, 0, 25, 22),
+         0x100073]
+    yield 'rename_const_alu', p, 0, MASK
+    # Branches decided at rename: constants (every condition, signed and unsigned), the same
+    # register with offsets (equality), a counted loop whose counter is a folded constant
+    # (fetch mispredicts the exit: rename redirects), and a register compared with itself.
+    p = prefix() + slow + [li(10, -1), li(11, 1),
+         branch(4, 10, 11, 8), 0xffffffff,                 # blt -1,1: taken
+         branch(6, 10, 11, 8), i_type(0x13, 20, 0, 20, 1), # bltu: not taken
+         branch(5, 11, 10, 8), 0xffffffff,                 # bge 1,-1: taken
+         i_type(0x13, 9, 0, 6, 1), i_type(0x13, 12, 0, 6, 1),
+         branch(0, 9, 12, 8), 0xffffffff,                  # beq same reg, same offset: taken
+         branch(1, 9, 6, 8), 0xffffffff,                   # bne x6+1, x6: taken
+         branch(0, 9, 6, 8), i_type(0x13, 21, 0, 21, 1),   # beq x6+1, x6: not taken
+         branch(5, 6, 6, 8), 0xffffffff,                   # bge x6, x6: taken (execute)
+         li(13, 6), i_type(0x13, 22, 0, 22, 3), i_type(0x13, 13, 0, 13, -1), branch(1, 13, 0, -8),   # loop 6
+         li(14, 2), r_type(0x33, 15, 0, 14, 14), branch(0, 15, 14, 8), i_type(0x13, 23, 0, 23, 1),
+         0x100073]
+    yield 'rename_branches', p, 0, MASK
 
 def command(args):
     result = subprocess.run([str(x) for x in args], capture_output=True, text=True, timeout=60)

@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Original CPU foundation, wide out-of-order implementation (architecture 0.14.2).
+// Original CPU foundation, wide out-of-order implementation (architecture 0.14.3).
 // RV64IM + B execution, serialized FENCE.I, terminal EEI. Same module name and
 // contract as rv64_core.sv and rv64_pipe.sv, plus a wider retirement trace (rt_*);
 // build with one of the three files. Architecture version: cpu/VERSION,
@@ -566,6 +566,13 @@ module rv64_core #(
     reg [63:0] o1_, o2_, eoff, jt_;
     reg [P_B-1:0] ep_;
     reg elim_, done_;
+    // Rename-stage constant ALU and branch resolution (council middle, after 0.14.1).
+    localparam integer CFOLD = 1;      // 0 off, 1 one level per clock, 2 chains
+    localparam integer BRREN = 1;      // conditional branches with known outcome finish at rename
+    reg [31:0] cf_lvl;                   // arch reg holds a constant computed this clock
+    reg cf_now, br_now, bt_;
+    integer n_cf, n_br;                  // debug: instructions per clock
+    reg [66:0] csa_;
     reg [7:0] rb_li [0:ROB_N-1];
     reg [7:0] g_li [0:FW-1];
     reg [LP_BITS-1:0] g_lpi;
@@ -1265,7 +1272,7 @@ module rv64_core #(
             d_redirect = 0; n_ren = 0;
             if (!rflush && !mp_any) begin
                 stop = 0;
-                nfi = 0; nfp = 0; ui = 0; up = 0; pv_ok = 0;
+                nfi = 0; nfp = 0; ui = 0; up = 0; pv_ok = 0; cf_lvl = 0; n_cf = 0; n_br = 0;
                 for (k = 0; k < IQ_N; k = k + 1) if (!iq_valid[k] && nfi < FW) begin fiq[nfi] = k; nfi = nfi + 1; end
                 for (k = 1; k < PRF_N; k = k + 1) if (free_mask[k] && nfp < FW) begin fpl[nfp] = k; nfp = nfp + 1; end
                 for (s = 0; s < FW; s = s + 1) if (!stop) begin
@@ -1306,6 +1313,33 @@ module rv64_core #(
                                 done_ = 1; elim_ = writes_; eoff = npc; d_want = jt_;
                             end
                         end
+                        cf_now = 0; br_now = 0; bt_ = 0;
+                        // Every source a constant: a simple op is computed here.
+                        if (CFOLD != 0 && !isfault && !done_ && writes_ &&
+                            (op == 7'h13 || op == 7'h1b || op == 7'h33 || op == 7'h3b) &&
+                            !((op == 7'h33 || op == 7'h3b) && wi[31:25] == 7'h01) &&
+                            ps1_ == 0 && (!uses2_ || ps2_ == 0) &&
+                            (CFOLD > 1 || (!cf_lvl[rs1_] && !(uses2_ && cf_lvl[rs2_])))) begin
+                            csa_ = simple_alu(wi, o1_, o2_, wpc);
+                            if (csa_[66]) begin
+                                done_ = 1; elim_ = 1; ep_ = 0; eoff = csa_[63:0]; cf_now = 1; n_cf = n_cf + 1;
+                            end
+                        end
+                        // A branch whose outcome is known: same register (equality) or constants.
+                        if (BRREN != 0 && !isfault && op == 7'h63 && f3_ != 3'd2 && f3_ != 3'd3 &&
+                            ps1_ == ps2_ && (ps1_ == 0 || f3_[2:1] == 2'b00)) begin
+                            case (f3_)
+                                3'd0: bt_ = o1_ == o2_;
+                                3'd1: bt_ = o1_ != o2_;
+                                3'd4: bt_ = $signed(o1_) < $signed(o2_);
+                                3'd5: bt_ = $signed(o1_) >= $signed(o2_);
+                                3'd6: bt_ = o1_ < o2_;
+                                default: bt_ = o1_ >= o2_;
+                            endcase
+                            if (!bt_ || tgt[1:0] == 0) begin
+                                done_ = 1; br_now = 1; d_want = bt_ ? tgt : npc; n_br = n_br + 1;
+                            end
+                        end
                         // Resources: ROB entry, issue-queue entry, physical register.
                         slot_ok = ui < nfi; slot = fiq[ui % FW];
                         fp_ok = up < nfp; fp = fpl[up % FW];
@@ -1329,8 +1363,11 @@ module rv64_core #(
                                 if (op == 7'h6f || op == 7'h67) begin
                                     rb_ctl[e] = 1; rb_taken[e] = 1;
                                     rb_ret[e] = op == 7'h67 && rd_ == 0 && (rs1_ == 1 || rs1_ == 5);
+                                end else if (op == 7'h63) begin
+                                    rb_ctl[e] = 1; rb_taken[e] = bt_;
                                 end
                             end
+                            if (writes_) cf_lvl[rd_] = cf_now;
                             if (writes_ && elim_) begin
                                 rat[rd_] = ep_; rat_off[rd_] = eoff;
                                 if (ep_ != 0) refcnt[ep_] = refcnt[ep_] + 1;
