@@ -378,6 +378,21 @@ WORKS = [
     ("0.14.1", "Le Grand Souffle",
      "Fetch and rename breathe thirty-two at a time. In simulation the word-wise Dhrystone passes twenty-seven DMIPS per MHz.",
      dict(fetch_w=32, decode_w=32, marks=["thirty-two lanes"])),
+    ("0.14.2", "Le Raccommodage",
+     "A mending after an outside review: the store-write range is checked, the return-stack pointer is restored from the offending load's own entry, "
+     "and only a load that truly read bytes can be marked as a violator. The speed is unchanged.",
+     dict(marks=["mended after review"])),
+    ("0.14.3", "Le Pressentiment des Chiffres",
+     "Rename now computes what it already knows: simple operations on constants are worked out on the spot, and branches whose operands are known are decided there, "
+     "so such instructions never wait for an execution unit.",
+     dict(marks=["constants and branches decided at rename"])),
+    ("0.14.4", "La Pile Profonde",
+     "The return stack deepens from sixteen to sixty-four entries, so a long chain of calls still finds its way home.",
+     dict(ras=64, marks=["64-entry return stack"])),
+    ("0.14.5", "La Profondeur",
+     "A dial for honesty: the fetch path can be made as deep as a real core's, so a wrong guess costs ten clocks instead of three. "
+     "Set to zero the drawing is unchanged; set to eight it shows what a buildable pipeline would lose.",
+     dict(marks=["front-end depth dial"])),
 ]
 
 ERAS = [
@@ -387,7 +402,7 @@ ERAS = [
     ("IV", "Salle IV", "Le Désordre", "Out of order: instructions run when ready, retire in order.", "0.9.0", "0.9.4"),
     ("V", "Salle V", "L'Octuple", "Eight wide, and learning to guess.", "0.10.0", "0.11.2"),
     ("VI", "Salle VI", "Le Grand Format", "Sixteen wide, and then a council of engineers.", "0.12.0", "0.13.0"),
-    ("VII", "Salle VII", "Le Conseil", "The council widens everything at once: doors, room and breath.", "0.13.1", "0.14.1"),
+    ("VII", "Salle VII", "Le Conseil", "The council widens everything at once: doors, room and breath, then a mending and a deeper memory for returns.", "0.13.1", "0.14.5"),
 ]
 
 
@@ -1131,7 +1146,7 @@ def chart_svg(versions) -> str:
     n = len(versions)
     xs = {v["version"]: l + (Wc - l - r) * (i + 0.5) / n for i, v in enumerate(versions)}
     top = max([v["dmips_ref"] for v in pts] + [v["dmips_fast"] or 0 for v in versions])
-    ymax = 16 if top > 7.5 else 8
+    ymax = 32 if top > 15 else (16 if top > 7.5 else 8)
     lo, hi = math.log2(0.2), math.log2(ymax)
 
     def Y(val):
@@ -1147,7 +1162,7 @@ def chart_svg(versions) -> str:
         x1 = l + (Wc - l - r) * (idx[-1] + 1) / n
         out.append(f'<rect x="{x0:.1f}" y="{t}" width="{x1 - x0:.1f}" height="{Hc - t - b}" fill="{col}" fill-opacity="0.09"/>')
         out.append(f'<text x="{(x0 + x1) / 2:.1f}" y="{t + 22}" text-anchor="middle" class="ct-era">{label}</text>')
-    for val in [g for g in (0.25, 0.5, 1, 2, 4, 8, 16) if g <= ymax]:
+    for val in [g for g in (0.25, 0.5, 1, 2, 4, 8, 16, 32) if g <= ymax]:
         y = Y(val)
         out.append(f'<line x1="{l}" y1="{y:.1f}" x2="{Wc - r}" y2="{y:.1f}" class="ct-grid"/>')
         out.append(f'<text x="{l - 10}" y="{y + 5:.1f}" text-anchor="end" class="ct-lab">{val:g}</text>')

@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Original CPU foundation, wide out-of-order implementation (architecture 0.14.4).
+// Original CPU foundation, wide out-of-order implementation (architecture 0.14.5).
 // RV64IM + B execution, serialized FENCE.I, terminal EEI. Same module name and
 // contract as rv64_core.sv and rv64_pipe.sv, plus a wider retirement trace (rt_*);
 // build with one of the three files. Architecture version: cpu/VERSION,
@@ -502,6 +502,10 @@ module rv64_core #(
     reg [63:0] q_pred [0:Q_N-1];
     reg [31:0] q_insn [0:Q_N-1];
     reg [Q_N-1:0] q_fpred, q_bhit, q_fault, q_fmis;
+    // Front-end depth (realistic-latency mode): extra clocks from fetch to rename; 0 = idealized.
+    localparam integer FE_DEPTH = 0;
+    reg [31:0] fe_clk;                 // clock count, for the fetch-queue stamps
+    reg [31:0] q_t [0:Q_N-1];          // clock from which a queue entry may be renamed
     reg [1:0] q_bctr [0:Q_N-1];
     reg [RAS_B-1:0] q_rsp [0:Q_N-1];
     // Loop predictor (0.11.0): for each conditional branch, the run length of its usual
@@ -817,7 +821,7 @@ module rv64_core #(
 
     always @(posedge clk) begin
         if (reset) begin
-            halted = 0; started = 0; f_pc = RESET_PC; f_err = 0; f_hold = 0; f_stale = 0;
+            halted = 0; started = 0; f_pc = RESET_PC; fe_clk = 0; f_err = 0; f_hold = 0; f_stale = 0;
             bus_hold = 0; hold_addr = 0; hold_pair = 0; hold_nx = 0; mu_valid = 0; mu_beat = 0; mu_errv = 0; mu_err_beat = 0;
             fb_valid = 0; fb_beat = 0; fb_data = 0; mu_owner = 0; fb_owner = 0; fb_lock = 0; mu_owner_v = 0;
             for (i = 0; i < PRF_N; i = i + 1) prf[i] = 0;
@@ -838,6 +842,7 @@ module rv64_core #(
         end else if (!halted) begin
             retire_valid <= 0; retire2_valid <= 0; retire3_valid <= 0; rt_valid <= 0;
             if (!started) started = 1;
+            fe_clk = fe_clk + 1;
             // ================= bus completion =================
             if (bus_kind != 0) begin
                 if (mem_ready) begin
@@ -1032,10 +1037,8 @@ module rv64_core #(
                     hit = 0;
                     for (k = 0; k < ROB_N; k = k + 1)
                         if (rb_live[k] && (k[ROB_B-1:0] - rb_head) > s[ROB_B-1:0] && rb_pc[k][63:3] == rb_addr[e][63:3]) hit = 1;
-                    for (k = 0; k < Q_N; k = k + 1) begin
-                        qa = k[Q_B-1:0] - q_head;
-                        if (qa < q_count && q_pc[k][63:3] == rb_addr[e][63:3]) hit = 1;
-                    end
+                    for (k = 0; k < q_count; k = k + 1)
+                        if (q_pc[(q_head + k) % Q_N][63:3] == rb_addr[e][63:3]) hit = 1;
                     for (k = 0; k <= FW/2; k = k + 1)
                         if (f_pc[63:3] + k == rb_addr[e][63:3]) hit = 1;
                     if (hit) smc = 1;
@@ -1277,7 +1280,7 @@ module rv64_core #(
                 for (k = 0; k < IQ_N; k = k + 1) if (!iq_valid[k] && nfi < FW) begin fiq[nfi] = k; nfi = nfi + 1; end
                 for (k = 1; k < PRF_N; k = k + 1) if (free_mask[k] && nfp < FW) begin fpl[nfp] = k; nfp = nfp + 1; end
                 for (s = 0; s < FW; s = s + 1) if (!stop) begin
-                    if (s >= q_count) stop = 1;
+                    if (s >= q_count || (FE_DEPTH > 0 && q_t[(q_head + s) % Q_N] >= fe_clk)) stop = 1;
                     else begin
                         j = (q_head + s) % Q_N;
                         wi = q_insn[j]; wpc = q_pc[j]; isfault = q_fault[j];
@@ -1454,9 +1457,9 @@ module rv64_core #(
                                         lp_it = lp_d == lp_dir[g_lpi] ? (rb_li[e] == 255 ? 8'd255 : rb_li[e] + 8'd1) : 8'd0;
                                     end
                                 end
-                                for (k = 0; k < Q_N; k = k + 1) begin
+                                for (k = 0; k < q_count; k = k + 1) begin
                                     qj = (q_head + k) % Q_N;
-                                    if (k < q_count && q_lp_c[qj] && q_pc[qj] == npc)
+                                    if (q_lp_c[qj] && q_pc[qj] == npc)
                                         lp_it = q_ld[qj] == lp_dir[g_lpi] ? (q_li[qj] == 255 ? 8'd255 : q_li[qj] + 8'd1) : 8'd0;
                                 end
                                 for (k = 0; k < FW; k = k + 1)
@@ -1505,7 +1508,7 @@ module rv64_core #(
                         j = (q_tail + s) % Q_N;
                         q_pc[j] = g_pc[s]; q_insn[j] = g_insn[s]; q_pred[j] = g_pred[s]; q_fpred[j] = g_fp[s];
                         q_bhit[j] = g_bh[s]; q_bctr[j] = g_bc[s]; q_fault[j] = g_fault[s]; q_fmis[j] = g_fmis[s];
-                        q_rsp[j] = g_sp[s];
+                        q_rsp[j] = g_sp[s]; q_t[j] = fe_clk + FE_DEPTH;
                         q_lp[j] = g_lpmask[s]; q_ld[j] = g_fp[s]; q_li[j] = g_li[s]; q_lp_c[j] = g_insn[s][6:0] == 7'h63 && !g_fault[s];
                     end
                     q_tail = q_tail + g_n; q_count = q_count + g_n;
