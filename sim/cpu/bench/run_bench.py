@@ -26,7 +26,9 @@ import time
 
 ROOT = Path(__file__).resolve().parents[3]
 sys.path.insert(0, str(ROOT / 'sim/cpu'))
+sys.path.insert(0, str(Path(__file__).resolve().parent))
 from reference import execute  # noqa: E402
+import rubric_score  # noqa: E402
 
 DHRYSTONE_MAGIC = 0x4e4f545359524844
 DMIPS_DIVISOR = 1757  # Dhrystones per second of the VAX 11/780 reference
@@ -74,6 +76,8 @@ def main():
     parser.add_argument('--max-cycles', type=int, default=50_000_000)
     parser.add_argument('--record', action='store_true',
                         help='Also write the result to cpu/<benchmark>-results.json')
+    parser.add_argument('--devlog', action='store_true',
+                        help='Append this run and its rubric scorecard to DEVLOG.md')
     args = parser.parse_args()
     if not shutil.which('iverilog') or not shutil.which('vvp'):
         parser.error('iverilog and vvp are required; on Windows use run_dhrystone.ps1')
@@ -152,6 +156,7 @@ def main():
         'label': 'Non-compliant run, simulation (rubric evidence class E1)',
         'timestamp_utc': datetime.now(timezone.utc).isoformat(),
         'scope': {
+            'architecture_version': (ROOT / 'cpu/VERSION').read_text(encoding='ascii').strip(),
             'isa': build['isa'], 'abi': build['abi'],
             'environment': 'bare metal, laboratory terminal trap', 'class': 'multicycle',
             'rtl_sha256': {p.relative_to(ROOT).as_posix(): sha(p) for p in rtl},
@@ -159,7 +164,7 @@ def main():
             'hardware': 'none (Icarus Verilog simulation)',
             'debug_trace': 'retirement trace ports present in the RTL',
         },
-        'compiler': build['compiler'], 'optimization': build['optimization'],
+        'compiler': build['compiler'], 'optimization': build['optimization'], 'ram_bytes': ram_bytes,
         'build_commands': build['commands'],
         'number_of_runs': runs,
         'timed_region': {'cycles': region_cycles, 'retired_instructions': region_retired,
@@ -185,7 +190,18 @@ def main():
             'Simulation run; not compliant with the benchmark\'s own reporting rules.',
         ],
     }
+    card = rubric_score.score(ROOT, report)
+    report['rubric'] = {'total': round(card['total'], 2), 'band': card['band'],
+                        'evidence_assessed': card['evidence_assessed'], 'evidence_stale': card['evidence_stale'],
+                        'dimensions': {d['id']: None if d['points'] is None else round(d['points'], 2)
+                                       for d in card['dimensions']},
+                        'gates_not_met': [g for g, v in card['gates'].items() if v['status'] != 'met'],
+                        'claims_granted': [c['claim'] for c in card['claims'] if c['granted']],
+                        'note': 'Automated self-assessment from cpu/rubric-evidence.json; not an independent review.'}
+    (out / 'rubric.json').write_bytes((json.dumps(card, indent=2) + '\n').encode())
     (out / 'results.json').write_bytes((json.dumps(report, indent=2) + '\n').encode())
+    if args.devlog:
+        rubric_score.append_devlog(ROOT, report, card)
     if args.record:
         (ROOT / f'cpu/{args.benchmark}-results.json').write_bytes((json.dumps(report, indent=2) + '\n').encode())
     print(f'PASS: Dhrystone, {runs} runs; all {len(checks)} result checks match.')
@@ -193,6 +209,11 @@ def main():
     print(f'Timed region: {region_cycles:,} cycles, {region_retired:,} instructions; '
           f'{cycles_per_run:,.1f} cycles per run, CPI {report["clocks_per_instruction"]:.3f}.')
     print(f'DMIPS/MHz: {report["dmips_per_mhz"]:.4f} (non-compliant run, simulation).')
+    granted = report['rubric']['claims_granted']
+    print(f'Rubric self-assessment: {card["total"]:.1f}/100 ({card["band"]}); claims granted: '
+          f'{", ".join(granted) if granted else "none"}' + ('; evidence is stale' if card['evidence_stale'] else '') + '.')
+    if args.devlog:
+        print('Appended this run and its scorecard to DEVLOG.md.')
     print(f'Results: {(out / "results.json").relative_to(ROOT).as_posix()}')
 
 

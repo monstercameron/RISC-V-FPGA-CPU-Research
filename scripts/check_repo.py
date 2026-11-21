@@ -51,6 +51,7 @@ REQUIRED = MAINTAINED_DOCS + (
     'sim/cpu/bench/dhrystone_port.c', 'sim/cpu/bench/include/bench.h', 'sim/cpu/bench/include/util.h',
     'sim/cpu/bench/include/stdio.h', 'sim/cpu/bench/include/string.h', 'sim/cpu/bench/include/alloca.h',
     'sim/cpu/bench/vendor/dhrystone/SOURCE.txt', 'cpu/dhrystone-results.json',
+    'sim/cpu/bench/rubric_score.py', 'cpu/rubric-evidence.json', 'cpu/VERSION',
 )
 PLANNING_INPUTS = (
     'memory_model.py', 'plan_audit_checks.py', 'refinement_checks.py', 'abi_v1.py',
@@ -93,12 +94,21 @@ def check_metadata() -> dict:
         if sha(path) != entry['sha256']:
             raise ValueError(f'Upstream license bytes changed: {entry["path"]}')
 
+    version = (ROOT / 'cpu/VERSION').read_text(encoding='ascii').strip()
+    if not re.fullmatch(r'(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)', version):
+        raise ValueError('cpu/VERSION must be a semantic version MAJOR.MINOR.PATCH')
+    architecture = (ROOT / 'cpu/architecture.md').read_text(encoding='utf-8')
+    if architecture.splitlines()[0] != f'# CPU architecture, version {version}':
+        raise ValueError('cpu/architecture.md title must state the version in cpu/VERSION')
+    if f'\n| {version} |' not in architecture:
+        raise ValueError('cpu/architecture.md version history lacks a row for the current version')
+
     workflow = (ROOT / '.github/workflows/checks.yml').read_text(encoding='utf-8')
     actions = re.findall(r'uses:\s+([^\s@]+)@([^\s#]+)', workflow)
     if not actions or any(not re.fullmatch(r'[0-9a-f]{40}', ref) for _, ref in actions):
         raise ValueError('Every external CI action must be pinned to a full commit SHA')
     return {'local_links_checked': checked_links, 'license_identities_checked': len(manifest['files']),
-            'pinned_action_uses': len(actions)}
+            'pinned_action_uses': len(actions), 'cpu_architecture_version': version}
 
 
 def check_planning(report_dir: Path) -> dict:

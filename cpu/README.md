@@ -16,6 +16,8 @@ To change the examples, use the [editable Program inputs panel](inputs.md). The 
 
 ## What exists
 
+The current architecture is version **0.1.0** ([VERSION](VERSION)). The [architecture document](architecture.md), section 9, gives the versioning rules and history.
+
 - Original [SystemVerilog CPU](../rtl/cpu/rv64_core.sv): 32 x 64-bit integer registers, RV64 integer ALU and word operations, branches/jumps, byte/halfword/word/doubleword memory operations, serialized fences, exact terminal fault records, retirement tracing.
 - Original [16 KiB synchronous RAM wrapper](../rtl/cpu/rv64_bram_soc.sv), independent of board pins or vendor IP. RAM contents are initialized from a 64-bit-word hex image; no RAM bulk reset.
 - [Simulation suite](../sim/cpu/test_cpu.py) and [sequential software reference](../sim/cpu/reference.py): 32 generated programs under three memory wait patterns; an optional compiled C program adds a 33rd. All 53 implemented instruction names are exercised. This is local verification, not official certification.

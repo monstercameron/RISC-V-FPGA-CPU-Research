@@ -11,6 +11,7 @@ Last updated November 20, 2026.
 - [ ] **Wider random programs.** The random generator draws only register and immediate arithmetic. Add loads, stores, branches and jumps with bounded targets. Rubric R3.4.
 - [ ] **Lint.** Add a Verilator lint run with no unwaived warnings. Rubric HG7, R8.1.
 - [ ] **First synthesis.** Run Yosys on the core and RAM wrapper for a candidate exact part. Done when block RAM inference and a LUT/flip-flop count are recorded. Rubric HG7, R5.1, R5.2.
+- [ ] **Tag the first architecture version.** Create the annotated tag `cpu-v0.1.0` on commit `0483d99`, where the 0.1.0 RTL first landed, and push it. Versioning rules: [cpu/architecture.md](cpu/architecture.md) section 9.
 - [ ] **Known-issue list.** Start one so reviews can check for open correctness defects. Rubric HG6.
 - [ ] **Commit or discard the regenerated visualizer records.** `cpu/programs-verification.json` and `cpu/visualizer-verification.json` were rebuilt locally on November 20, 2026 and are uncommitted.
 
@@ -84,6 +85,7 @@ Results:
 - [ ] **`mret`** and a firmware trap handler that resumes execution.
 - [ ] **Timer and external interrupts**, taken only at instruction boundaries, including while pending during memory stalls.
 - [ ] **Zicntr counters**: `cycle`, `time`, `instret`.
+- [ ] **Readable version.** Consider reporting the architecture version in the implementation-defined `mimpid` CSR.
 - [ ] **User mode, PMP and access controls** as the architecture document's C1 row specifies.
 
 ## Milestone: RV64GC

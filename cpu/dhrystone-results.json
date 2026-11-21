@@ -2,8 +2,9 @@
   "status": "PASS",
   "benchmark": "Dhrystone (riscv-tests edition, version string \"C, Version 2.2\")",
   "label": "Non-compliant run, simulation (rubric evidence class E1)",
-  "timestamp_utc": "2026-11-21T01:52:51.702406+00:00",
+  "timestamp_utc": "2026-11-21T02:08:12.806202+00:00",
   "scope": {
+    "architecture_version": "0.1.0",
     "isa": "rv64i_zifencei",
     "abi": "lp64",
     "environment": "bare metal, laboratory terminal trap",
@@ -18,6 +19,7 @@
   },
   "compiler": "clang version 23.1.5 (https://github.com/llvm/llvm-project 392dfff97d29b59d77e5cac6d4b6ef2585fe7117)",
   "optimization": "O2",
+  "ram_bytes": 65536,
   "build_commands": [
     [
       "C:\\Program Files\\LLVM\\bin\\clang.exe",
@@ -348,8 +350,8 @@
     "python": "3.12.3"
   },
   "wall_seconds": {
-    "timing_run": 8.984492633000002,
-    "reference_model": 0.472077454999976
+    "timing_run": 9.1948758,
+    "reference_model": 0.47373819999999967
   },
   "build_input_sha256": {
     "sim/cpu/bench/vendor/dhrystone/dhrystone_main.c": "45f1aeb092b50ccbd2f37782e5b054b446c93c49771a45a36c940386f72d338d",
@@ -377,5 +379,35 @@
     "Dhrystone local variables are not reachable from the port layer and are not checked.",
     "Per-MHz figures only; no clock frequency has been measured.",
     "Simulation run; not compliant with the benchmark's own reporting rules."
-  ]
+  ],
+  "rubric": {
+    "total": 37.1,
+    "band": "foundation",
+    "evidence_assessed": "2026-11-20",
+    "evidence_stale": false,
+    "dimensions": {
+      "R1": 13.54,
+      "R2": 6.25,
+      "R3": 3.75,
+      "R4": 4.38,
+      "R5": 0.0,
+      "R6": 4.33,
+      "R7": 1.67,
+      "R8": 1.31,
+      "R9": 1.88
+    },
+    "gates_not_met": [
+      "HG1",
+      "HG3",
+      "HG6",
+      "HG7",
+      "HG8",
+      "PG1",
+      "PG2",
+      "PG3",
+      "PG5"
+    ],
+    "claims_granted": [],
+    "note": "Automated self-assessment from cpu/rubric-evidence.json; not an independent review."
+  }
 }

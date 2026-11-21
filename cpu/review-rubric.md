@@ -258,6 +258,8 @@ Findings: ID, severity, criterion affected, closure condition
 Pending evidence and the next gate
 ```
 
+Between reviews, [rubric-evidence.json](rubric-evidence.json) holds the current self-assessment of every gate and criterion. Each Dhrystone run computes a scorecard from it, scoring R4.1, HG2 and PG1 from the run and local records, and appends it to the development log. That scorecard is a progress measure; it is not a review record and cannot satisfy HG8 or R9.4.
+
 A review applies only to the recorded RTL hashes. Any RTL change voids the R1-R6 scores until the regression is rerun on the new hashes, and a change to decode, arithmetic, load/store or control needs the affected criteria scored again. A change of FPGA part, tool version or constraints voids R4.3, R4.4, R4.7 and R5. An earlier review's score is never inherited.
 
 ## 11. Where revision 0 stands

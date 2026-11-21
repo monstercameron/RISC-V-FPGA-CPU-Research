@@ -1,11 +1,14 @@
 # SPDX-License-Identifier: MIT
 # Build Dhrystone with the installed Windows LLVM, then run and check it on the
-# RTL in Ubuntu/WSL. -Record also saves the result to cpu/dhrystone-results.json.
+# RTL in Ubuntu/WSL. Every run appends its result and rubric scorecard to
+# DEVLOG.md (AGENTS.md requires it); -NoDevlog skips that for throwaway runs.
+# -Record also saves the result to cpu/dhrystone-results.json.
 param(
     [string]$Distribution = 'Ubuntu-24.04',
     [string]$LLVMDirectory = 'C:\Program Files\LLVM\bin',
     [ValidateSet(32,64,128,256,512,1024)][int]$RamKiB = 64,
-    [switch]$Record
+    [switch]$Record,
+    [switch]$NoDevlog
 )
 $ErrorActionPreference = 'Stop'
 $repoPath = (Resolve-Path (Join-Path $PSScriptRoot '../../..')).Path
@@ -19,5 +22,6 @@ $linuxPath = (& wsl -d $Distribution --exec wslpath -u $repoPath).Trim()
 if ($LASTEXITCODE -ne 0) { throw 'Could not resolve the project path in WSL.' }
 $runArgs = @('python3', '-B', 'sim/cpu/bench/run_bench.py', '--benchmark', 'dhrystone')
 if ($Record) { $runArgs += '--record' }
+if (-not $NoDevlog) { $runArgs += '--devlog' }
 & wsl -d $Distribution --cd $linuxPath --exec @runArgs
 if ($LASTEXITCODE -ne 0) { throw 'Dhrystone simulation failed.' }

@@ -4,6 +4,8 @@
 
 ### Added
 
+- Semantic versioning for the CPU architecture: version 0.1.0 for the existing C0 core, bump rules, a release process with `cpu-vX.Y.Z` tags, a version history, a repository check that the version is consistent, and the version recorded in benchmark results and scorecards.
+- Rubric scorecard for every Dhrystone run, computed from a per-criterion evidence file and the run's own measurements and appended to the development log; AGENTS.md now requires every experiment to be logged there.
 - Development log with timestamped events, commit messages and findings, starting November 20, 2026.
 - Dhrystone benchmark: riscv-tests source pinned with license and provenance, a freestanding runtime with software multiply and divide, marker-based timing, a 64 KiB build, result and differential-trace checks, a CI job and a first recorded simulation result of 0.260 DMIPS/MHz.
 - Trace testbench memory size and cycle limit are now parameters; defaults are unchanged.

@@ -1,4 +1,6 @@
-# CPU architecture, revision 0
+# CPU architecture, version 0.1.0
+
+Versioned with [semantic versioning](https://semver.org/); rules and history are in section 9. "Revision 0" in this document is version 0.1.0.
 
 Decision date: October 23, 2026. User priority: **CPU core first**. This design starts a programmable FPGA processor and keeps RVA23 as a tracked destination. It supersedes the previous accelerator-first priority, while preserving the old accelerator contracts as historical/future-work references.
 
@@ -140,3 +142,53 @@ Free work today uses the existing ARM workstation, LLVM cross compilation and Ub
 Recorded expanded run: 33 programs under zero, up-to-7 and up-to-19 response wait cycles; 99 differential runs; 53 instruction names covered, every branch outcome, memory widths/lanes, invalid encodings, misaligned and unmapped accesses, injected instruction/load/store faults, x0 behavior and ordered retirement. Separate reset and RAM-wrapper checks pass. Compiled C produces 36 and 0x000000240000007e through the actual synchronous wrapper.
 
 The reference model was written separately as a sequential byte-memory interpreter, but remains project code and can share conceptual mistakes. External Sail/Spike comparison, official architectural tests, formal proofs, privileged behavior, independent review, synthesis and physical timing remain pending. The infographic is an educational state animation; it is not a live RTL waveform or a performance estimate.
+
+## 9. Versioning
+
+The CPU architecture has one [semantic version](https://semver.org/), `MAJOR.MINOR.PATCH`. It is stored in [VERSION](VERSION) and in this document's title, and the repository check fails if the two differ. Benchmark results and rubric scorecards record it.
+
+### What the version covers
+
+The version tracks the architectural contract that software, adapters and testbenches rely on:
+
+- the implemented ISA string and the semantics of every implemented instruction;
+- the execution environment: trap causes, the trap record, privilege modes and CSRs;
+- the ports of `rv64_core` and `rv64_bram_soc`, the memory-bus handshake and the retirement trace;
+- parameters and their defaults, the reset PC and the sample SoC's memory map;
+- documented behavior others may depend on, such as one outstanding memory request.
+
+It does not cover tests, testbenches, tools, benchmarks or documentation wording. The preserved accelerator design keeps its own ABI and adapter version numbers.
+
+### Which number changes
+
+From 1.0.0 onward:
+
+| Bump | When | Examples |
+|---|---|---|
+| MAJOR | Incompatible change to the contract | Removing or renaming a port; changing the bus handshake; changing a trap cause or the trap record's meaning; changing a parameter default; removing an instruction |
+| MINOR | Backward-compatible addition | Adding Zicsr, M or C; a new port or parameter whose default keeps existing behavior; new trap causes for a new feature |
+| PATCH | RTL change with no contract change | A bug fix that restores documented behavior; timing, area or clocks-per-instruction improvements with identical architectural behavior |
+
+A bug fix that changes behavior software may already rely on counts as incompatible. Documentation corrections that do not change the contract need no bump.
+
+Before 1.0.0, anything may change (semantic versioning, item 4). This project then bumps MINOR for any contract change, breaking or additive, and PATCH for any other RTL change, and marks every breaking change in the history below.
+
+Proposed criteria for 1.0.0, when the core and bus interfaces are frozen: C1 complete, an external-model comparison in the regression (rubric HG3), and a first exact-part synthesis. Changing these criteria is itself recorded here.
+
+### Releasing a version
+
+For every change to `rtl/cpu/` or to the contract in this document:
+
+1. Decide the bump from the table. A change to tests or wording only needs none.
+2. Update [VERSION](VERSION) and this document's title together.
+3. Add a row to the history: version, date, commit, summary, whether it breaks compatibility, and the short RTL hashes.
+4. After the change lands on `main`, tag that commit `cpu-vX.Y.Z` with an annotated tag.
+5. Record the release in [DEVLOG.md](../DEVLOG.md). If the RTL changed, rerun the regression and Dhrystone and reassess [rubric-evidence.json](rubric-evidence.json).
+
+Once Zicsr arrives in C1, consider reporting the version in the implementation-defined `mimpid` CSR so software can read it.
+
+### History
+
+| Version | Date | Commit | Summary | Breaking | RTL hashes: core / RAM wrapper |
+|---|---|---|---|---|---|
+| 0.1.0 | Designed 2026-10-23; first committed 2026-11-20 | `0483d99` | C0 integer foundation: multicycle RV64I and FENCE.I core, terminal laboratory trap record, unified 64-bit memory bus, retirement trace, 16 KiB synchronous RAM wrapper. Called "revision 0" before versioning began. | Initial version | `831101d3f376` / `a38d2ca4a051` |

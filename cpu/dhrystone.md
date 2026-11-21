@@ -57,6 +57,7 @@ Dhrystone's ground rules are separate compilation, no merging of procedures and 
 | [build_bench.py](../sim/cpu/bench/build_bench.py) | Compiles, links with a generated linker script for the chosen RAM size, writes images |
 | [tb_bench.sv](../sim/cpu/bench/tb_bench.sv) | Core plus RAM wrapper; counts the marked region |
 | [run_bench.py](../sim/cpu/bench/run_bench.py) | Timing run, result checks, differential traces, report |
+| [rubric_score.py](../sim/cpu/bench/rubric_score.py) | Rubric scorecard from [rubric-evidence.json](rubric-evidence.json) plus the run; devlog entry |
 | [run_dhrystone.ps1](../sim/cpu/bench/run_dhrystone.ps1) | Windows launcher: LLVM build, then the run in Ubuntu/WSL |
 
 The benchmark needs about 15.7 KB for code, data and arrays, more than the 16 KiB layout leaves after the stack, so it uses 64 KiB of RAM. The RTL is unchanged: `RAM_WORDS` in the RAM wrapper and a new `MEM_BYTES` parameter in the trace testbench set the size. The main regression keeps 16 KiB because its unmapped-address tests rely on that boundary.
@@ -71,7 +72,7 @@ From the repository root in PowerShell, with the installed LLVM and Ubuntu WSL t
 .\sim\cpu\bench\run_dhrystone.ps1
 ```
 
-Add `-Record` to overwrite [dhrystone-results.json](dhrystone-results.json), or `-RamKiB 128` for a larger memory. A run takes about a minute; most of it is the two traced runs.
+Every run appends its result and a rubric scorecard to the run log at the end of [DEVLOG.md](../DEVLOG.md); add `-NoDevlog` for a throwaway run. Add `-Record` to overwrite [dhrystone-results.json](dhrystone-results.json), or `-RamKiB 128` for a larger memory. A run takes about a minute; most of it is the two traced runs.
 
 On Linux with clang, lld, LLVM tools, Icarus and Python 3.11+:
 
