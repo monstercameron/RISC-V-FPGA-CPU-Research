@@ -8,6 +8,8 @@
 # -Core pipe runs the pipelined core (rtl/cpu/rv64_pipe.sv, 0.8.0) instead of the
 # multicycle core; its build folder and record names end in -pipe. -Core ooo runs the
 # out-of-order core (rtl/cpu/rv64_ooo.sv, 0.9.0); names end in -ooo.
+# -Sim verilator simulates with Verilator instead of Icarus Verilog (the default and
+# the cross-check); see sim/cpu/simulator.py.
 param(
     [string]$Distribution = 'Ubuntu-24.04',
     [string]$LLVMDirectory = 'C:\Program Files\LLVM\bin',
@@ -15,6 +17,7 @@ param(
     [ValidateSet('rv64i_zifencei','rv64im_zifencei','rv64im_zba_zbb_zbs_zifencei')][string]$Isa = 'rv64i_zifencei',
     [ValidateSet('reference','fast')][string]$Runtime = 'reference',
     [ValidateSet('multicycle','pipe','ooo')][string]$Core = 'multicycle',
+    [ValidateSet('icarus','verilator')][string]$Sim = 'icarus',
     [switch]$Record,
     [switch]$NoDevlog
 )
@@ -32,7 +35,7 @@ if ($Core -ne 'multicycle') { $outDir += '-' + $Core }
 if ($LASTEXITCODE -ne 0) { throw 'Dhrystone build failed.' }
 $linuxPath = (& wsl -d $Distribution --exec wslpath -u $repoPath).Trim()
 if ($LASTEXITCODE -ne 0) { throw 'Could not resolve the project path in WSL.' }
-$runArgs = @('python3', '-B', 'sim/cpu/bench/run_bench.py', '--benchmark', 'dhrystone', '--out-dir', $outDir, '--core', $Core)
+$runArgs = @('python3', '-B', 'sim/cpu/bench/run_bench.py', '--benchmark', 'dhrystone', '--out-dir', $outDir, '--core', $Core, '--sim', $Sim)
 if ($Record) { $runArgs += '--record' }
 if (-not $NoDevlog) { $runArgs += '--devlog' }
 & wsl -d $Distribution --cd $linuxPath --exec @runArgs

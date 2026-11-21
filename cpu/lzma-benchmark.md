@@ -67,8 +67,13 @@ minimum of 64 Ki + 66 Ki entries whatever the dictionary.
 ```
 python -B sim/cpu/bench/build_bench.py --benchmark lzma [--out-dir build/cpu/bench/lzma-d12-rv64imb-<core>]
 python3 -B sim/cpu/bench/run_bench.py --benchmark lzma --out-dir <same> --core multicycle|pipe|ooo \
-    [--lzma-mode full|sampled] [--jobs 3]
+    [--lzma-mode full|sampled] [--jobs 3] [--sim icarus|verilator]
 ```
+
+`--sim verilator` runs on Verilator instead of Icarus (see [simulator.py](../sim/cpu/simulator.py)
+and the Verilator note in [dhrystone.md](dhrystone.md)). The mode then defaults to `full` for every
+core, since the whole out-of-order program takes about 15 s. Verilator starts registers at 0 where
+Icarus starts them at X, so a reset-dependence bug can hide; Icarus stays the cross-check.
 
 The lzma build defaults to rv64imb (`rv64im_zba_zbb_zbs_zifencei`), 1 MiB RAM and a 2^12
 dictionary (`--lzma-dict-log`). The runner checks the following:
@@ -99,11 +104,14 @@ Ratings are 7-Zip "MIPS" per MHz, which equals 7-Zip commands per clock; kernel 
 |---|---|---:|---:|---:|---:|---:|---:|
 | multicycle (`rv64_core.sv`) | full | 2,255,190 | 1.360 | 1.605 | 259,246 | 1.655 | 1.691 |
 | pipelined (`rv64_pipe.sv`) | full | 3,763,359 | 0.815 | 0.962 | 491,743 | 0.873 | 0.892 |
-| out-of-order (`rv64_ooo.sv`) | sampled, partial | about 1,089,000 (13 of 21 pieces) | 2.82 | about 3.32 | 171,624 (3 of 3) | 2.50 | 2.555 |
+| out-of-order (`rv64_ooo.sv`) | full, Verilator 5.020 | 1,067,884 | 2.871 | 3.389 | 171,494 | 2.502 | 2.557 |
+| out-of-order, earlier estimate | sampled, partial (Icarus) | about 1,089,000 (13 of 21 pieces) | 2.82 | about 3.32 | 171,624 (3 of 3) | 2.50 | 2.555 |
 | Cortex-X925 native, same kernel | 4.27 GHz (add chain) | 434,230 | | 8.335 | 169,539 | | 2.586 |
 | Cortex-X925, real `7zz b -mmt1 -md22` | about 4.2 GHz | | | about 1.91 | | | about 1.93 |
 
-Out-of-order compress was cut short to save time. 13 of the 21 pieces of 150 k instructions were
+The full out-of-order run under Verilator passes all checks, including 24 trace checks against the reference
+model (`run_bench.py --benchmark lzma --core ooo --sim verilator`, 147 s). The earlier sampled Icarus estimate
+was 2.0% high on compression. Out-of-order compress was cut short to save time in that estimate. 13 of the 21 pieces of 150 k instructions were
 timed (1.87 M of 3.07 M instructions, 662,620 clocks), and the total is scaled by instruction
 count. Interpolating the missing pieces from their neighbours gives 1.07-1.10 M clocks instead, or
 3.30-3.39 MIPS/MHz. Piece IPC ranges from 2.1 to 5.7; the literal-only start of the data runs at

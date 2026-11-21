@@ -21,6 +21,9 @@ and marks its phases in the mailbox (lzma_bench.h). This runner:
 4. reports clocks, instructions, IPC and 7-Zip-style ratings per MHz from
    Bench.cpp's command counts (lzma_rating.py).
 
+With --sim verilator (sim/cpu/simulator.py) the mode defaults to full for every
+core: the whole out-of-order program then takes about 15 s.
+
 Results are labelled "scaled-down 7-Zip LZMA kernel, simulation"; they are not
 7-Zip benchmark scores.
 SPDX-License-Identifier: MIT
@@ -46,8 +49,8 @@ RESULT_WORDS = ('magic', 'data_size', 'dict_size', 'packed_size', 'crc_data', 'c
                 'dec_result', 'dec_status', 'dec_in_used', 'compare_ok', 'enc_result', 'props_byte', 'arena_used')
 LZMA_STATUS_MAYBE_FINISHED_WITHOUT_MARK = 4
 # Default piece and warm-up sizes (instructions) per core for sampled mode.
-# The out-of-order model simulates about 800 instructions per second, so its pieces
-# are sized to stay well inside the 5-minute step limit.
+# The out-of-order model simulates about 800 instructions per second under Icarus, so
+# its pieces are sized to stay well inside the 5-minute step limit.
 SAMPLING = {'multicycle': (1_200_000, 50_000), 'pipe': (1_200_000, 50_000), 'ooo': (150_000, 20_000)}
 
 
@@ -145,12 +148,12 @@ def check_words(words, expected, what):
     return checks
 
 
-def run(args, root, out, build, snap, rtl, core_file, command, sha):
+def run(args, root, out, build, snap, rtl, core_file, command, sha, sim):
     if 'lzma' not in build:
         raise SystemExit('build.json is not an lzma build')
     ram_bytes, mailbox = build['ram_bytes'], build['mailbox_address']
-    wide = ['-DWIDE_TRACE'] if args.core == 'ooo' else []
-    mode = args.lzma_mode or ('sampled' if args.core == 'ooo' else 'full')
+    wide = ['WIDE_TRACE'] if args.core == 'ooo' else []
+    mode = args.lzma_mode or ('sampled' if args.core == 'ooo' and sim.name == 'icarus' else 'full')
     piece, warmup = SAMPLING[args.core]
     piece = args.sample_instructions or piece
     warmup = args.warmup_instructions if args.warmup_instructions is not None else warmup
@@ -171,12 +174,10 @@ def run(args, root, out, build, snap, rtl, core_file, command, sha):
     check_words(words, expected, 'reference model')
     arena_used = words.get(15)
 
-    timing_vvp = out / 'tb_bench.vvp'
-    command(['iverilog', '-g2012', '-Wall', *wide, '-s', 'tb_bench', f'-Ptb_bench.RAM_WORDS={ram_bytes // 8}',
-             '-o', timing_vvp, *rtl, snap / 'sim/cpu/bench/tb_bench.sv'])
-    trace_vvp = out / 'tb_core.vvp'
-    command(['iverilog', '-g2012', '-Wall', *wide, '-s', 'tb_core', f'-Ptb_core.MEM_BYTES={ram_bytes}',
-             '-o', trace_vvp, rtl[0], snap / 'sim/cpu/tb_core.sv'])
+    timing_sim = sim.build('tb_bench', [*rtl, snap / 'sim/cpu/bench/tb_bench.sv'], out / 'tb_bench.vvp',
+                           params={'RAM_WORDS': ram_bytes // 8}, defines=wide)
+    trace_sim = sim.build('tb_core', [rtl[0], snap / 'sim/cpu/tb_core.sv'], out / 'tb_core.vvp',
+                          params={'MEM_BYTES': ram_bytes}, defines=wide)
     jobs = max(1, args.jobs)
     simulations = []
 
@@ -189,7 +190,7 @@ def run(args, root, out, build, snap, rtl, core_file, command, sha):
     phase_clocks, differential, pieces_report, rtl_words = {}, [], [], None
     if mode == 'full':
         # 2a. Whole program from reset; laps give the phase edges.
-        output = simulate(['vvp', timing_vvp, f'+image={out / "bench-words.hex"}', f'+mailbox={mailbox:x}',
+        output = simulate([*timing_sim, f'+image={out / "bench-words.hex"}', f'+mailbox={mailbox:x}',
                            f'+max_cycles={args.max_cycles}'], 'timing, full program')
         (out / 'timing-run.txt').write_text(output, encoding='utf-8')
         laps = {int(v): int(c) for v, c, _ in re.findall(r'^LAP (\d+) cycles=(\d+) retirements=(\d+)$', output, re.M)}
@@ -240,7 +241,7 @@ def run(args, root, out, build, snap, rtl, core_file, command, sha):
             p['reference_replay'] = 'PASS'
 
     def time_piece(p):
-        output = simulate(['vvp', timing_vvp, f'+image={p["words"]}', f'+mailbox={mailbox:x}',
+        output = simulate([*timing_sim, f'+image={p["words"]}', f'+mailbox={mailbox:x}',
                            f'+max_cycles={args.max_cycles}', f'+sample_from={p["window"][0]}',
                            f'+sample_to={p["window"][1]}'], f'timing, piece {p["index"]}')
         m = re.search(r'^SAMPLE cycles=(\d+) retirements=(\d+) from_cycle=(\d+) from_retired=(\d+) '
@@ -254,7 +255,7 @@ def run(args, root, out, build, snap, rtl, core_file, command, sha):
         stalls = p['stalls']
         trace_path = out / f'piece{p["index"]:03d}-stall{stalls}.trace'
         limit = p['window'][1]
-        summary = simulate(['vvp', trace_vvp, f'+image={p["bytes"]}', f'+trace={trace_path}',
+        summary = simulate([*trace_sim, f'+image={p["bytes"]}', f'+trace={trace_path}',
                             f'+stall={stalls}', f'+seed={p["index"] + 1}', f'+max_cycles={args.max_cycles}',
                             f'+max_retired={limit}'], f'differential, piece {p["index"]}, wait cycles {stalls}')
         actual = trace_path.read_text().splitlines()
@@ -329,7 +330,7 @@ def run(args, root, out, build, snap, rtl, core_file, command, sha):
             'core': args.core,
             'rtl_sha256': {p.relative_to(snap).as_posix(): sha(p) for p in rtl},
             'platform': f'rv64_bram_soc, {ram_bytes // 1024} KiB synchronous RAM, no added wait cycles in the timing run',
-            'hardware': 'none (Icarus Verilog simulation)',
+            'hardware': f'none ({sim.label} simulation)',
         },
         'compiler': build['compiler'], 'optimization': build['optimization'], 'ram_bytes': ram_bytes,
         'build_commands': build['commands'],
@@ -361,7 +362,7 @@ def run(args, root, out, build, snap, rtl, core_file, command, sha):
         'independent_checks': independent,
         'differential': differential,
         'instruction_names_executed': sorted(c for c in coverage if ':' not in c),
-        'simulator': command(['iverilog', '-V']).splitlines()[0],
+        **sim.info(),
         'simulations': sorted(simulations, key=lambda s: s['run']),
         'host': {'platform': platform.platform(), 'machine': platform.machine(), 'python': platform.python_version()},
         'wall_seconds': {'reference_model': reference_seconds},

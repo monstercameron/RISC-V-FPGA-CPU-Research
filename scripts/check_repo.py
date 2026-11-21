@@ -35,7 +35,7 @@ REQUIRED = MAINTAINED_DOCS + (
     'isa/transport.S', 'isa/opcode_examples.S', 'isa/verify_assembly.py',
     'cpu/core-explainer.html', 'cpu/verification.json',
     'rtl/cpu/rv64_core.sv', 'rtl/cpu/rv64_bram_soc.sv',
-    'sim/cpu/test_cpu.py', 'sim/cpu/reference.py', 'sim/cpu/tb_core.sv',
+    'sim/cpu/test_cpu.py', 'sim/cpu/simulator.py', 'sim/cpu/reference.py', 'sim/cpu/tb_core.sv',
     'sim/cpu/tb_reset.sv', 'sim/cpu/tb_soc.sv', 'sim/cpu/run.sh', 'sim/cpu/run.ps1',
     'sim/cpu/build_firmware.py', 'sim/cpu/firmware.c', 'sim/cpu/start.S', 'sim/cpu/link.ld',
     'sim/cpu/c_demo.c', 'sim/cpu/tb_c_demo.sv', 'sim/cpu/run_c_demo.py',

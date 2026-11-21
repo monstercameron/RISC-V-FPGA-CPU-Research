@@ -17,7 +17,8 @@ module tb_bench #(parameter integer RAM_WORDS = 8192);
         .retire3_valid(retired3));
 
     string image_path,profile_path;
-    reg [63:0] mailbox=64'hffffffffffffffff, marker=0;
+    // Not named `mailbox`: that is a SystemVerilog built-in class Verilator reserves.
+    reg [63:0] mailbox_addr=64'hffffffffffffffff, marker=0;
     integer index,i,cycles=0,retirements=0,max_cycles=50000000,profile_fd=0;
     integer start_cycle=-1,start_retired=-1,stop_cycle=-1,stop_retired=-1;
     integer sample_from=-1,sample_to=-1,sample_cycle=-1,sample_retired=-1,laps=0;
@@ -29,13 +30,13 @@ module tb_bench #(parameter integer RAM_WORDS = 8192);
             profile_fd=$fopen(profile_path,"w");
             if (!profile_fd) $fatal(1,"cannot open +profile file");
         end
-        if (!$value$plusargs("mailbox=%h",mailbox)) $fatal(1,"missing +mailbox");
+        if (!$value$plusargs("mailbox=%h",mailbox_addr)) $fatal(1,"missing +mailbox");
         if ($value$plusargs("max_cycles=%d",max_cycles)) begin end
         if ($value$plusargs("sample_from=%d",sample_from) != $value$plusargs("sample_to=%d",sample_to))
             $fatal(1,"+sample_from and +sample_to go together");
         if (sample_to>=0 && !(sample_from>=0 && sample_to>sample_from)) $fatal(1,"bad sample window");
-        if (mailbox[2:0]!=0 || mailbox+256>RAM_WORDS*8) $fatal(1,"mailbox outside RAM");
-        index=mailbox>>3;
+        if (mailbox_addr[2:0]!=0 || mailbox_addr+256>RAM_WORDS*8) $fatal(1,"mailbox outside RAM");
+        index=mailbox_addr>>3;
         $readmemh(image_path,dut.ram);
         repeat (4) @(negedge clk);
         #1 reset=0;

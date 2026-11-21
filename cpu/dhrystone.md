@@ -114,3 +114,7 @@ python3 -B sim/cpu/bench/run_bench.py
 ```
 
 Generated files go under ignored `build/cpu/bench/dhrystone/`: object files, `bench.elf`, disassembly, symbol map, both memory images, traces and `results.json`. The runner refuses a build whose sources or artifacts changed after building.
+
+### Verilator (optional)
+
+`run_bench.py --sim verilator` (or `run_dhrystone.ps1 -Sim verilator`) builds and runs the same testbenches with Verilator instead of Icarus Verilog; `sim/cpu/test_cpu.py --sim verilator` does the same for the regression. The out-of-order timing run takes under a second instead of 1.5-2 minutes (a whole runner call, with builds and the reference model, about 20-40 s), and the region clocks, mailbox and traces match Icarus exactly. The helper [simulator.py](../sim/cpu/simulator.py) finds Verilator through `VERILATOR_ROOT`, `PATH` or an unpacked copy in `build/third-party/verilator/root`, uses clang++ with C++20 flags when g++ is absent, and caches each build under `build/sim-cache/verilator/`. Results record `simulator_name` and the `verilator --version` string. Verilator is a 2-state simulator: registers and memories start at 0, where Icarus starts them at X, so a bug that depends on reset values can pass under Verilator. Icarus stays the default and the cross-check, and logged runs use it unless `--sim verilator` is given.

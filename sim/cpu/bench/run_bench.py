@@ -1,7 +1,9 @@
 """Run a built benchmark on the RTL, check its results and report cycle counts.
 
 Needs Python 3.11+ and Icarus Verilog (Linux or Ubuntu/WSL). Build first with
-build_bench.py. Two checks run:
+build_bench.py. --sim verilator uses Verilator instead (much faster, 2-state:
+registers start at 0, not X); Icarus stays the default and the cross-check for
+logged results. See sim/cpu/simulator.py. Two checks run:
 
 1. Timing: the core with its synchronous RAM wrapper counts clocks and retired
    instructions between the program's start and stop markers.
@@ -31,6 +33,7 @@ ROOT = Path(__file__).resolve().parents[3]
 sys.path.insert(0, str(ROOT / 'sim/cpu'))
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from reference import execute  # noqa: E402
+import simulator  # noqa: E402
 import bench_profile  # noqa: E402
 import rubric_score  # noqa: E402
 import runlog  # noqa: E402
@@ -88,10 +91,11 @@ def main():
     parser.add_argument('--devlog', action='store_true',
                         help='Write this run, its rubric scorecard and profile to devlog/devlog-<commit>.md '
                              'and add a row to the run index in DEVLOG.md')
+    simulator.add_argument(parser)
     lzma_options = parser.add_argument_group('lzma only')
     lzma_options.add_argument('--lzma-mode', choices=('full', 'sampled'),
                               help='full: whole program from reset; sampled: checkpointed pieces '
-                                   '(default full, sampled for ooo)')
+                                   '(default full, sampled for ooo under Icarus)')
     lzma_options.add_argument('--sample-instructions', type=int, help='Instructions per piece (sampled mode)')
     lzma_options.add_argument('--warmup-instructions', type=int, help='Warm-up before each piece (sampled mode)')
     lzma_options.add_argument('--jobs', type=int, default=3, help='Simulations run at once (sampled mode)')
@@ -101,8 +105,10 @@ def main():
     args = parser.parse_args()
     if args.benchmark == 'lzma' and args.devlog:
         parser.error('--devlog records Dhrystone runs only; log LZMA runs in DEVLOG.md by hand')
-    if not shutil.which('iverilog') or not shutil.which('vvp'):
-        parser.error('iverilog and vvp are required; on Windows use run_dhrystone.ps1')
+    try:
+        sim = simulator.get(args.sim)
+    except simulator.SimulatorMissing as missing:
+        parser.error(f'{missing}; on Windows use run_dhrystone.ps1')
     out = (ROOT / (args.out_dir or f'build/cpu/bench/{args.benchmark}')).resolve()
     build = json.loads((out / 'build.json').read_bytes())
     for name, digest in build['input_sha256'].items():
@@ -123,16 +129,15 @@ def main():
     rtl = [snap / core_file, snap / 'rtl/cpu/rv64_bram_soc.sv']
     if args.benchmark == 'lzma':
         import lzma_run
-        lzma_run.run(args, ROOT, out, build, snap, rtl, core_file, command, sha)
+        lzma_run.run(args, ROOT, out, build, snap, rtl, core_file, command, sha, sim)
         return
 
     # 1. Timing on the core plus synchronous RAM wrapper.
-    timing_vvp = out / 'tb_bench.vvp'
-    command(['iverilog', '-g2012', '-Wall', *(['-DWIDE_TRACE'] if args.core == 'ooo' else []), '-s', 'tb_bench',
-             f'-Ptb_bench.RAM_WORDS={ram_bytes // 8}',
-             '-o', timing_vvp, *rtl, snap / 'sim/cpu/bench/tb_bench.sv'])
+    wide = ['WIDE_TRACE'] if args.core == 'ooo' else []
+    timing_sim = sim.build('tb_bench', [*rtl, snap / 'sim/cpu/bench/tb_bench.sv'], out / 'tb_bench.vvp',
+                           params={'RAM_WORDS': ram_bytes // 8}, defines=wide)
     started = time.perf_counter()
-    output = command(['vvp', timing_vvp, f'+image={out / "bench-words.hex"}', f'+mailbox={mailbox:x}',
+    output = command([*timing_sim, f'+image={out / "bench-words.hex"}', f'+mailbox={mailbox:x}',
                       f'+max_cycles={args.max_cycles}', f'+profile={out / "profile.trace"}'])
     timing_seconds = time.perf_counter() - started
     (out / 'timing-run.txt').write_text(output, encoding='utf-8')
@@ -167,16 +172,14 @@ def main():
     started = time.perf_counter()
     expected_trace, coverage = execute(image, max_steps=20_000_000)
     reference_seconds = time.perf_counter() - started
-    trace_vvp = out / 'tb_core.vvp'
-    command(['iverilog', '-g2012', '-Wall', *(['-DWIDE_TRACE'] if args.core == 'ooo' else []), '-s', 'tb_core',
-             f'-Ptb_core.MEM_BYTES={ram_bytes}',
-             '-o', trace_vvp, rtl[0], snap / 'sim/cpu/tb_core.sv'])
+    trace_sim = sim.build('tb_core', [rtl[0], snap / 'sim/cpu/tb_core.sv'], out / 'tb_core.vvp',
+                          params={'MEM_BYTES': ram_bytes}, defines=wide)
     start_write = f'W {mailbox:016x} {1:016x} ff'
     stop_write = f'W {mailbox:016x} {2:016x} ff'
     differential = []
     for index, stalls in enumerate(args.stalls):
         trace_path = out / f'trace-stall{stalls}.trace'
-        summary = command(['vvp', trace_vvp, f'+image={out / "bench-bytes.hex"}', f'+trace={trace_path}',
+        summary = command([*trace_sim, f'+image={out / "bench-bytes.hex"}', f'+trace={trace_path}',
                            f'+stall={stalls}', f'+seed={index + 1}', f'+max_cycles={args.max_cycles}'])
         actual_trace = trace_path.read_text().splitlines()
         if actual_trace != expected_trace:
@@ -217,7 +220,7 @@ def main():
             'class': {'multicycle': 'multicycle', 'pipe': 'pipelined', 'ooo': 'out-of-order'}[args.core], 'core': args.core,
             'rtl_sha256': {p.relative_to(snap).as_posix(): sha(p) for p in rtl},
             'platform': f'rv64_bram_soc, {ram_bytes // 1024} KiB synchronous RAM, no added wait cycles in the timing run',
-            'hardware': 'none (Icarus Verilog simulation)',
+            'hardware': f'none ({sim.label} simulation)',
             'debug_trace': 'retirement trace ports present in the RTL',
         },
         'compiler': build['compiler'], 'optimization': build['optimization'], 'ram_bytes': ram_bytes,
@@ -244,7 +247,7 @@ def main():
             'estimates': profile['estimates'],
         },
         'instruction_names_executed': sorted(c for c in coverage if ':' not in c),
-        'simulator': command(['iverilog', '-V']).splitlines()[0],
+        **sim.info(),
         'host': {'platform': platform.platform(), 'machine': platform.machine(), 'python': platform.python_version()},
         'wall_seconds': {'timing_run': timing_seconds, 'reference_model': reference_seconds},
         'build_input_sha256': build['input_sha256'],

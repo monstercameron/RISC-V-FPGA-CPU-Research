@@ -1,4 +1,7 @@
 """Free CPU simulation suite: generated programs, sequential oracle, stalls/faults.
+
+--sim verilator builds and runs the same testbenches with Verilator instead of
+Icarus Verilog (the default and the cross-check); see simulator.py.
 SPDX-License-Identifier: MIT
 """
 from pathlib import Path
@@ -7,10 +10,10 @@ import hashlib
 import json
 import random
 import re
-import shutil
 import subprocess
 
 from reference import MASK, execute
+import simulator
 
 ROOT = Path(__file__).resolve().parents[2]
 # Programs written to exercise an issue slot, and the testbench counter that must be
@@ -651,8 +654,8 @@ def cases():
     p = prefix() + [i_type(0x13, 20, 0, 0, 0)] + body + [add_(29, 13, 14), add_(29, 29, 18), 0x100073]
     yield 'branch_ports_many', p, 0, MASK
 
-def command(args):
-    result = subprocess.run([str(x) for x in args], capture_output=True, text=True, timeout=60)
+def command(args, timeout=60):
+    result = subprocess.run([str(x) for x in args], capture_output=True, text=True, timeout=timeout)
     if result.returncode:
         raise RuntimeError(result.stdout + result.stderr)
     return result.stdout
@@ -669,29 +672,32 @@ def main():
                         help="Test this file instead of the core's file in rtl/cpu (a candidate kept elsewhere)")
     parser.add_argument('--out-dir', type=Path,
                         help='Build and report folder (default build/cpu), so candidates can be tested side by side')
+    simulator.add_argument(parser)
     args = parser.parse_args()
     if args.out_dir: OUT = args.out_dir.resolve()
-    cache = [f'-Ptb_core.ICACHE_BEATS={args.icache_beats}'] if args.icache_beats else []
-    cache += [f'-Ptb_core.DCACHE_BEATS={args.dcache_beats}'] if args.dcache_beats else []
-    if not shutil.which('iverilog') or not shutil.which('vvp'):
-        parser.error('iverilog and vvp are required; use the documented Ubuntu/WSL launcher')
+    cache = {'ICACHE_BEATS': args.icache_beats} if args.icache_beats else {}
+    cache |= {'DCACHE_BEATS': args.dcache_beats} if args.dcache_beats else {}
+    try:
+        sim = simulator.get(args.sim)
+    except simulator.SimulatorMissing as missing:
+        parser.error(str(missing))
+    # Icarus compiles in seconds; a Verilator build gets the 5-minute step limit.
+    limit = 60 if sim.name == 'icarus' else simulator.STEP_TIMEOUT
     OUT.mkdir(parents=True, exist_ok=True)
-    executable = OUT / 'cpu.vvp'
     core_src = args.core_source.resolve() if args.core_source else ROOT / CORES[args.core]
-    wide = ['-DWIDE_TRACE'] if args.core == 'ooo' else []  # 0.10.0: up to 8 retirements per clock
-    command(['iverilog', '-g2012', '-Wall', *wide, '-s', 'tb_core', *cache, '-o', executable,
-             core_src, ROOT / 'sim/cpu/tb_core.sv'])
-    command(['iverilog', '-g2012', '-Wall', *wide, '-s', 'rv64_bram_soc', '-o', OUT/'soc.vvp',
-             core_src, ROOT/'rtl/cpu/rv64_bram_soc.sv'])
-    command(['iverilog','-g2012','-Wall','-s','tb_reset','-o',OUT/'reset.vvp',
-             core_src,ROOT/'sim/cpu/tb_reset.sv'])
-    reset_result=command(['vvp',OUT/'reset.vvp']).strip()
-    command(['iverilog','-g2012','-Wall',*wide,'-s','tb_soc','-o',OUT/'bram-soc.vvp',
-             core_src,ROOT/'rtl/cpu/rv64_bram_soc.sv',ROOT/'sim/cpu/tb_soc.sv'])
+    wide = ['WIDE_TRACE'] if args.core == 'ooo' else []  # 0.10.0: up to 8 retirements per clock
+    executable = sim.build('tb_core', [core_src, ROOT / 'sim/cpu/tb_core.sv'], OUT / 'cpu.vvp',
+                           params=cache, defines=wide, timeout=limit)
+    sim.elaborate('rv64_bram_soc', [core_src, ROOT/'rtl/cpu/rv64_bram_soc.sv'], OUT/'soc.vvp',
+                  defines=wide, timeout=limit)
+    reset_sim = sim.build('tb_reset', [core_src, ROOT/'sim/cpu/tb_reset.sv'], OUT/'reset.vvp', timeout=limit)
+    reset_result=command(reset_sim).strip()
+    soc_sim = sim.build('tb_soc', [core_src, ROOT/'rtl/cpu/rv64_bram_soc.sv', ROOT/'sim/cpu/tb_soc.sv'],
+                        OUT/'bram-soc.vvp', defines=wide, timeout=limit)
     smoke=image_for([0x00500093,0x00700113,0x002081b3,0x00003237,0x00323023,0x00100073])
     smoke_hex=OUT/'soc-smoke.hex'
     smoke_hex.write_text(''.join(f'{int.from_bytes(smoke[i:i+8],"little"):016x}\n' for i in range(0,len(smoke),8)),encoding='ascii')
-    soc_results=[command(['vvp',OUT/'bram-soc.vvp',f'+image={smoke_hex}','+expected=c']).strip()]
+    soc_results=[command([*soc_sim,f'+image={smoke_hex}','+expected=c']).strip()]
     workloads = [(name,image_for(words),kind,addr) for name,words,kind,addr in cases()]
     if args.image:
         data = args.image.read_bytes()
@@ -699,7 +705,7 @@ def main():
         workloads.append(('compiled_firmware', data.ljust(16384,b'\0'), 0, MASK))
         bram=args.image.with_name('firmware-bram.hex')
         if not bram.is_file(): raise ValueError('Missing companion firmware-bram.hex')
-        soc_results.append(command(['vvp',OUT/'bram-soc.vvp',f'+image={bram}','+expected=24','+second']).strip())
+        soc_results.append(command([*soc_sim,f'+image={bram}','+expected=24','+second']).strip())
     records,coverage = [],set()
     for name, image, kind, address in workloads:
         expected, covered = execute(image,kind,address)
@@ -711,7 +717,7 @@ def main():
         hexfile.write_text(''.join(f'{b:02x}\n' for b in image),encoding='ascii')
         for stalls,seed in ((0,1),(7,42),(19,103)):
             trace = OUT / f'{name}-stall{stalls}.trace'
-            output = command(['vvp',executable,f'+image={hexfile}',f'+trace={trace}',
+            output = command([*executable,f'+image={hexfile}',f'+trace={trace}',
                               f'+stall={stalls}',f'+seed={seed}',f'+fault_kind={kind}',f'+fault_addr={address:x}'])
             actual=trace.read_text().splitlines()
             if actual!=expected:
@@ -740,9 +746,9 @@ def main():
             'coverage':sorted(coverage),'validation_scope':'local directed/random differential simulation; no official ISA certification or synthesis',
             'rtl_sha256':{str(p.relative_to(ROOT)):hashlib.sha256(p.read_bytes()).hexdigest() for p in sorted((ROOT/'rtl/cpu').glob('*.sv'))},
             'simulated_core_sha256':hashlib.sha256(core_src.read_bytes()).hexdigest(),
-            'simulator':command(['iverilog','-V']).splitlines()[0],'results':records}
+            **sim.info(),'results':records}
     (OUT/'verification.json').write_text(json.dumps(report,indent=2)+'\n',encoding='utf-8')
-    print(f'PASS ({args.core} core): {len(workloads)} programs x 3 wait patterns = {len(records)} runs; {len(required)} instruction names covered.')
+    print(f'PASS ({args.core} core, {sim.label}): {len(workloads)} programs x 3 wait patterns = {len(records)} runs; {len(required)} instruction names covered.')
     print('Includes precise traps, invalid encodings, bus faults, x0, all memory lanes, branch outcomes and ordered retirement.')
 
 
