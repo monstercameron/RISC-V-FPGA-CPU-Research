@@ -502,8 +502,8 @@ module rv64_core #(
     reg [IC_TAG-1:0] ic_tag [0:ICACHE_BEATS-1];
     reg [IC_TAG-1:0] ic_tag2 [0:ICACHE_BEATS-1];  // copy read for the retiring store
     reg [63:0] ic_data [0:ICACHE_BEATS-1];
-    reg [IC_TAG-1:0] ic_tq, ic_sq;
-    reg [63:0] ic_q;
+    reg [IC_TAG-1:0] ic_tq, ic_sq, ic_tq2;
+    reg [63:0] ic_q, ic_q2;   // the fetch beat and the beat after it (0.9.4)
     reg [DCACHE_BEATS-1:0] dc_valid;
     reg [DC_TAG-1:0] dc_tag [0:DCACHE_BEATS-1];
     reg [DC_TAG-1:0] dc_tag2 [0:DCACHE_BEATS-1];  // copy read for the retiring store
@@ -533,6 +533,11 @@ module rv64_core #(
     wire [IC_INDEX-1:0] f_idx = f_pc[3 +: IC_INDEX];
     wire f_misaligned = f_pc[1:0] != 0;
     wire f_hit = ic_valid[f_idx] && ic_tq == f_pc[63 -: IC_TAG] && !(p_valid && p_ic_idx == f_idx);
+    // The next beat, read in the same clock, so two instructions can come from either
+    // half of the fetch beat (0.9.4).
+    wire [60:0] f_beat2 = f_pc[63:3] + 61'd1;
+    wire [IC_INDEX-1:0] f_idx2 = f_beat2[IC_INDEX-1:0];
+    wire f_hit2 = ic_valid[f_idx2] && ic_tq2 == f_beat2[60 -: IC_TAG] && !(p_valid && p_ic_idx == f_idx2);
     localparam integer BTB_BITS = 8;
     localparam integer BTB_TAG = 10;
     localparam integer BTB_ENTRIES = 1 << BTB_BITS;
@@ -542,7 +547,7 @@ module rv64_core #(
     reg [1:0] btb_ctr [0:BTB_ENTRIES-1];
     reg [63:0] ras [0:3];
     reg [1:0] ras_sp;
-    wire [63:0] f_pc1 = {f_pc[63:3],3'b100};   // second instruction of an aligned beat
+    wire [63:0] f_pc1 = f_pc + 64'd4;           // the second instruction fetched
     wire [BTB_BITS-1:0] f_bidx = f_pc[2 +: BTB_BITS];
     wire [BTB_BITS-1:0] f_bidx1 = f_pc1[2 +: BTB_BITS];
     wire f_bhit = btb_valid[f_bidx] && btb_tag[f_bidx] == f_pc[2+BTB_BITS +: BTB_TAG];
@@ -763,11 +768,12 @@ module rv64_core #(
     wire st_done = st_req && mem_ready;
     wire ld_done = ld_req && mem_ready;
 
-    // F output: up to two instructions (the second only from an aligned beat, and not
-    // after a predicted-taken transfer, a call or a return, or a fault).
+    // F output: up to two instructions (the second from the same beat or, since 0.9.4,
+    // the next one when it is cached; not after a predicted-taken transfer, a call or a
+    // return, or a fault).
     wire [63:0] f_beat = fetch_for_f ? mem_rdata : ic_q;
     wire [31:0] f_word = f_pc[2] ? f_beat[63:32] : f_beat[31:0];
-    wire [31:0] f_word1 = f_beat[63:32];
+    wire [31:0] f_word1 = f_pc[2] ? ic_q2[31:0] : f_beat[63:32];
     wire f_fault = f_misaligned || (fetch_for_f && mem_error);
     wire f_ready = f_valid && started && !halted && (f_misaligned || f_hit || fetch_for_f);
     wire [6:0] f_op = f_word[6:0];
@@ -784,7 +790,7 @@ module rv64_core #(
     wire [63:0] f_btarget1 = btb_ret[f_bidx1] ? ras[ras_sp] : {f_pc1[63:32],btb_target[f_bidx1],2'b00};
     wire [63:0] f_pred = f_btaken ? f_btarget : f_pc + 64'd4;
     wire [63:0] f_pred1 = f_btaken1 ? f_btarget1 : f_pc1 + 64'd4;
-    wire f_two = !f_pc[2] && !f_fault && !f_btaken && !f_call && !f_return;
+    wire f_two = (!f_pc[2] || f_hit2) && !f_fault && !f_btaken && !f_call && !f_return;
 
     // L2 completes: a hit now, forwarding, or a miss when its bus read returns.
     wire [63:0] l2_line = (p_valid && p_addr[63:3] == l2_addr[63:3]) ? merge_bytes(dq_data, p_wdata, p_wstrb) : dq_data;
@@ -806,7 +812,7 @@ module rv64_core #(
     reg younger_beat;
     always @* begin
         younger_beat = (d0_valid && d0_pc[63:3] == h_addr[63:3]) || (d1_valid && d1_pc[63:3] == h_addr[63:3]) ||
-                       (f_valid && f_pc[63:3] == h_addr[63:3]);
+                       (f_valid && (f_pc[63:3] == h_addr[63:3] || f_beat2 == h_addr[63:3]));
         for (k = 0; k < 8; k = k + 1)
             if (q_used[k] && q_pc[k][63:3] == h_addr[63:3]) younger_beat = 1;
         for (k = 0; k < ROB_N; k = k + 1)
@@ -929,6 +935,8 @@ module rv64_core #(
         else fetch_next = f_pc;
     end
     wire [IC_INDEX-1:0] next_idx = fetch_next[3 +: IC_INDEX];
+    wire [60:0] next_beat2 = fetch_next[63:3] + 61'd1;
+    wire [IC_INDEX-1:0] next_idx2 = next_beat2[IC_INDEX-1:0];
     wire [4:0] h_next = rob_head + {4'b0,retire} + {4'b0,retire1};
     // Data-cache writes: a load fill (L2 miss returning), or the pending store update
     // when its line is present.
@@ -954,6 +962,8 @@ module rv64_core #(
         // Cache read ports, with a write of the same edge passed through.
         ic_q <= (fill && fill_idx == next_idx) ? mem_rdata : ic_data[next_idx];
         ic_tq <= (fill && fill_idx == next_idx) ? fetch_beat[63 -: IC_TAG] : ic_tag[next_idx];
+        ic_q2 <= (fill && fill_idx == next_idx2) ? mem_rdata : ic_data[next_idx2];
+        ic_tq2 <= (fill && fill_idx == next_idx2) ? fetch_beat[63 -: IC_TAG] : ic_tag[next_idx2];
         ic_sq <= (fill && fill_idx == h_ic_idx) ? fetch_beat[63 -: IC_TAG] : ic_tag2[h_ic_idx];
         if (fill) begin
             ic_tag[fill_idx] <= fetch_beat[63 -: IC_TAG];

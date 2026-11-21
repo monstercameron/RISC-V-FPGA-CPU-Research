@@ -93,6 +93,11 @@ Times are US Eastern (UTC-05:00). Each timestamp names its source:
 | 02:41 to 02:51 | Dhrystone on the split-store core: reference runtime 1.5648 DMIPS/MHz (from 1.2768, +22.6%) with all checks passing; a logged reference run at 02:54:13 used this RTL. The fast-runtime run then failed its differential check at event 8169 (`lw` at 0xa34 read 0xb, reference 0xc). A cache-line watch (`tb_dbg3.sv`) showed the cause: the data-cache write was `if (fill) ... else if (pending store)`, so a fill to any other line in the same clock dropped the store's update. Fixed so both write (the store's update is skipped only for a fill to its own line). Also changed: a load that waited in its second stage reads the bus afterwards | output |
 | 07:13 to 07:15 | After a session restart: regression 168/168 (default and 2-line caches), B cross-check passes; the 0.9.3 history row and rubric hashes were re-recorded for the fixed RTL | output |
 | 07:15 to 07:21 | Logged runs, out-of-order 0.9.3: `rv64imb` reference **1.5648 DMIPS/MHz**, fast runtime **1.5777**; [devlog-11acc17.md](devlog/devlog-11acc17.md). (The 02:54:13 reference row in the run index is the same result on the RTL before the fill fix) | record |
+| 07:21:45 | Commit `8f207a0`, split stores and deferred store cache update (0.9.3); tagged `cpu-v0.9.3`, local only | git |
+| 07:22 | Stall statistics on 0.9.3 (181,861 clocks): retire 2 in 62% of clocks, 1 in 28%, none in 11%; rename 2 in 65%; fetch delivered about 1.63 instructions per clock (two only from the start of a beat); memory port used in 55% | output |
+| 07:23 to 07:28 | 0.9.4: fetch also reads the next beat, so the second instruction can come from it. Regression 168/168 (default and 2-line caches). Dhrystone `rv64imb` reference 1.5778 DMIPS/MHz (+0.8%), fast runtime 1.6180 (+2.6%): two-wide rename and retirement are now the ceiling | output |
+| 07:30 to 07:35 | Logged runs, out-of-order 0.9.4: reference **1.5778**, fast runtime **1.6180**; [devlog-8f207a0.md](devlog/devlog-8f207a0.md) | record |
+| 07:25 | User direction: size the core after the Apple M5 (FPGA fit later) and raise IPC. M5 P-core figures from the one independent study (useless-husband/m5-uarch): 10 NOPs per clock, 8 integer ALUs, 3 multipliers, 3 loads and 2 stores per clock, 2 taken branches per clock, about 1,334 instructions in flight for an ordinary mix, 396 integer rename registers, L1I 192 KiB, L1D 128 KiB, 3-clock load-to-use, 16.7-clock mispredict | output |
 
 ---
 
@@ -704,3 +709,5 @@ One row per benchmark run, oldest first. Each run's full record (result, rubric 
 | 2026-11-21 02:54:13 -0500 | `11acc17` | yes | 0.9.3 | clang version 23.1.5 `-O2` `rv64imb` out-of-order core | 363.7 | 1.5648 | 6.1 | [devlog-11acc17.md](devlog/devlog-11acc17.md) |
 | 2026-11-21 07:18:38 -0500 | `11acc17` | yes | 0.9.3 | clang version 23.1.5 `-O2` `rv64imb` out-of-order core | 363.7 | 1.5648 | 6.1 | [devlog-11acc17.md](devlog/devlog-11acc17.md) |
 | 2026-11-21 07:21:14 -0500 | `11acc17` | yes | 0.9.3 | clang version 23.1.5 `-O2` `rv64imb` fast runtime out-of-order core | 360.7 | 1.5777 | 6.1 | [devlog-11acc17.md](devlog/devlog-11acc17.md) |
+| 2026-11-21 07:33:22 -0500 | `8f207a0` | yes | 0.9.4 | clang version 23.1.5 `-O2` `rv64imb` out-of-order core | 360.7 | 1.5778 | 6.1 | [devlog-8f207a0.md](devlog/devlog-8f207a0.md) |
+| 2026-11-21 07:36:09 -0500 | `8f207a0` | yes | 0.9.4 | clang version 23.1.5 `-O2` `rv64imb` fast runtime out-of-order core | 351.8 | 1.6180 | 6.1 | [devlog-8f207a0.md](devlog/devlog-8f207a0.md) |
