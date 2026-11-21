@@ -1,35 +1,41 @@
 # Dhrystone on our custom CPU
 
-**First benchmark result, November 20, 2026: 0.260 DMIPS/MHz.** That is 2,188 clocks per Dhrystone run at 3.65 clocks per instruction. It comes from a simulation run of the unchanged RV64I core with its synchronous RAM, so it is a non-compliant run under the [review rubric](review-rubric.md), evidence class E1. It does not support calling the core performant.
+**Current result, architecture 0.4.0: 1.024 DMIPS/MHz** built for `rv64im_zifencei`, and 0.947 DMIPS/MHz built for `rv64i_zifencei`. The first 0.1.0 core scored 0.260. All are simulation runs of the core with its synchronous RAM, so they are non-compliant runs under the [review rubric](review-rubric.md), evidence class E1, and do not support calling the core performant.
 
 Dhrystone is the secondary benchmark in the rubric. Report it next to CoreMark once that runs, never on its own.
 
-## Result
+## Optimization history
 
-| Measurement | Value |
-|---|---:|
-| Dhrystone runs in the timed region | 500 |
-| Clocks in the timed region | 1,094,103 |
-| Instructions retired in the timed region | 300,029 |
-| Clocks per run | 2,188.2 |
-| Instructions per run | 600.1 |
-| Clocks per instruction | 3.647 |
-| **DMIPS per MHz** | **0.2601** |
-| Whole program, including startup and result capture | 1,120,105 clocks, 307,336 instructions |
+Each step was chosen from the previous run's profile, passed the main regression, was committed and tagged with its architecture version, and was then benchmarked. Clang 23.1.5 at `-O2`, 64 KiB RAM, 500 runs. Every run's full record is linked from the run index in [DEVLOG.md](../DEVLOG.md#run-logs).
 
-DMIPS per MHz is runs x 1,000,000 / (clocks x 1,757); 1,757 Dhrystones per second is the VAX 11/780 reference. The full record, including the compiler commands, every check and source hashes, is [dhrystone-results.json](dhrystone-results.json).
+| Version | Change | Clocks per run | CPI | DMIPS/MHz | vs 0.1.0 |
+|---|---|---:|---:|---:|---:|
+| 0.1.0 | Baseline multicycle core: fetch 2 clocks, execute 1, loads and stores 2 more | 2,188.2 | 3.647 | 0.2601 | 1.00x |
+| 0.1.1 | One-entry fetch buffer | 1,706.2 | 2.843 | 0.3336 | 1.28x |
+| 0.2.0 | 4 KiB direct-mapped instruction cache | 988.7 | 1.648 | 0.5756 | 2.21x |
+| 0.2.1 | Loads and stores issue from EXECUTE | 794.7 | 1.324 | 0.7162 | 2.75x |
+| 0.2.2 | RAM wrapper acknowledges writes in the same clock | 718.7 | 1.198 | 0.7919 | 3.04x |
+| 0.3.0 | 4 KiB write-through data cache for loads | 600.8 | 1.001 | 0.9473 | 3.64x |
+| 0.4.0, `rv64i` build | M extension; this build does not use it | 600.8 | 1.001 | 0.9473 | 3.64x |
+| 0.4.0, `rv64im` build | Hardware divide replaces the software routine; 553 instructions per run instead of 600 | 555.7 | 1.005 | 1.0242 | 3.94x |
 
-Scope: `rv64i_zifencei`, ABI `lp64`, bare metal with the laboratory terminal trap, multicycle core with the RTL hashes given in the record, 64 KiB synchronous RAM with no added wait cycles, Icarus Verilog 12.0, no FPGA. Compiler: clang 23.1.5 at `-O2`.
+Every measured result matched the estimate the profile made before the change.
+
+**Where it stopped.** On 0.4.0 the core completes almost exactly one instruction per clock: 2.6 of 555.7 clocks per run are not instruction execution (two divide steps, 0.6 fetch, 0.1 memory). Going lower needs fewer instructions, which is a compiler or runtime change rather than a core change, or more than one instruction per clock, which is a superscalar redesign rather than a refinement. The caches assume Dhrystone's code and data fit in 4 KiB each and that memory answers in one clock; a slow-memory model, still a to-do, would show how much of the gain survives on board DRAM.
+
+The full records are [dhrystone-results.json](dhrystone-results.json) (`rv64i`) and [dhrystone-rv64im-results.json](dhrystone-rv64im-results.json). DMIPS per MHz is runs x 1,000,000 / (clocks x 1,757); 1,757 Dhrystones per second is the VAX 11/780 reference.
+
+Scope: ISA as built, ABI `lp64`, bare metal with the laboratory terminal trap, multicycle core with the RTL hashes given in each record, 64 KiB synchronous RAM, Icarus Verilog 12.0, no FPGA, no synthesis. The caches and early-issue logic have not been checked for timing; they may lower the achievable clock frequency.
 
 ## What the number depends on
 
-- **Software multiply and divide.** The core has no M extension, so each run calls the shift-and-add and shift-subtract routines in [runtime.c](../sim/cpu/bench/runtime.c). Their cost is inside the result.
-- **The compiler.** The same source built with Ubuntu's clang 18.1.3 scores 0.217 DMIPS/MHz (2,622 clocks per run). Always compare results built with the same compiler and flags.
-- **Memory latency.** The RAM answers every request one clock after it is made. Each instruction fetch therefore takes 2 clocks and execution 1, so most instructions take 3 clocks and loads and stores take 5. That explains the 3.65 average.
+- **The compiler.** On the 0.1.0 core the same source scored 0.260 DMIPS/MHz with clang 23.1.5, 0.249 with clang 21.1.6 and 0.217 with clang 18.1.3. Compare only results built with the same compiler and flags.
+- **The ISA used to build it.** The `rv64im` build replaces the software divide in [runtime.c](../sim/cpu/bench/runtime.c) with one `divw` instruction. Dhrystone never multiplies at run time; the compiler uses shifts.
+- **Memory.** The simulated RAM answers reads one clock after the request and writes in the same clock, and both caches hold the whole benchmark. Real board memory would be slower.
 
-## Where the clocks go
+## What the first profile showed (architecture 0.1.0)
 
-Every run profiles its instruction trace ([bench_profile.py](../sim/cpu/bench/bench_profile.py)). A per-instruction model (fetch 2 clocks, execute 1, loads and stores 2 more) reproduces the measured timed region exactly. Per run:
+This analysis drove the first optimizations; it describes the original core.
 
 | Finding | Value |
 |---|---:|
@@ -38,21 +44,12 @@ Every run profiles its instruction trace ([bench_profile.py](../sim/cpu/bench/be
 | Clocks inside software divide (`__divdi3`, one call) | 4.9% |
 | Instructions in the same 8-byte fetch beat as the one before | 241 (40%) |
 
-Model estimates from the same trace, not measured RTL:
-
-| Change | Clocks per run | DMIPS/MHz | Speed-up |
-|---|---:|---:|---:|
-| Today's core | 2,188 | 0.260 | 1.00x |
-| Fetch buffer reusing the last 8-byte beat | 1,706 to 1,947 | 0.29 to 0.33 | 1.12x to 1.28x |
-| Hardware multiply and divide (best case) | 2,080 | 0.274 | 1.05x |
-| Ideal pipeline, 1 clock per instruction | 600 | 0.949 | 3.65x |
-
-Word-at-a-time `strcpy` and `strcmp` would also cut many instructions, but that changes the runtime rather than the core, so results built with a different runtime are not comparable.
+Every run now profiles its instruction stream ([bench_profile.py](../sim/cpu/bench/bench_profile.py)) from clocks measured on the core: FETCH, EXECUTE and MEMORY clocks per instruction, by class, function and address, with instruction-cache replay and what-if estimates. Word-at-a-time `strcpy` and `strcmp` would cut many instructions, but that changes the runtime, so results built with a different runtime would not be comparable.
 
 ## How the run is checked
 
 1. **Results.** After the timed loop, the port layer copies Dhrystone's final global values into a mailbox. The runner checks all 17 against the values Dhrystone itself says they should be, including `Arr_2_Glob[8][7]` = runs + 10. The program's local variables are not reachable and are not checked.
-2. **Instruction trace.** The same image runs on the trace testbench with 0 and up to 7 random memory wait cycles. All 347,135 retirement, write and trap events must match the project's sequential reference model.
+2. **Instruction trace.** The same image runs on the trace testbench with 0 and up to 7 random memory wait cycles. Every retirement, write and trap event (347,135 for the `rv64i` build) must match the project's sequential reference model.
 3. **Counts agree.** The timing run and the traced runs must retire the same number of instructions overall and inside the timed region.
 
 The reference model is project-written, so this is not independent verification. Lockstep comparison with Spike or Sail is still a to-do.
@@ -96,7 +93,7 @@ From the repository root in PowerShell, with the installed LLVM and Ubuntu WSL t
 .\sim\cpu\bench\run_dhrystone.ps1
 ```
 
-Every run writes its result, rubric scorecard and trace profile to `devlog/devlog-<commit>.md` and adds a row to the run index in [DEVLOG.md](../DEVLOG.md); add `-NoDevlog` for a throwaway run. The profile is also saved as `build/cpu/bench/dhrystone/profile.md`. Add `-Record` to overwrite [dhrystone-results.json](dhrystone-results.json), or `-RamKiB 128` for a larger memory. A run takes about a minute; most of it is the two traced runs.
+Add `-Isa rv64im_zifencei` to build with the M extension (architecture 0.4.0 or later); that build goes to `build/cpu/bench/dhrystone-rv64im/`. Every run writes its result, rubric scorecard and trace profile to `devlog/devlog-<commit>.md` and adds a row to the run index in [DEVLOG.md](../DEVLOG.md); add `-NoDevlog` for a throwaway run. The profile is also saved as `build/cpu/bench/dhrystone/profile.md`. Add `-Record` to overwrite [dhrystone-results.json](dhrystone-results.json), or `-RamKiB 128` for a larger memory. A run takes about a minute; most of it is the two traced runs.
 
 On Linux with clang, lld, LLVM tools, Icarus and Python 3.11+:
 

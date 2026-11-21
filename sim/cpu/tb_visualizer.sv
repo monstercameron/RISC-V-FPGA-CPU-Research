@@ -23,11 +23,11 @@ module tb_visualizer;
         cycles=cycles+1;
         if (cycles>2000000) $fatal(1,"capture timeout");
         // Sample inputs immediately before the edge's nonblocking updates.
-        // RAM physically writes when it accepts the request (!ready), one edge
-        // before the CPU consumes the acknowledgement. Preserve that timing.
+        // Since architecture 0.2.2 the RAM writes on the edge that ends the clock in
+        // which a write request is presented, and acknowledges it in that clock.
         flags=(dut.valid ? 1:0) | (dut.ready ? 2:0) | (dut.instr ? 4:0) |
               (dut.error ? 8:0) |
-              ((dut.valid && !dut.ready && !dut.outside_ram && dut.wstrb!=0) ? 16:0);
+              ((dut.write_request && !dut.outside_ram) ? 16:0);
         $fwrite(fd,"%0d %h %h %h %h %h %h %h %h %h %h %h %h ",
             cycles,dut.cpu.state,dut.cpu.pc,dut.cpu.insn,dut.cpu.a,dut.cpu.b,
             dut.cpu.result,dut.cpu.effective_addr,flags,dut.addr,dut.wdata,dut.rdata,dut.wstrb);

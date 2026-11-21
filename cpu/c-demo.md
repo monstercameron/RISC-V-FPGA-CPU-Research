@@ -1,5 +1,7 @@
 # C running on our custom CPU
 
+*The measurements below were recorded on architecture 0.1.0. On 0.4.0 the same program takes 22,859 clocks instead of 69,157 (see the [visualizer record](visualizer.md)); the C demo runner has not been re-measured.*
+
 **Passed on October 23, 2026.** The [C program](../sim/cpu/c_demo.c) compiled into a 768-byte RISC-V firmware image and ran on the original SystemVerilog core with its 16 KiB synchronous RAM wrapper. All eight result words matched independent expected values. The complete instruction, memory-write and terminal-trap trace also matched the project's sequential interpreter.
 
 ## What it does

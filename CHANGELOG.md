@@ -4,6 +4,7 @@
 
 ### Added
 
+- CPU optimization loop, architecture 0.1.1 to 0.4.0, each step profiled, regressed, tagged and benchmarked: fetch buffer, 4 KiB instruction cache, loads and stores issued from EXECUTE, same-clock RAM writes, 4 KiB write-through data cache and the M extension. Dhrystone: 2,188.2 to 555.7 clocks per run (3.94x), 0.260 to 1.024 DMIPS/MHz in simulation. The regression grows to 111 runs and 66 instructions, with options to shrink both caches.
 - Trace profile on every Dhrystone run (clocks by instruction class and function, hot instructions, fetch-reuse share, what-if estimates) and per-commit run logs in `devlog/devlog-<commit>.md`, indexed from DEVLOG.md.
 - Semantic versioning for the CPU architecture: version 0.1.0 for the existing C0 core, bump rules, a release process with `cpu-vX.Y.Z` tags, a version history, a repository check that the version is consistent, and the version recorded in benchmark results and scorecards.
 - Rubric scorecard for every Dhrystone run, computed from a per-criterion evidence file and the run's own measurements and appended to the development log; AGENTS.md now requires every experiment to be logged there.

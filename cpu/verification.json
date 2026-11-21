@@ -1,12 +1,14 @@
 {
   "status": "PASS",
-  "cases": 33,
-  "runs": 99,
-  "instruction_names_covered": 53,
-  "reset_test": "PASS reset cancels unacknowledged store with shared fabric reset; one post-reset write\n/mnt/c/Users/mreca/OneDrive/Desktop/RISC-V FPGA CPU Research/sim/cpu/tb_reset.sv:41: $finish called at 240000 (1ps)",
+  "cases": 37,
+  "runs": 111,
+  "instruction_names_covered": 66,
+  "icache_beats": "RTL default",
+  "dcache_beats": "RTL default",
+  "reset_test": "PASS reset cancels unacknowledged store with shared fabric reset; one post-reset write\n./sim/cpu/tb_reset.sv:41: $finish called at 190000 (1ps)",
   "bram_soc_tests": [
-    "PASS BRAM SoC signature=12 cycles=21\n/mnt/c/Users/mreca/OneDrive/Desktop/RISC-V FPGA CPU Research/sim/cpu/tb_soc.sv:28: $finish called at 240000 (1ps)",
-    "PASS BRAM SoC signature=36 cycles=168\n/mnt/c/Users/mreca/OneDrive/Desktop/RISC-V FPGA CPU Research/sim/cpu/tb_soc.sv:28: $finish called at 1710000 (1ps)"
+    "PASS BRAM SoC signature=12 cycles=13\n./sim/cpu/tb_soc.sv:28: $finish called at 160000 (1ps)",
+    "PASS BRAM SoC signature=36 cycles=80\n./sim/cpu/tb_soc.sv:28: $finish called at 830000 (1ps)"
   ],
   "coverage": [
     "add",
@@ -34,6 +36,10 @@
     "bne",
     "bne:not_taken",
     "bne:taken",
+    "div",
+    "divu",
+    "divuw",
+    "divw",
     "ebreak",
     "ecall",
     "fence",
@@ -48,8 +54,17 @@
     "lui",
     "lw",
     "lwu",
+    "mul",
+    "mulh",
+    "mulhsu",
+    "mulhu",
+    "mulw",
     "or",
     "ori",
+    "rem",
+    "remu",
+    "remuw",
+    "remw",
     "sb",
     "sd",
     "sh",
@@ -77,8 +92,8 @@
   ],
   "validation_scope": "local directed/random differential simulation; no official ISA certification or synthesis",
   "rtl_sha256": {
-    "rtl/cpu/rv64_bram_soc.sv": "a38d2ca4a05142f1982635fb9824a29b80abc94e31635415d3b341df0c06ae57",
-    "rtl/cpu/rv64_core.sv": "831101d3f376ed35f96e4549eb0e9cf67fd59ef79bdf025b3ddbf432aebd75d1"
+    "rtl/cpu/rv64_bram_soc.sv": "385b91fe9a8a9d768e7deadd976b718d1668c389da4cb74fed3634758769ae72",
+    "rtl/cpu/rv64_core.sv": "e7bf693e3b3145465437778d1a693ee8c07c5b249af6411eff8613e30bb27df7"
   },
   "simulator": "Icarus Verilog version 12.0 (stable) ()",
   "results": [
@@ -87,693 +102,779 @@
       "max_wait_cycles": 0,
       "events": 169,
       "result": "PASS",
-      "simulator_summary": "DONE retirements=168 cycles=351\n/mnt/c/Users/mreca/OneDrive/Desktop/RISC-V FPGA CPU Research/sim/cpu/tb_core.sv:60: $finish called at 3550000 (1ps)"
+      "simulator_summary": "DONE retirements=168 cycles=255\n./sim/cpu/tb_core.sv:61: $finish called at 2590000 (1ps)"
     },
     {
       "case": "integer",
       "max_wait_cycles": 7,
       "events": 169,
       "result": "PASS",
-      "simulator_summary": "DONE retirements=168 cycles=959\n/mnt/c/Users/mreca/OneDrive/Desktop/RISC-V FPGA CPU Research/sim/cpu/tb_core.sv:60: $finish called at 9630000 (1ps)"
+      "simulator_summary": "DONE retirements=168 cycles=582\n./sim/cpu/tb_core.sv:61: $finish called at 5860000 (1ps)"
     },
     {
       "case": "integer",
       "max_wait_cycles": 19,
       "events": 169,
       "result": "PASS",
-      "simulator_summary": "DONE retirements=168 cycles=1999\n/mnt/c/Users/mreca/OneDrive/Desktop/RISC-V FPGA CPU Research/sim/cpu/tb_core.sv:60: $finish called at 20030000 (1ps)"
+      "simulator_summary": "DONE retirements=168 cycles=1133\n./sim/cpu/tb_core.sv:61: $finish called at 11370000 (1ps)"
+    },
+    {
+      "case": "m_extension",
+      "max_wait_cycles": 0,
+      "events": 951,
+      "result": "PASS",
+      "simulator_summary": "DONE retirements=950 cycles=6375\n./sim/cpu/tb_core.sv:61: $finish called at 63790000 (1ps)"
+    },
+    {
+      "case": "m_extension",
+      "max_wait_cycles": 7,
+      "events": 951,
+      "result": "PASS",
+      "simulator_summary": "DONE retirements=950 cycles=8047\n./sim/cpu/tb_core.sv:61: $finish called at 80510000 (1ps)"
+    },
+    {
+      "case": "m_extension",
+      "max_wait_cycles": 19,
+      "events": 951,
+      "result": "PASS",
+      "simulator_summary": "DONE retirements=950 cycles=10862\n./sim/cpu/tb_core.sv:61: $finish called at 108660000 (1ps)"
     },
     {
       "case": "memory_lanes",
       "max_wait_cycles": 0,
       "events": 79,
       "result": "PASS",
-      "simulator_summary": "DONE retirements=62 cycles=186\n/mnt/c/Users/mreca/OneDrive/Desktop/RISC-V FPGA CPU Research/sim/cpu/tb_core.sv:60: $finish called at 1900000 (1ps)"
+      "simulator_summary": "DONE retirements=62 cycles=96\n./sim/cpu/tb_core.sv:61: $finish called at 1000000 (1ps)"
     },
     {
       "case": "memory_lanes",
       "max_wait_cycles": 7,
       "events": 79,
       "result": "PASS",
-      "simulator_summary": "DONE retirements=62 cycles=592\n/mnt/c/Users/mreca/OneDrive/Desktop/RISC-V FPGA CPU Research/sim/cpu/tb_core.sv:60: $finish called at 5960000 (1ps)"
+      "simulator_summary": "DONE retirements=62 cycles=291\n./sim/cpu/tb_core.sv:61: $finish called at 2950000 (1ps)"
     },
     {
       "case": "memory_lanes",
       "max_wait_cycles": 19,
       "events": 79,
       "result": "PASS",
-      "simulator_summary": "DONE retirements=62 cycles=1333\n/mnt/c/Users/mreca/OneDrive/Desktop/RISC-V FPGA CPU Research/sim/cpu/tb_core.sv:60: $finish called at 13370000 (1ps)"
+      "simulator_summary": "DONE retirements=62 cycles=614\n./sim/cpu/tb_core.sv:61: $finish called at 6180000 (1ps)"
     },
     {
       "case": "control_flow",
       "max_wait_cycles": 0,
       "events": 56,
       "result": "PASS",
-      "simulator_summary": "DONE retirements=55 cycles=125\n/mnt/c/Users/mreca/OneDrive/Desktop/RISC-V FPGA CPU Research/sim/cpu/tb_core.sv:60: $finish called at 1290000 (1ps)"
+      "simulator_summary": "DONE retirements=55 cycles=87\n./sim/cpu/tb_core.sv:61: $finish called at 910000 (1ps)"
     },
     {
       "case": "control_flow",
       "max_wait_cycles": 7,
       "events": 56,
       "result": "PASS",
-      "simulator_summary": "DONE retirements=55 cycles=342\n/mnt/c/Users/mreca/OneDrive/Desktop/RISC-V FPGA CPU Research/sim/cpu/tb_core.sv:60: $finish called at 3460000 (1ps)"
+      "simulator_summary": "DONE retirements=55 cycles=207\n./sim/cpu/tb_core.sv:61: $finish called at 2110000 (1ps)"
     },
     {
       "case": "control_flow",
       "max_wait_cycles": 19,
       "events": 56,
       "result": "PASS",
-      "simulator_summary": "DONE retirements=55 cycles=723\n/mnt/c/Users/mreca/OneDrive/Desktop/RISC-V FPGA CPU Research/sim/cpu/tb_core.sv:60: $finish called at 7270000 (1ps)"
+      "simulator_summary": "DONE retirements=55 cycles=445\n./sim/cpu/tb_core.sv:61: $finish called at 4490000 (1ps)"
     },
     {
       "case": "self_modifying_fence_i",
       "max_wait_cycles": 0,
       "events": 8,
       "result": "PASS",
-      "simulator_summary": "DONE retirements=6 cycles=16\n/mnt/c/Users/mreca/OneDrive/Desktop/RISC-V FPGA CPU Research/sim/cpu/tb_core.sv:60: $finish called at 200000 (1ps)"
+      "simulator_summary": "DONE retirements=6 cycles=12\n./sim/cpu/tb_core.sv:61: $finish called at 160000 (1ps)"
     },
     {
       "case": "self_modifying_fence_i",
       "max_wait_cycles": 7,
       "events": 8,
       "result": "PASS",
-      "simulator_summary": "DONE retirements=6 cycles=39\n/mnt/c/Users/mreca/OneDrive/Desktop/RISC-V FPGA CPU Research/sim/cpu/tb_core.sv:60: $finish called at 430000 (1ps)"
+      "simulator_summary": "DONE retirements=6 cycles=23\n./sim/cpu/tb_core.sv:61: $finish called at 270000 (1ps)"
     },
     {
       "case": "self_modifying_fence_i",
       "max_wait_cycles": 19,
       "events": 8,
       "result": "PASS",
-      "simulator_summary": "DONE retirements=6 cycles=88\n/mnt/c/Users/mreca/OneDrive/Desktop/RISC-V FPGA CPU Research/sim/cpu/tb_core.sv:60: $finish called at 920000 (1ps)"
+      "simulator_summary": "DONE retirements=6 cycles=44\n./sim/cpu/tb_core.sv:61: $finish called at 480000 (1ps)"
+    },
+    {
+      "case": "random_m_404",
+      "max_wait_cycles": 0,
+      "events": 614,
+      "result": "PASS",
+      "simulator_summary": "DONE retirements=613 cycles=1054\n./sim/cpu/tb_core.sv:61: $finish called at 10580000 (1ps)"
+    },
+    {
+      "case": "random_m_404",
+      "max_wait_cycles": 7,
+      "events": 614,
+      "result": "PASS",
+      "simulator_summary": "DONE retirements=613 cycles=2114\n./sim/cpu/tb_core.sv:61: $finish called at 21180000 (1ps)"
+    },
+    {
+      "case": "random_m_404",
+      "max_wait_cycles": 19,
+      "events": 614,
+      "result": "PASS",
+      "simulator_summary": "DONE retirements=613 cycles=3952\n./sim/cpu/tb_core.sv:61: $finish called at 39560000 (1ps)"
+    },
+    {
+      "case": "random_m_505",
+      "max_wait_cycles": 0,
+      "events": 614,
+      "result": "PASS",
+      "simulator_summary": "DONE retirements=613 cycles=929\n./sim/cpu/tb_core.sv:61: $finish called at 9330000 (1ps)"
+    },
+    {
+      "case": "random_m_505",
+      "max_wait_cycles": 7,
+      "events": 614,
+      "result": "PASS",
+      "simulator_summary": "DONE retirements=613 cycles=1989\n./sim/cpu/tb_core.sv:61: $finish called at 19930000 (1ps)"
+    },
+    {
+      "case": "random_m_505",
+      "max_wait_cycles": 19,
+      "events": 614,
+      "result": "PASS",
+      "simulator_summary": "DONE retirements=613 cycles=3827\n./sim/cpu/tb_core.sv:61: $finish called at 38310000 (1ps)"
     },
     {
       "case": "random_101",
       "max_wait_cycles": 0,
       "events": 614,
       "result": "PASS",
-      "simulator_summary": "DONE retirements=613 cycles=1241\n/mnt/c/Users/mreca/OneDrive/Desktop/RISC-V FPGA CPU Research/sim/cpu/tb_core.sv:60: $finish called at 12450000 (1ps)"
+      "simulator_summary": "DONE retirements=613 cycles=922\n./sim/cpu/tb_core.sv:61: $finish called at 9260000 (1ps)"
     },
     {
       "case": "random_101",
       "max_wait_cycles": 7,
       "events": 614,
       "result": "PASS",
-      "simulator_summary": "DONE retirements=613 cycles=3406\n/mnt/c/Users/mreca/OneDrive/Desktop/RISC-V FPGA CPU Research/sim/cpu/tb_core.sv:60: $finish called at 34100000 (1ps)"
+      "simulator_summary": "DONE retirements=613 cycles=1982\n./sim/cpu/tb_core.sv:61: $finish called at 19860000 (1ps)"
     },
     {
       "case": "random_101",
       "max_wait_cycles": 19,
       "events": 614,
       "result": "PASS",
-      "simulator_summary": "DONE retirements=613 cycles=7173\n/mnt/c/Users/mreca/OneDrive/Desktop/RISC-V FPGA CPU Research/sim/cpu/tb_core.sv:60: $finish called at 71770000 (1ps)"
+      "simulator_summary": "DONE retirements=613 cycles=3820\n./sim/cpu/tb_core.sv:61: $finish called at 38240000 (1ps)"
     },
     {
       "case": "random_202",
       "max_wait_cycles": 0,
       "events": 614,
       "result": "PASS",
-      "simulator_summary": "DONE retirements=613 cycles=1241\n/mnt/c/Users/mreca/OneDrive/Desktop/RISC-V FPGA CPU Research/sim/cpu/tb_core.sv:60: $finish called at 12450000 (1ps)"
+      "simulator_summary": "DONE retirements=613 cycles=922\n./sim/cpu/tb_core.sv:61: $finish called at 9260000 (1ps)"
     },
     {
       "case": "random_202",
       "max_wait_cycles": 7,
       "events": 614,
       "result": "PASS",
-      "simulator_summary": "DONE retirements=613 cycles=3406\n/mnt/c/Users/mreca/OneDrive/Desktop/RISC-V FPGA CPU Research/sim/cpu/tb_core.sv:60: $finish called at 34100000 (1ps)"
+      "simulator_summary": "DONE retirements=613 cycles=1982\n./sim/cpu/tb_core.sv:61: $finish called at 19860000 (1ps)"
     },
     {
       "case": "random_202",
       "max_wait_cycles": 19,
       "events": 614,
       "result": "PASS",
-      "simulator_summary": "DONE retirements=613 cycles=7173\n/mnt/c/Users/mreca/OneDrive/Desktop/RISC-V FPGA CPU Research/sim/cpu/tb_core.sv:60: $finish called at 71770000 (1ps)"
+      "simulator_summary": "DONE retirements=613 cycles=3820\n./sim/cpu/tb_core.sv:61: $finish called at 38240000 (1ps)"
     },
     {
       "case": "random_303",
       "max_wait_cycles": 0,
       "events": 614,
       "result": "PASS",
-      "simulator_summary": "DONE retirements=613 cycles=1241\n/mnt/c/Users/mreca/OneDrive/Desktop/RISC-V FPGA CPU Research/sim/cpu/tb_core.sv:60: $finish called at 12450000 (1ps)"
+      "simulator_summary": "DONE retirements=613 cycles=922\n./sim/cpu/tb_core.sv:61: $finish called at 9260000 (1ps)"
     },
     {
       "case": "random_303",
       "max_wait_cycles": 7,
       "events": 614,
       "result": "PASS",
-      "simulator_summary": "DONE retirements=613 cycles=3406\n/mnt/c/Users/mreca/OneDrive/Desktop/RISC-V FPGA CPU Research/sim/cpu/tb_core.sv:60: $finish called at 34100000 (1ps)"
+      "simulator_summary": "DONE retirements=613 cycles=1982\n./sim/cpu/tb_core.sv:61: $finish called at 19860000 (1ps)"
     },
     {
       "case": "random_303",
       "max_wait_cycles": 19,
       "events": 614,
       "result": "PASS",
-      "simulator_summary": "DONE retirements=613 cycles=7173\n/mnt/c/Users/mreca/OneDrive/Desktop/RISC-V FPGA CPU Research/sim/cpu/tb_core.sv:60: $finish called at 71770000 (1ps)"
+      "simulator_summary": "DONE retirements=613 cycles=3820\n./sim/cpu/tb_core.sv:61: $finish called at 38240000 (1ps)"
     },
     {
       "case": "illegal_zero",
       "max_wait_cycles": 0,
       "events": 1,
       "result": "PASS",
-      "simulator_summary": "DONE retirements=0 cycles=3\n/mnt/c/Users/mreca/OneDrive/Desktop/RISC-V FPGA CPU Research/sim/cpu/tb_core.sv:60: $finish called at 70000 (1ps)"
+      "simulator_summary": "DONE retirements=0 cycles=3\n./sim/cpu/tb_core.sv:61: $finish called at 70000 (1ps)"
     },
     {
       "case": "illegal_zero",
       "max_wait_cycles": 7,
       "events": 1,
       "result": "PASS",
-      "simulator_summary": "DONE retirements=0 cycles=3\n/mnt/c/Users/mreca/OneDrive/Desktop/RISC-V FPGA CPU Research/sim/cpu/tb_core.sv:60: $finish called at 70000 (1ps)"
+      "simulator_summary": "DONE retirements=0 cycles=3\n./sim/cpu/tb_core.sv:61: $finish called at 70000 (1ps)"
     },
     {
       "case": "illegal_zero",
       "max_wait_cycles": 19,
       "events": 1,
       "result": "PASS",
-      "simulator_summary": "DONE retirements=0 cycles=4\n/mnt/c/Users/mreca/OneDrive/Desktop/RISC-V FPGA CPU Research/sim/cpu/tb_core.sv:60: $finish called at 80000 (1ps)"
+      "simulator_summary": "DONE retirements=0 cycles=4\n./sim/cpu/tb_core.sv:61: $finish called at 80000 (1ps)"
     },
     {
-      "case": "illegal_mul",
+      "case": "illegal_funct7",
       "max_wait_cycles": 0,
       "events": 1,
       "result": "PASS",
-      "simulator_summary": "DONE retirements=0 cycles=3\n/mnt/c/Users/mreca/OneDrive/Desktop/RISC-V FPGA CPU Research/sim/cpu/tb_core.sv:60: $finish called at 70000 (1ps)"
+      "simulator_summary": "DONE retirements=0 cycles=3\n./sim/cpu/tb_core.sv:61: $finish called at 70000 (1ps)"
     },
     {
-      "case": "illegal_mul",
+      "case": "illegal_funct7",
       "max_wait_cycles": 7,
       "events": 1,
       "result": "PASS",
-      "simulator_summary": "DONE retirements=0 cycles=3\n/mnt/c/Users/mreca/OneDrive/Desktop/RISC-V FPGA CPU Research/sim/cpu/tb_core.sv:60: $finish called at 70000 (1ps)"
+      "simulator_summary": "DONE retirements=0 cycles=3\n./sim/cpu/tb_core.sv:61: $finish called at 70000 (1ps)"
     },
     {
-      "case": "illegal_mul",
+      "case": "illegal_funct7",
       "max_wait_cycles": 19,
       "events": 1,
       "result": "PASS",
-      "simulator_summary": "DONE retirements=0 cycles=4\n/mnt/c/Users/mreca/OneDrive/Desktop/RISC-V FPGA CPU Research/sim/cpu/tb_core.sv:60: $finish called at 80000 (1ps)"
+      "simulator_summary": "DONE retirements=0 cycles=4\n./sim/cpu/tb_core.sv:61: $finish called at 80000 (1ps)"
+    },
+    {
+      "case": "illegal_mulhw",
+      "max_wait_cycles": 0,
+      "events": 1,
+      "result": "PASS",
+      "simulator_summary": "DONE retirements=0 cycles=3\n./sim/cpu/tb_core.sv:61: $finish called at 70000 (1ps)"
+    },
+    {
+      "case": "illegal_mulhw",
+      "max_wait_cycles": 7,
+      "events": 1,
+      "result": "PASS",
+      "simulator_summary": "DONE retirements=0 cycles=3\n./sim/cpu/tb_core.sv:61: $finish called at 70000 (1ps)"
+    },
+    {
+      "case": "illegal_mulhw",
+      "max_wait_cycles": 19,
+      "events": 1,
+      "result": "PASS",
+      "simulator_summary": "DONE retirements=0 cycles=4\n./sim/cpu/tb_core.sv:61: $finish called at 80000 (1ps)"
     },
     {
       "case": "illegal_shift",
       "max_wait_cycles": 0,
       "events": 1,
       "result": "PASS",
-      "simulator_summary": "DONE retirements=0 cycles=3\n/mnt/c/Users/mreca/OneDrive/Desktop/RISC-V FPGA CPU Research/sim/cpu/tb_core.sv:60: $finish called at 70000 (1ps)"
+      "simulator_summary": "DONE retirements=0 cycles=3\n./sim/cpu/tb_core.sv:61: $finish called at 70000 (1ps)"
     },
     {
       "case": "illegal_shift",
       "max_wait_cycles": 7,
       "events": 1,
       "result": "PASS",
-      "simulator_summary": "DONE retirements=0 cycles=3\n/mnt/c/Users/mreca/OneDrive/Desktop/RISC-V FPGA CPU Research/sim/cpu/tb_core.sv:60: $finish called at 70000 (1ps)"
+      "simulator_summary": "DONE retirements=0 cycles=3\n./sim/cpu/tb_core.sv:61: $finish called at 70000 (1ps)"
     },
     {
       "case": "illegal_shift",
       "max_wait_cycles": 19,
       "events": 1,
       "result": "PASS",
-      "simulator_summary": "DONE retirements=0 cycles=4\n/mnt/c/Users/mreca/OneDrive/Desktop/RISC-V FPGA CPU Research/sim/cpu/tb_core.sv:60: $finish called at 80000 (1ps)"
+      "simulator_summary": "DONE retirements=0 cycles=4\n./sim/cpu/tb_core.sv:61: $finish called at 80000 (1ps)"
     },
     {
       "case": "illegal_word_shift",
       "max_wait_cycles": 0,
       "events": 1,
       "result": "PASS",
-      "simulator_summary": "DONE retirements=0 cycles=3\n/mnt/c/Users/mreca/OneDrive/Desktop/RISC-V FPGA CPU Research/sim/cpu/tb_core.sv:60: $finish called at 70000 (1ps)"
+      "simulator_summary": "DONE retirements=0 cycles=3\n./sim/cpu/tb_core.sv:61: $finish called at 70000 (1ps)"
     },
     {
       "case": "illegal_word_shift",
       "max_wait_cycles": 7,
       "events": 1,
       "result": "PASS",
-      "simulator_summary": "DONE retirements=0 cycles=3\n/mnt/c/Users/mreca/OneDrive/Desktop/RISC-V FPGA CPU Research/sim/cpu/tb_core.sv:60: $finish called at 70000 (1ps)"
+      "simulator_summary": "DONE retirements=0 cycles=3\n./sim/cpu/tb_core.sv:61: $finish called at 70000 (1ps)"
     },
     {
       "case": "illegal_word_shift",
       "max_wait_cycles": 19,
       "events": 1,
       "result": "PASS",
-      "simulator_summary": "DONE retirements=0 cycles=4\n/mnt/c/Users/mreca/OneDrive/Desktop/RISC-V FPGA CPU Research/sim/cpu/tb_core.sv:60: $finish called at 80000 (1ps)"
+      "simulator_summary": "DONE retirements=0 cycles=4\n./sim/cpu/tb_core.sv:61: $finish called at 80000 (1ps)"
     },
     {
       "case": "illegal_load",
       "max_wait_cycles": 0,
       "events": 1,
       "result": "PASS",
-      "simulator_summary": "DONE retirements=0 cycles=3\n/mnt/c/Users/mreca/OneDrive/Desktop/RISC-V FPGA CPU Research/sim/cpu/tb_core.sv:60: $finish called at 70000 (1ps)"
+      "simulator_summary": "DONE retirements=0 cycles=3\n./sim/cpu/tb_core.sv:61: $finish called at 70000 (1ps)"
     },
     {
       "case": "illegal_load",
       "max_wait_cycles": 7,
       "events": 1,
       "result": "PASS",
-      "simulator_summary": "DONE retirements=0 cycles=3\n/mnt/c/Users/mreca/OneDrive/Desktop/RISC-V FPGA CPU Research/sim/cpu/tb_core.sv:60: $finish called at 70000 (1ps)"
+      "simulator_summary": "DONE retirements=0 cycles=3\n./sim/cpu/tb_core.sv:61: $finish called at 70000 (1ps)"
     },
     {
       "case": "illegal_load",
       "max_wait_cycles": 19,
       "events": 1,
       "result": "PASS",
-      "simulator_summary": "DONE retirements=0 cycles=4\n/mnt/c/Users/mreca/OneDrive/Desktop/RISC-V FPGA CPU Research/sim/cpu/tb_core.sv:60: $finish called at 80000 (1ps)"
+      "simulator_summary": "DONE retirements=0 cycles=4\n./sim/cpu/tb_core.sv:61: $finish called at 80000 (1ps)"
     },
     {
       "case": "illegal_store",
       "max_wait_cycles": 0,
       "events": 1,
       "result": "PASS",
-      "simulator_summary": "DONE retirements=0 cycles=3\n/mnt/c/Users/mreca/OneDrive/Desktop/RISC-V FPGA CPU Research/sim/cpu/tb_core.sv:60: $finish called at 70000 (1ps)"
+      "simulator_summary": "DONE retirements=0 cycles=3\n./sim/cpu/tb_core.sv:61: $finish called at 70000 (1ps)"
     },
     {
       "case": "illegal_store",
       "max_wait_cycles": 7,
       "events": 1,
       "result": "PASS",
-      "simulator_summary": "DONE retirements=0 cycles=3\n/mnt/c/Users/mreca/OneDrive/Desktop/RISC-V FPGA CPU Research/sim/cpu/tb_core.sv:60: $finish called at 70000 (1ps)"
+      "simulator_summary": "DONE retirements=0 cycles=3\n./sim/cpu/tb_core.sv:61: $finish called at 70000 (1ps)"
     },
     {
       "case": "illegal_store",
       "max_wait_cycles": 19,
       "events": 1,
       "result": "PASS",
-      "simulator_summary": "DONE retirements=0 cycles=4\n/mnt/c/Users/mreca/OneDrive/Desktop/RISC-V FPGA CPU Research/sim/cpu/tb_core.sv:60: $finish called at 80000 (1ps)"
+      "simulator_summary": "DONE retirements=0 cycles=4\n./sim/cpu/tb_core.sv:61: $finish called at 80000 (1ps)"
     },
     {
       "case": "illegal_branch",
       "max_wait_cycles": 0,
       "events": 1,
       "result": "PASS",
-      "simulator_summary": "DONE retirements=0 cycles=3\n/mnt/c/Users/mreca/OneDrive/Desktop/RISC-V FPGA CPU Research/sim/cpu/tb_core.sv:60: $finish called at 70000 (1ps)"
+      "simulator_summary": "DONE retirements=0 cycles=3\n./sim/cpu/tb_core.sv:61: $finish called at 70000 (1ps)"
     },
     {
       "case": "illegal_branch",
       "max_wait_cycles": 7,
       "events": 1,
       "result": "PASS",
-      "simulator_summary": "DONE retirements=0 cycles=3\n/mnt/c/Users/mreca/OneDrive/Desktop/RISC-V FPGA CPU Research/sim/cpu/tb_core.sv:60: $finish called at 70000 (1ps)"
+      "simulator_summary": "DONE retirements=0 cycles=3\n./sim/cpu/tb_core.sv:61: $finish called at 70000 (1ps)"
     },
     {
       "case": "illegal_branch",
       "max_wait_cycles": 19,
       "events": 1,
       "result": "PASS",
-      "simulator_summary": "DONE retirements=0 cycles=4\n/mnt/c/Users/mreca/OneDrive/Desktop/RISC-V FPGA CPU Research/sim/cpu/tb_core.sv:60: $finish called at 80000 (1ps)"
+      "simulator_summary": "DONE retirements=0 cycles=4\n./sim/cpu/tb_core.sv:61: $finish called at 80000 (1ps)"
     },
     {
       "case": "illegal_jalr",
       "max_wait_cycles": 0,
       "events": 1,
       "result": "PASS",
-      "simulator_summary": "DONE retirements=0 cycles=3\n/mnt/c/Users/mreca/OneDrive/Desktop/RISC-V FPGA CPU Research/sim/cpu/tb_core.sv:60: $finish called at 70000 (1ps)"
+      "simulator_summary": "DONE retirements=0 cycles=3\n./sim/cpu/tb_core.sv:61: $finish called at 70000 (1ps)"
     },
     {
       "case": "illegal_jalr",
       "max_wait_cycles": 7,
       "events": 1,
       "result": "PASS",
-      "simulator_summary": "DONE retirements=0 cycles=3\n/mnt/c/Users/mreca/OneDrive/Desktop/RISC-V FPGA CPU Research/sim/cpu/tb_core.sv:60: $finish called at 70000 (1ps)"
+      "simulator_summary": "DONE retirements=0 cycles=3\n./sim/cpu/tb_core.sv:61: $finish called at 70000 (1ps)"
     },
     {
       "case": "illegal_jalr",
       "max_wait_cycles": 19,
       "events": 1,
       "result": "PASS",
-      "simulator_summary": "DONE retirements=0 cycles=4\n/mnt/c/Users/mreca/OneDrive/Desktop/RISC-V FPGA CPU Research/sim/cpu/tb_core.sv:60: $finish called at 80000 (1ps)"
+      "simulator_summary": "DONE retirements=0 cycles=4\n./sim/cpu/tb_core.sv:61: $finish called at 80000 (1ps)"
     },
     {
       "case": "illegal_csr",
       "max_wait_cycles": 0,
       "events": 1,
       "result": "PASS",
-      "simulator_summary": "DONE retirements=0 cycles=3\n/mnt/c/Users/mreca/OneDrive/Desktop/RISC-V FPGA CPU Research/sim/cpu/tb_core.sv:60: $finish called at 70000 (1ps)"
+      "simulator_summary": "DONE retirements=0 cycles=3\n./sim/cpu/tb_core.sv:61: $finish called at 70000 (1ps)"
     },
     {
       "case": "illegal_csr",
       "max_wait_cycles": 7,
       "events": 1,
       "result": "PASS",
-      "simulator_summary": "DONE retirements=0 cycles=3\n/mnt/c/Users/mreca/OneDrive/Desktop/RISC-V FPGA CPU Research/sim/cpu/tb_core.sv:60: $finish called at 70000 (1ps)"
+      "simulator_summary": "DONE retirements=0 cycles=3\n./sim/cpu/tb_core.sv:61: $finish called at 70000 (1ps)"
     },
     {
       "case": "illegal_csr",
       "max_wait_cycles": 19,
       "events": 1,
       "result": "PASS",
-      "simulator_summary": "DONE retirements=0 cycles=4\n/mnt/c/Users/mreca/OneDrive/Desktop/RISC-V FPGA CPU Research/sim/cpu/tb_core.sv:60: $finish called at 80000 (1ps)"
+      "simulator_summary": "DONE retirements=0 cycles=4\n./sim/cpu/tb_core.sv:61: $finish called at 80000 (1ps)"
     },
     {
       "case": "ecall",
       "max_wait_cycles": 0,
       "events": 1,
       "result": "PASS",
-      "simulator_summary": "DONE retirements=0 cycles=3\n/mnt/c/Users/mreca/OneDrive/Desktop/RISC-V FPGA CPU Research/sim/cpu/tb_core.sv:60: $finish called at 70000 (1ps)"
+      "simulator_summary": "DONE retirements=0 cycles=3\n./sim/cpu/tb_core.sv:61: $finish called at 70000 (1ps)"
     },
     {
       "case": "ecall",
       "max_wait_cycles": 7,
       "events": 1,
       "result": "PASS",
-      "simulator_summary": "DONE retirements=0 cycles=3\n/mnt/c/Users/mreca/OneDrive/Desktop/RISC-V FPGA CPU Research/sim/cpu/tb_core.sv:60: $finish called at 70000 (1ps)"
+      "simulator_summary": "DONE retirements=0 cycles=3\n./sim/cpu/tb_core.sv:61: $finish called at 70000 (1ps)"
     },
     {
       "case": "ecall",
       "max_wait_cycles": 19,
       "events": 1,
       "result": "PASS",
-      "simulator_summary": "DONE retirements=0 cycles=4\n/mnt/c/Users/mreca/OneDrive/Desktop/RISC-V FPGA CPU Research/sim/cpu/tb_core.sv:60: $finish called at 80000 (1ps)"
+      "simulator_summary": "DONE retirements=0 cycles=4\n./sim/cpu/tb_core.sv:61: $finish called at 80000 (1ps)"
     },
     {
       "case": "misaligned_jal",
       "max_wait_cycles": 0,
       "events": 1,
       "result": "PASS",
-      "simulator_summary": "DONE retirements=0 cycles=3\n/mnt/c/Users/mreca/OneDrive/Desktop/RISC-V FPGA CPU Research/sim/cpu/tb_core.sv:60: $finish called at 70000 (1ps)"
+      "simulator_summary": "DONE retirements=0 cycles=3\n./sim/cpu/tb_core.sv:61: $finish called at 70000 (1ps)"
     },
     {
       "case": "misaligned_jal",
       "max_wait_cycles": 7,
       "events": 1,
       "result": "PASS",
-      "simulator_summary": "DONE retirements=0 cycles=3\n/mnt/c/Users/mreca/OneDrive/Desktop/RISC-V FPGA CPU Research/sim/cpu/tb_core.sv:60: $finish called at 70000 (1ps)"
+      "simulator_summary": "DONE retirements=0 cycles=3\n./sim/cpu/tb_core.sv:61: $finish called at 70000 (1ps)"
     },
     {
       "case": "misaligned_jal",
       "max_wait_cycles": 19,
       "events": 1,
       "result": "PASS",
-      "simulator_summary": "DONE retirements=0 cycles=4\n/mnt/c/Users/mreca/OneDrive/Desktop/RISC-V FPGA CPU Research/sim/cpu/tb_core.sv:60: $finish called at 80000 (1ps)"
+      "simulator_summary": "DONE retirements=0 cycles=4\n./sim/cpu/tb_core.sv:61: $finish called at 80000 (1ps)"
     },
     {
       "case": "misaligned_taken_branch",
       "max_wait_cycles": 0,
       "events": 1,
       "result": "PASS",
-      "simulator_summary": "DONE retirements=0 cycles=3\n/mnt/c/Users/mreca/OneDrive/Desktop/RISC-V FPGA CPU Research/sim/cpu/tb_core.sv:60: $finish called at 70000 (1ps)"
+      "simulator_summary": "DONE retirements=0 cycles=3\n./sim/cpu/tb_core.sv:61: $finish called at 70000 (1ps)"
     },
     {
       "case": "misaligned_taken_branch",
       "max_wait_cycles": 7,
       "events": 1,
       "result": "PASS",
-      "simulator_summary": "DONE retirements=0 cycles=3\n/mnt/c/Users/mreca/OneDrive/Desktop/RISC-V FPGA CPU Research/sim/cpu/tb_core.sv:60: $finish called at 70000 (1ps)"
+      "simulator_summary": "DONE retirements=0 cycles=3\n./sim/cpu/tb_core.sv:61: $finish called at 70000 (1ps)"
     },
     {
       "case": "misaligned_taken_branch",
       "max_wait_cycles": 19,
       "events": 1,
       "result": "PASS",
-      "simulator_summary": "DONE retirements=0 cycles=4\n/mnt/c/Users/mreca/OneDrive/Desktop/RISC-V FPGA CPU Research/sim/cpu/tb_core.sv:60: $finish called at 80000 (1ps)"
+      "simulator_summary": "DONE retirements=0 cycles=4\n./sim/cpu/tb_core.sv:61: $finish called at 80000 (1ps)"
     },
     {
       "case": "misaligned_jalr",
       "max_wait_cycles": 0,
       "events": 2,
       "result": "PASS",
-      "simulator_summary": "DONE retirements=1 cycles=5\n/mnt/c/Users/mreca/OneDrive/Desktop/RISC-V FPGA CPU Research/sim/cpu/tb_core.sv:60: $finish called at 90000 (1ps)"
+      "simulator_summary": "DONE retirements=1 cycles=4\n./sim/cpu/tb_core.sv:61: $finish called at 80000 (1ps)"
     },
     {
       "case": "misaligned_jalr",
       "max_wait_cycles": 7,
       "events": 2,
       "result": "PASS",
-      "simulator_summary": "DONE retirements=1 cycles=9\n/mnt/c/Users/mreca/OneDrive/Desktop/RISC-V FPGA CPU Research/sim/cpu/tb_core.sv:60: $finish called at 130000 (1ps)"
+      "simulator_summary": "DONE retirements=1 cycles=4\n./sim/cpu/tb_core.sv:61: $finish called at 80000 (1ps)"
     },
     {
       "case": "misaligned_jalr",
       "max_wait_cycles": 19,
       "events": 2,
       "result": "PASS",
-      "simulator_summary": "DONE retirements=1 cycles=11\n/mnt/c/Users/mreca/OneDrive/Desktop/RISC-V FPGA CPU Research/sim/cpu/tb_core.sv:60: $finish called at 150000 (1ps)"
+      "simulator_summary": "DONE retirements=1 cycles=5\n./sim/cpu/tb_core.sv:61: $finish called at 90000 (1ps)"
     },
     {
       "case": "misaligned_lh",
       "max_wait_cycles": 0,
       "events": 1,
       "result": "PASS",
-      "simulator_summary": "DONE retirements=0 cycles=3\n/mnt/c/Users/mreca/OneDrive/Desktop/RISC-V FPGA CPU Research/sim/cpu/tb_core.sv:60: $finish called at 70000 (1ps)"
+      "simulator_summary": "DONE retirements=0 cycles=3\n./sim/cpu/tb_core.sv:61: $finish called at 70000 (1ps)"
     },
     {
       "case": "misaligned_lh",
       "max_wait_cycles": 7,
       "events": 1,
       "result": "PASS",
-      "simulator_summary": "DONE retirements=0 cycles=3\n/mnt/c/Users/mreca/OneDrive/Desktop/RISC-V FPGA CPU Research/sim/cpu/tb_core.sv:60: $finish called at 70000 (1ps)"
+      "simulator_summary": "DONE retirements=0 cycles=3\n./sim/cpu/tb_core.sv:61: $finish called at 70000 (1ps)"
     },
     {
       "case": "misaligned_lh",
       "max_wait_cycles": 19,
       "events": 1,
       "result": "PASS",
-      "simulator_summary": "DONE retirements=0 cycles=4\n/mnt/c/Users/mreca/OneDrive/Desktop/RISC-V FPGA CPU Research/sim/cpu/tb_core.sv:60: $finish called at 80000 (1ps)"
+      "simulator_summary": "DONE retirements=0 cycles=4\n./sim/cpu/tb_core.sv:61: $finish called at 80000 (1ps)"
     },
     {
       "case": "misaligned_lw",
       "max_wait_cycles": 0,
       "events": 1,
       "result": "PASS",
-      "simulator_summary": "DONE retirements=0 cycles=3\n/mnt/c/Users/mreca/OneDrive/Desktop/RISC-V FPGA CPU Research/sim/cpu/tb_core.sv:60: $finish called at 70000 (1ps)"
+      "simulator_summary": "DONE retirements=0 cycles=3\n./sim/cpu/tb_core.sv:61: $finish called at 70000 (1ps)"
     },
     {
       "case": "misaligned_lw",
       "max_wait_cycles": 7,
       "events": 1,
       "result": "PASS",
-      "simulator_summary": "DONE retirements=0 cycles=3\n/mnt/c/Users/mreca/OneDrive/Desktop/RISC-V FPGA CPU Research/sim/cpu/tb_core.sv:60: $finish called at 70000 (1ps)"
+      "simulator_summary": "DONE retirements=0 cycles=3\n./sim/cpu/tb_core.sv:61: $finish called at 70000 (1ps)"
     },
     {
       "case": "misaligned_lw",
       "max_wait_cycles": 19,
       "events": 1,
       "result": "PASS",
-      "simulator_summary": "DONE retirements=0 cycles=4\n/mnt/c/Users/mreca/OneDrive/Desktop/RISC-V FPGA CPU Research/sim/cpu/tb_core.sv:60: $finish called at 80000 (1ps)"
+      "simulator_summary": "DONE retirements=0 cycles=4\n./sim/cpu/tb_core.sv:61: $finish called at 80000 (1ps)"
     },
     {
       "case": "misaligned_ld",
       "max_wait_cycles": 0,
       "events": 1,
       "result": "PASS",
-      "simulator_summary": "DONE retirements=0 cycles=3\n/mnt/c/Users/mreca/OneDrive/Desktop/RISC-V FPGA CPU Research/sim/cpu/tb_core.sv:60: $finish called at 70000 (1ps)"
+      "simulator_summary": "DONE retirements=0 cycles=3\n./sim/cpu/tb_core.sv:61: $finish called at 70000 (1ps)"
     },
     {
       "case": "misaligned_ld",
       "max_wait_cycles": 7,
       "events": 1,
       "result": "PASS",
-      "simulator_summary": "DONE retirements=0 cycles=3\n/mnt/c/Users/mreca/OneDrive/Desktop/RISC-V FPGA CPU Research/sim/cpu/tb_core.sv:60: $finish called at 70000 (1ps)"
+      "simulator_summary": "DONE retirements=0 cycles=3\n./sim/cpu/tb_core.sv:61: $finish called at 70000 (1ps)"
     },
     {
       "case": "misaligned_ld",
       "max_wait_cycles": 19,
       "events": 1,
       "result": "PASS",
-      "simulator_summary": "DONE retirements=0 cycles=4\n/mnt/c/Users/mreca/OneDrive/Desktop/RISC-V FPGA CPU Research/sim/cpu/tb_core.sv:60: $finish called at 80000 (1ps)"
+      "simulator_summary": "DONE retirements=0 cycles=4\n./sim/cpu/tb_core.sv:61: $finish called at 80000 (1ps)"
     },
     {
       "case": "misaligned_sh",
       "max_wait_cycles": 0,
       "events": 1,
       "result": "PASS",
-      "simulator_summary": "DONE retirements=0 cycles=3\n/mnt/c/Users/mreca/OneDrive/Desktop/RISC-V FPGA CPU Research/sim/cpu/tb_core.sv:60: $finish called at 70000 (1ps)"
+      "simulator_summary": "DONE retirements=0 cycles=3\n./sim/cpu/tb_core.sv:61: $finish called at 70000 (1ps)"
     },
     {
       "case": "misaligned_sh",
       "max_wait_cycles": 7,
       "events": 1,
       "result": "PASS",
-      "simulator_summary": "DONE retirements=0 cycles=3\n/mnt/c/Users/mreca/OneDrive/Desktop/RISC-V FPGA CPU Research/sim/cpu/tb_core.sv:60: $finish called at 70000 (1ps)"
+      "simulator_summary": "DONE retirements=0 cycles=3\n./sim/cpu/tb_core.sv:61: $finish called at 70000 (1ps)"
     },
     {
       "case": "misaligned_sh",
       "max_wait_cycles": 19,
       "events": 1,
       "result": "PASS",
-      "simulator_summary": "DONE retirements=0 cycles=4\n/mnt/c/Users/mreca/OneDrive/Desktop/RISC-V FPGA CPU Research/sim/cpu/tb_core.sv:60: $finish called at 80000 (1ps)"
+      "simulator_summary": "DONE retirements=0 cycles=4\n./sim/cpu/tb_core.sv:61: $finish called at 80000 (1ps)"
     },
     {
       "case": "misaligned_sw",
       "max_wait_cycles": 0,
       "events": 1,
       "result": "PASS",
-      "simulator_summary": "DONE retirements=0 cycles=3\n/mnt/c/Users/mreca/OneDrive/Desktop/RISC-V FPGA CPU Research/sim/cpu/tb_core.sv:60: $finish called at 70000 (1ps)"
+      "simulator_summary": "DONE retirements=0 cycles=3\n./sim/cpu/tb_core.sv:61: $finish called at 70000 (1ps)"
     },
     {
       "case": "misaligned_sw",
       "max_wait_cycles": 7,
       "events": 1,
       "result": "PASS",
-      "simulator_summary": "DONE retirements=0 cycles=3\n/mnt/c/Users/mreca/OneDrive/Desktop/RISC-V FPGA CPU Research/sim/cpu/tb_core.sv:60: $finish called at 70000 (1ps)"
+      "simulator_summary": "DONE retirements=0 cycles=3\n./sim/cpu/tb_core.sv:61: $finish called at 70000 (1ps)"
     },
     {
       "case": "misaligned_sw",
       "max_wait_cycles": 19,
       "events": 1,
       "result": "PASS",
-      "simulator_summary": "DONE retirements=0 cycles=4\n/mnt/c/Users/mreca/OneDrive/Desktop/RISC-V FPGA CPU Research/sim/cpu/tb_core.sv:60: $finish called at 80000 (1ps)"
+      "simulator_summary": "DONE retirements=0 cycles=4\n./sim/cpu/tb_core.sv:61: $finish called at 80000 (1ps)"
     },
     {
       "case": "misaligned_sd",
       "max_wait_cycles": 0,
       "events": 1,
       "result": "PASS",
-      "simulator_summary": "DONE retirements=0 cycles=3\n/mnt/c/Users/mreca/OneDrive/Desktop/RISC-V FPGA CPU Research/sim/cpu/tb_core.sv:60: $finish called at 70000 (1ps)"
+      "simulator_summary": "DONE retirements=0 cycles=3\n./sim/cpu/tb_core.sv:61: $finish called at 70000 (1ps)"
     },
     {
       "case": "misaligned_sd",
       "max_wait_cycles": 7,
       "events": 1,
       "result": "PASS",
-      "simulator_summary": "DONE retirements=0 cycles=3\n/mnt/c/Users/mreca/OneDrive/Desktop/RISC-V FPGA CPU Research/sim/cpu/tb_core.sv:60: $finish called at 70000 (1ps)"
+      "simulator_summary": "DONE retirements=0 cycles=3\n./sim/cpu/tb_core.sv:61: $finish called at 70000 (1ps)"
     },
     {
       "case": "misaligned_sd",
       "max_wait_cycles": 19,
       "events": 1,
       "result": "PASS",
-      "simulator_summary": "DONE retirements=0 cycles=4\n/mnt/c/Users/mreca/OneDrive/Desktop/RISC-V FPGA CPU Research/sim/cpu/tb_core.sv:60: $finish called at 80000 (1ps)"
+      "simulator_summary": "DONE retirements=0 cycles=4\n./sim/cpu/tb_core.sv:61: $finish called at 80000 (1ps)"
     },
     {
       "case": "unmapped_fetch",
       "max_wait_cycles": 0,
       "events": 3,
       "result": "PASS",
-      "simulator_summary": "DONE retirements=2 cycles=6\n/mnt/c/Users/mreca/OneDrive/Desktop/RISC-V FPGA CPU Research/sim/cpu/tb_core.sv:60: $finish called at 100000 (1ps)"
+      "simulator_summary": "DONE retirements=2 cycles=5\n./sim/cpu/tb_core.sv:61: $finish called at 90000 (1ps)"
     },
     {
       "case": "unmapped_fetch",
       "max_wait_cycles": 7,
       "events": 3,
       "result": "PASS",
-      "simulator_summary": "DONE retirements=2 cycles=13\n/mnt/c/Users/mreca/OneDrive/Desktop/RISC-V FPGA CPU Research/sim/cpu/tb_core.sv:60: $finish called at 170000 (1ps)"
+      "simulator_summary": "DONE retirements=2 cycles=9\n./sim/cpu/tb_core.sv:61: $finish called at 130000 (1ps)"
     },
     {
       "case": "unmapped_fetch",
       "max_wait_cycles": 19,
       "events": 3,
       "result": "PASS",
-      "simulator_summary": "DONE retirements=2 cycles=15\n/mnt/c/Users/mreca/OneDrive/Desktop/RISC-V FPGA CPU Research/sim/cpu/tb_core.sv:60: $finish called at 190000 (1ps)"
+      "simulator_summary": "DONE retirements=2 cycles=11\n./sim/cpu/tb_core.sv:61: $finish called at 150000 (1ps)"
     },
     {
       "case": "unmapped_load",
       "max_wait_cycles": 0,
       "events": 2,
       "result": "PASS",
-      "simulator_summary": "DONE retirements=1 cycles=6\n/mnt/c/Users/mreca/OneDrive/Desktop/RISC-V FPGA CPU Research/sim/cpu/tb_core.sv:60: $finish called at 100000 (1ps)"
+      "simulator_summary": "DONE retirements=1 cycles=4\n./sim/cpu/tb_core.sv:61: $finish called at 80000 (1ps)"
     },
     {
       "case": "unmapped_load",
       "max_wait_cycles": 7,
       "events": 2,
       "result": "PASS",
-      "simulator_summary": "DONE retirements=1 cycles=13\n/mnt/c/Users/mreca/OneDrive/Desktop/RISC-V FPGA CPU Research/sim/cpu/tb_core.sv:60: $finish called at 170000 (1ps)"
+      "simulator_summary": "DONE retirements=1 cycles=8\n./sim/cpu/tb_core.sv:61: $finish called at 120000 (1ps)"
     },
     {
       "case": "unmapped_load",
       "max_wait_cycles": 19,
       "events": 2,
       "result": "PASS",
-      "simulator_summary": "DONE retirements=1 cycles=15\n/mnt/c/Users/mreca/OneDrive/Desktop/RISC-V FPGA CPU Research/sim/cpu/tb_core.sv:60: $finish called at 190000 (1ps)"
+      "simulator_summary": "DONE retirements=1 cycles=10\n./sim/cpu/tb_core.sv:61: $finish called at 140000 (1ps)"
     },
     {
       "case": "unmapped_store",
       "max_wait_cycles": 0,
       "events": 2,
       "result": "PASS",
-      "simulator_summary": "DONE retirements=1 cycles=6\n/mnt/c/Users/mreca/OneDrive/Desktop/RISC-V FPGA CPU Research/sim/cpu/tb_core.sv:60: $finish called at 100000 (1ps)"
+      "simulator_summary": "DONE retirements=1 cycles=4\n./sim/cpu/tb_core.sv:61: $finish called at 80000 (1ps)"
     },
     {
       "case": "unmapped_store",
       "max_wait_cycles": 7,
       "events": 2,
       "result": "PASS",
-      "simulator_summary": "DONE retirements=1 cycles=13\n/mnt/c/Users/mreca/OneDrive/Desktop/RISC-V FPGA CPU Research/sim/cpu/tb_core.sv:60: $finish called at 170000 (1ps)"
+      "simulator_summary": "DONE retirements=1 cycles=8\n./sim/cpu/tb_core.sv:61: $finish called at 120000 (1ps)"
     },
     {
       "case": "unmapped_store",
       "max_wait_cycles": 19,
       "events": 2,
       "result": "PASS",
-      "simulator_summary": "DONE retirements=1 cycles=15\n/mnt/c/Users/mreca/OneDrive/Desktop/RISC-V FPGA CPU Research/sim/cpu/tb_core.sv:60: $finish called at 190000 (1ps)"
+      "simulator_summary": "DONE retirements=1 cycles=10\n./sim/cpu/tb_core.sv:61: $finish called at 140000 (1ps)"
     },
     {
       "case": "fetch_bus_fault",
       "max_wait_cycles": 0,
       "events": 1,
       "result": "PASS",
-      "simulator_summary": "DONE retirements=0 cycles=2\n/mnt/c/Users/mreca/OneDrive/Desktop/RISC-V FPGA CPU Research/sim/cpu/tb_core.sv:60: $finish called at 60000 (1ps)"
+      "simulator_summary": "DONE retirements=0 cycles=2\n./sim/cpu/tb_core.sv:61: $finish called at 60000 (1ps)"
     },
     {
       "case": "fetch_bus_fault",
       "max_wait_cycles": 7,
       "events": 1,
       "result": "PASS",
-      "simulator_summary": "DONE retirements=0 cycles=2\n/mnt/c/Users/mreca/OneDrive/Desktop/RISC-V FPGA CPU Research/sim/cpu/tb_core.sv:60: $finish called at 60000 (1ps)"
+      "simulator_summary": "DONE retirements=0 cycles=2\n./sim/cpu/tb_core.sv:61: $finish called at 60000 (1ps)"
     },
     {
       "case": "fetch_bus_fault",
       "max_wait_cycles": 19,
       "events": 1,
       "result": "PASS",
-      "simulator_summary": "DONE retirements=0 cycles=3\n/mnt/c/Users/mreca/OneDrive/Desktop/RISC-V FPGA CPU Research/sim/cpu/tb_core.sv:60: $finish called at 70000 (1ps)"
+      "simulator_summary": "DONE retirements=0 cycles=3\n./sim/cpu/tb_core.sv:61: $finish called at 70000 (1ps)"
     },
     {
       "case": "load_bus_fault_x0",
       "max_wait_cycles": 0,
       "events": 2,
       "result": "PASS",
-      "simulator_summary": "DONE retirements=1 cycles=6\n/mnt/c/Users/mreca/OneDrive/Desktop/RISC-V FPGA CPU Research/sim/cpu/tb_core.sv:60: $finish called at 100000 (1ps)"
+      "simulator_summary": "DONE retirements=1 cycles=4\n./sim/cpu/tb_core.sv:61: $finish called at 80000 (1ps)"
     },
     {
       "case": "load_bus_fault_x0",
       "max_wait_cycles": 7,
       "events": 2,
       "result": "PASS",
-      "simulator_summary": "DONE retirements=1 cycles=13\n/mnt/c/Users/mreca/OneDrive/Desktop/RISC-V FPGA CPU Research/sim/cpu/tb_core.sv:60: $finish called at 170000 (1ps)"
+      "simulator_summary": "DONE retirements=1 cycles=8\n./sim/cpu/tb_core.sv:61: $finish called at 120000 (1ps)"
     },
     {
       "case": "load_bus_fault_x0",
       "max_wait_cycles": 19,
       "events": 2,
       "result": "PASS",
-      "simulator_summary": "DONE retirements=1 cycles=15\n/mnt/c/Users/mreca/OneDrive/Desktop/RISC-V FPGA CPU Research/sim/cpu/tb_core.sv:60: $finish called at 190000 (1ps)"
+      "simulator_summary": "DONE retirements=1 cycles=10\n./sim/cpu/tb_core.sv:61: $finish called at 140000 (1ps)"
     },
     {
       "case": "store_bus_fault",
       "max_wait_cycles": 0,
       "events": 2,
       "result": "PASS",
-      "simulator_summary": "DONE retirements=1 cycles=6\n/mnt/c/Users/mreca/OneDrive/Desktop/RISC-V FPGA CPU Research/sim/cpu/tb_core.sv:60: $finish called at 100000 (1ps)"
+      "simulator_summary": "DONE retirements=1 cycles=4\n./sim/cpu/tb_core.sv:61: $finish called at 80000 (1ps)"
     },
     {
       "case": "store_bus_fault",
       "max_wait_cycles": 7,
       "events": 2,
       "result": "PASS",
-      "simulator_summary": "DONE retirements=1 cycles=13\n/mnt/c/Users/mreca/OneDrive/Desktop/RISC-V FPGA CPU Research/sim/cpu/tb_core.sv:60: $finish called at 170000 (1ps)"
+      "simulator_summary": "DONE retirements=1 cycles=8\n./sim/cpu/tb_core.sv:61: $finish called at 120000 (1ps)"
     },
     {
       "case": "store_bus_fault",
       "max_wait_cycles": 19,
       "events": 2,
       "result": "PASS",
-      "simulator_summary": "DONE retirements=1 cycles=15\n/mnt/c/Users/mreca/OneDrive/Desktop/RISC-V FPGA CPU Research/sim/cpu/tb_core.sv:60: $finish called at 190000 (1ps)"
+      "simulator_summary": "DONE retirements=1 cycles=10\n./sim/cpu/tb_core.sv:61: $finish called at 140000 (1ps)"
     },
     {
       "case": "compiled_firmware",
       "max_wait_cycles": 0,
       "events": 51,
       "result": "PASS",
-      "simulator_summary": "DONE retirements=48 cycles=109\n/mnt/c/Users/mreca/OneDrive/Desktop/RISC-V FPGA CPU Research/sim/cpu/tb_core.sv:60: $finish called at 1130000 (1ps)"
+      "simulator_summary": "DONE retirements=48 cycles=61\n./sim/cpu/tb_core.sv:61: $finish called at 650000 (1ps)"
     },
     {
       "case": "compiled_firmware",
       "max_wait_cycles": 7,
       "events": 51,
       "result": "PASS",
-      "simulator_summary": "DONE retirements=48 cycles=294\n/mnt/c/Users/mreca/OneDrive/Desktop/RISC-V FPGA CPU Research/sim/cpu/tb_core.sv:60: $finish called at 2980000 (1ps)"
+      "simulator_summary": "DONE retirements=48 cycles=115\n./sim/cpu/tb_core.sv:61: $finish called at 1190000 (1ps)"
     },
     {
       "case": "compiled_firmware",
       "max_wait_cycles": 19,
       "events": 51,
       "result": "PASS",
-      "simulator_summary": "DONE retirements=48 cycles=601\n/mnt/c/Users/mreca/OneDrive/Desktop/RISC-V FPGA CPU Research/sim/cpu/tb_core.sv:60: $finish called at 6050000 (1ps)"
+      "simulator_summary": "DONE retirements=48 cycles=241\n./sim/cpu/tb_core.sv:61: $finish called at 2450000 (1ps)"
     }
-  ]
+  ],
+  "architecture_version": "0.4.0",
+  "note": "Recorded 2026-11-20 on architecture 0.4.0 with the compiled C firmware; local paths replaced by ./ for publication."
 }

@@ -13,7 +13,7 @@ Last updated November 20, 2026.
 - [ ] **First synthesis.** Run Yosys on the core and RAM wrapper for a candidate exact part. Done when block RAM inference and a LUT/flip-flop count are recorded. Rubric HG7, R5.1, R5.2.
 - [x] **Tag the first architecture version.** Annotated tag `cpu-v0.1.0` on commit `0483d99`, where the 0.1.0 RTL first landed; pushed November 20, 2026. Versioning rules: [cpu/architecture.md](cpu/architecture.md) section 9.
 - [ ] **Known-issue list.** Start one so reviews can check for open correctness defects. Rubric HG6.
-- [ ] **Commit or discard the regenerated visualizer records.** `cpu/programs-verification.json` and `cpu/visualizer-verification.json` were rebuilt locally on November 20, 2026 and are uncommitted.
+- [ ] **Commit or discard the regenerated visualizer records.** `cpu/programs-verification.json` and `cpu/visualizer-verification.json` were rebuilt locally on November 20, 2026, last on architecture 0.4.0 after its visualizer testbench fix, and are uncommitted.
 
 ## Next: first benchmark
 
@@ -43,13 +43,15 @@ First result: **0.260 DMIPS/MHz**, non-compliant simulation run, November 20, 20
 - [x] **Validate.** All 17 reachable final values match Dhrystone's expected values, and the retirement trace matches the reference model with 0 and 7 wait cycles. The benchmark's local variables are not reachable and are not checked. Done November 20, 2026.
 - [x] **Runs in CI.** A CI job builds with Ubuntu's clang and runs the checks on every push.
 - [ ] **Report beside CoreMark.** DMIPS per MHz (runs x 1,000,000 / (clocks x 1,757)) is recorded in [cpu/dhrystone-results.json](cpu/dhrystone-results.json). Done when it is published next to a CoreMark result, never on its own. Rubric section 9.
-- [ ] **Hardware multiply and divide.** Rerun after the M extension (C2); today the software routines are part of the score. The profile estimates only 1.05x for Dhrystone, which divides once per run and never multiplies at run time.
+- [x] **Hardware multiply and divide.** Architecture 0.4.0 adds M; the `rv64im` build runs 555.7 clocks per run against 600.8 for `rv64i`, 1.08x. Done November 20, 2026.
 
 Optimizations the Dhrystone profile points to, measured on every run (see [cpu/dhrystone.md](cpu/dhrystone.md)):
 
-- [ ] **Fetch buffer.** Keep the last 8-byte fetch beat and serve the next instruction from it when it is the beat's second half; invalidate on any store to that beat. Estimated 1.12x to 1.28x. No contract change, so architecture 0.1.1.
-- [ ] **Overlap fetch with execute.** Request the next instruction while the current one executes; the first step toward a pipeline.
-- [ ] **Pipeline.** Up to 3.65x on today's instructions. Do it after an external model is in the regression, because pipelines are where subtle bugs come from.
+- [x] **Fetch buffer.** Architecture 0.1.1: 2,188.2 to 1,706.2 clocks per run (1.28x), as estimated. Superseded by the instruction cache in 0.2.0.
+- [x] **Instruction cache, loads and stores from EXECUTE, same-clock writes, data cache.** Architectures 0.2.0 to 0.3.0: down to 600.8 clocks per run, CPI 1.001. See the [optimization history](cpu/dhrystone.md#optimization-history).
+- [ ] **Overlap fetch with execute.** No longer worth doing for Dhrystone: with the instruction cache, fetch is 0.1% of clocks. Revisit with a slow-memory model or code larger than the cache.
+- [ ] **Pipeline or multiple issue.** The core already completes about one instruction per clock on Dhrystone, so a classic pipeline would mainly raise the clock frequency, and fewer clocks need more than one instruction per clock. Do either only after an external model is in the regression and a first synthesis shows the frequency, because these designs are where subtle bugs come from.
+- [ ] **Synthesize the caches.** The cache lookups use the just-computed next PC and data address in the same clock; check their timing on a real part before relying on these clock counts.
 - [ ] **Runtime string routines.** Word-at-a-time `strcpy` and `strcmp` would cut nearly half the instructions, but it changes the runtime, not the core. Keep the byte-at-a-time version as the reference and label any result built with a different runtime.
 
 Then:
@@ -73,9 +75,9 @@ Main memory:
 L1 caches:
 
 - [ ] **Design note first.** Sizes, associativity, 64-byte lines (RVA23's Zic64b expects 64-byte cache blocks), write policy, and which address ranges are uncached for future peripherals. Update the memory and FENCE.I sections of the architecture document to match.
-- [ ] **L1 instruction cache.** `fence.i` must invalidate it; the existing self-modifying-code test must still pass.
-- [ ] **L1 data cache.** Faults must stay precise. A write-back cache can hit a bus error when it evicts a line long after the store retired, so decide how that is reported before choosing write-back.
-- [ ] **Cache verification.** The retirement and write trace must be identical with caches on and off. Add tests for evictions, conflicting addresses, stores followed by fetches of the same line, and random memory stalls.
+- [x] **L1 instruction cache.** Architecture 0.2.0: direct-mapped, 8-byte lines, `ICACHE_BEATS` (default 4 KiB); `fence.i` and stores keep it coherent; the self-modifying-code test passes. 64-byte lines are still to do.
+- [x] **L1 data cache.** Architecture 0.3.0: write-through, so stores complete on the bus before retiring and faults stay precise; direct-mapped, 8-byte lines, `DCACHE_BEATS` (default 4 KiB). Every address is treated as cacheable until a PMA exists.
+- [ ] **Cache verification.** Partly done: the full regression passes with 2-line and 512-line caches under random memory stalls, and the self-modifying-code test covers stores followed by fetches. Still to add: directed eviction and conflict tests, and a check with caches effectively off.
 
 L2 cache:
 
@@ -102,7 +104,7 @@ RV64GC is RV64IMAFDC plus Zicsr and Zifencei. It is the usual baseline for gener
 - [x] **I**: base integer, done in C0. Local simulation evidence only: [verification record](cpu/verification.json).
 - [x] **Zifencei**: `fence.i`, done in C0, including a self-modifying-code test. Same evidence.
 - [ ] **Zicsr**: C1, above.
-- [ ] **M** (C2): multiply and divide behind a start/busy/done interface. Done when divide-by-zero, overflow and high-product cases match the external model.
+- [ ] **M** (C2): implemented in architecture 0.4.0, with divide-by-zero, overflow and high-product cases matching the project reference model. Done when they also match an external model.
 - [ ] **C** (C2): compressed instructions, 16-bit alignment and fetch across 64-bit beat boundaries. Done when compressed-fetch and illegal-encoding cases match the external model.
 - [ ] **A** (C3): LR/SC with a reservation tracker and AMOs. Done when reservation, invalidation and atomicity tests pass, including multi-agent memory tests.
 - [ ] **F and D** (C4): single and double precision, the FP register file and `fcsr`. Done when NaN boxing, signed zero, subnormals, all rounding modes and exception flags match an independent IEEE reference, with no silent flush-to-zero.

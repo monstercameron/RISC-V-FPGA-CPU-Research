@@ -4,7 +4,7 @@
 
 Start with the [interactive CPU infographic](cpu/core-explainer.html), the [CPU quick start](cpu/README.md), and the [architecture and staged RVA23 checklist](cpu/architecture.md).
 
-**Current evidence:** 99 differential program simulations passed, plus reset and synchronous-RAM checks. Compiled C produced the expected result, 36. This is an integer foundation, not yet RVA23, a Linux-capable CPU or a physical FPGA result. See the [verification record](cpu/verification.json).
+**Current evidence (architecture 0.4.0):** 111 differential program simulations passed, plus reset and synchronous-RAM checks, covering 66 `rv64im_zifencei` instructions. Compiled C produced the expected result, 36. Dhrystone runs at 1.024 DMIPS/MHz in simulation, 3.94x the first 0.1.0 core; see the [optimization history](cpu/dhrystone.md#optimization-history). This is an integer foundation, not yet RVA23, a Linux-capable CPU or a physical FPGA result. See the [verification record](cpu/verification.json).
 
 Study the core with [seven selectable C programs](cpu/programs.md), from 1 + 1 to sorting and CRC32. The connected visualizer includes C/assembly/binary views, study questions, hardware checkpoints and verified outputs.
 
@@ -24,7 +24,7 @@ Or in Ubuntu/WSL with Python 3.11+ and Icarus installed:
 bash sim/cpu/run.sh
 ```
 
-The default suite downloads nothing and needs no FPGA or cross compiler. It runs 96 differential simulations plus reset and synchronous-RAM checks. The expanded 99-run record also includes LLVM-compiled firmware; instructions are in the CPU quick start. Generated traces and reports go under `build/cpu/`.
+The default suite downloads nothing and needs no FPGA or cross compiler. It runs 108 differential simulations plus reset and synchronous-RAM checks. The expanded 111-run record also includes LLVM-compiled firmware; instructions are in the CPU quick start. Generated traces and reports go under `build/cpu/`.
 
 To build and run the Dhrystone benchmark with the installed LLVM, see [the Dhrystone page](cpu/dhrystone.md):
 
@@ -45,7 +45,7 @@ python -B scripts/check_repo.py
 | [Interactive core infographic](cpu/core-explainer.html) | Plain-language component tour and instruction walkthrough |
 | [CPU quick start](cpu/README.md) | Files, commands, tested behavior and current limits |
 | [CPU architecture](cpu/architecture.md) | Datapath, memory/trap contracts, RVA23 obligations and C0-C7 stages |
-| [Dhrystone result](cpu/dhrystone.md) | First benchmark: 0.260 DMIPS/MHz in simulation, how it was checked and how to rerun it |
+| [Dhrystone result](cpu/dhrystone.md) | Benchmark results from 0.260 to 1.024 DMIPS/MHz across architecture versions, how they were checked and how to rerun them |
 | [CPU review rubric](cpu/review-rubric.md) | Gates, scores and evidence needed before calling the CPU good or performant |
 | [To do](TODO.md) | Prioritized CPU work list, including the RV64GC milestone |
 | [Development log](DEVLOG.md) | Dated record of sessions, commits and findings |

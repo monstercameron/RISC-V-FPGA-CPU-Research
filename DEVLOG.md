@@ -48,6 +48,11 @@ Times are US Eastern (UTC-05:00). Each timestamp names its source:
 20. **The byte-at-a-time string routines dominate.** `strcpy` and `strcmp` from `sim/cpu/bench/runtime.c` execute 47% of all instructions (281 of 600 per run). Software divide is only 5% of clocks (one `__divdi3` call per run); multiplication never reaches `__muldi3` because the compiler uses shifts. This corrects advice given earlier in the session that hardware multiply and divide would be the biggest gain for Dhrystone: the profile estimates only 1.05x.
 21. **40% of instructions could reuse the previous fetch.** 241 of 600 instructions per run are the second half of an 8-byte fetch beat that was just read. Model estimates: a one-entry fetch buffer gives 1.12x to 1.28x (2,188 down to 1,947 or 1,706 clocks per run); an ideal pipeline gives at most 3.65x. These are estimates from the trace, not measured RTL.
 22. **Run logs are now split by commit.** The two runs previously logged at the end of this file were moved unchanged to [devlog/devlog-3110337.md](devlog/devlog-3110337.md).
+23. **The optimization loop took Dhrystone from 2,188.2 to 555.7 clocks per run, 3.94x** (0.260 to 1.024 DMIPS/MHz, simulation). Order of gains: instruction fetch first (fetch buffer 1.28x, then a 4 KiB instruction cache 1.73x), then memory waits (early issue 1.24x, same-clock writes 1.11x, a data cache 1.20x), then instruction count (M, 1.08x on the `rv64im` build).
+24. **The loop stopped at about one instruction per clock.** On 0.4.0 only 2.6 of 555.7 clocks per run are not instruction execution: two divide steps, 0.6 fetch and 0.1 memory. Lower needs fewer instructions (compiler or runtime, not the core) or more than one instruction per clock (a superscalar redesign, not a refinement).
+25. **The gains depend on assumptions not yet tested.** Both 4 KiB caches hold all of Dhrystone, and the RAM answers in one clock. The cache lookups use the just-computed next PC and data address in the same clock, which may lower the clock frequency; nothing has been synthesized. A slow-memory model and a first synthesis are the checks that matter next.
+26. **Two tooling problems found and fixed during the loop.** The visualizer testbench detected writes in a way that stopped working at 0.2.2. The profiler's "issue loads and stores in EXECUTE" estimate overstated the gain for 0.3.0 and 0.4.0; the run logs [devlog-90ee1ea.md](devlog/devlog-90ee1ea.md) and [devlog-88db627.md](devlog/devlog-88db627.md) still show the old figure and are left as written.
+27. **The core contract changed in three MINOR steps.** `ICACHE_BEATS` (0.2.0) and `DCACHE_BEATS` (0.3.0) are new parameters, every address is now treated as cacheable, and 0.4.0 adds M. Each version has a history row in [cpu/architecture.md](cpu/architecture.md) and a local `cpu-vX.Y.Z` tag.
 
 ### Timeline
 
@@ -112,6 +117,12 @@ Times are US Eastern (UTC-05:00). Each timestamp names its source:
 | 21:42:29 | Commit `90ee1ea`, data cache (0.3.0); tagged `cpu-v0.3.0`, local only | git |
 | 21:43:28 | 0.3.0 run: 600.8 clocks per run, CPI 1.001, 0.9473 DMIPS/MHz, 3.64x over 0.1.0; [devlog-90ee1ea.md](devlog/devlog-90ee1ea.md). The core now completes about one instruction per clock, the floor for a design that executes one instruction at a time; only fewer instructions can lower clocks further without executing several instructions per clock | record |
 | after 21:44 | 0.4.0 M extension written: core, reference model and regression (directed M tests over zero divisors, overflow, extremes; two random programs with M). Reference M results checked against hand-computed spec values. Main regression 108/108 pass, 66 instruction names, with default and 2-beat caches. Benchmark build gains `--isa rv64im_zifencei` | output |
+| 21:47:46 | Commit `88db627`, M extension (0.4.0); tagged `cpu-v0.4.0`, local only | git |
+| 21:48:47 | 0.4.0 run, Dhrystone built for `rv64im`: 555.7 clocks per run, 553.1 instructions, CPI 1.005, 1.0242 DMIPS/MHz, 3.94x over 0.1.0; [devlog-88db627.md](devlog/devlog-88db627.md) | record |
+| 21:49:53 | 0.4.0 run, Dhrystone built for `rv64i`: unchanged 600.8 clocks per run, as expected since that build has no M instructions; same log | record |
+| after 21:50 | Loop stopped: only 2.6 of 555.7 clocks per run are not instruction execution. Profiler fix: the "issue loads and stores in EXECUTE" estimate counted every load and store, even those that no longer wait; it now counts only loads and stores that waited, and gives 555.6 instead of 361.7 for 0.4.0 | output |
+| after 21:50 | Visualizer testbench fixed: it recognized RAM writes as "accepted but not yet acknowledged", which no longer happens since 0.2.2. All seven lessons rebuilt and verified on 0.4.0 at 21:51:24; the C demo takes 22,859 clocks instead of 69,157 | record |
+| 21:51:40 | Expanded regression with compiled C firmware on 0.4.0: 111/111 runs, 37 programs, 66 instruction names, reset and both RAM-wrapper checks pass; saved as `cpu/verification.json` with local paths removed | file |
 
 ### Optimization loop
 
@@ -125,6 +136,10 @@ Each step changes the core, passes the main regression, is committed and tagged 
 | 0.2.1 | Loads and stores issue from EXECUTE | 794.7 | 1.324 | 0.7162 | 2.75x | 1.24x |
 | 0.2.2 | RAM wrapper acknowledges writes in the same clock | 718.7 | 1.198 | 0.7919 | 3.04x | 1.11x |
 | 0.3.0 | 4 KiB write-through data cache for loads | 600.8 | 1.001 | 0.9473 | 3.64x | 1.20x |
+| 0.4.0, `rv64i` build | M extension, not used by this build | 600.8 | 1.001 | 0.9473 | 3.64x | 1.00x |
+| 0.4.0, `rv64im` build | M extension: hardware divide replaces the software routine | 555.7 | 1.005 | 1.0242 | 3.94x | 1.08x |
+
+Every step measured what the previous profile estimated. The loop stopped after 0.4.0 because the core completes about one instruction per clock; see findings 23 to 27.
 
 ### Commits
 
@@ -225,6 +240,159 @@ recorded in benchmark results and scorecards.
 Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
 ```
 
+#### `35565c0`, 2026-11-20 21:11:34, earl cameron
+
+```text
+Record the 0.1.0 release in the devlog
+
+Logs commit 699ad6c, the cpu-v0.1.0 tag on 0483d99 and its CI result,
+ticks the tagging to-do and names the tag in the version history.
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+```
+
+#### `04b19db`, 2026-11-20 21:25:53, earl cameron
+
+```text
+Profile every Dhrystone run and split run logs by commit
+
+Each run now profiles its instruction trace: clocks by instruction class
+and function, hot instructions, fetch-reuse share and what-if estimates
+from a per-instruction clock model that reproduces the measured clocks
+exactly. Fetch is 54.8% of clocks and byte-at-a-time strcpy/strcmp are
+47% of instructions; hardware multiply and divide would gain only 1.05x.
+
+Detailed run records move to devlog/devlog-<commit>.md, one file per
+commit, indexed from DEVLOG.md, which keeps daily summaries. The two
+earlier run entries move unchanged to devlog/devlog-3110337.md. Run logs
+list exactly which files were uncommitted.
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+```
+
+#### `df7f489`, 2026-11-20 21:31:14, earl cameron
+
+```text
+Add a one-entry fetch buffer (architecture 0.1.1)
+
+The core keeps the last fetched 8-byte beat. When the next instruction is
+in the same beat it goes straight to EXECUTE with no bus request, saving
+2 clocks. Reset, fence.i and any successful store to the buffered beat
+clear the buffer, so fetched instructions still reflect every completed
+store and architectural behaviour is unchanged (PATCH).
+
+Main regression: 96/96 pass with reset and RAM-wrapper checks.
+Unlogged Dhrystone check: 2,188.2 -> 1,706.2 clocks per run.
+
+The benchmark testbench now records the clocks each retired instruction
+spends in FETCH, EXECUTE and MEMORY, and the profiler uses these measured
+clocks instead of a fixed model, with direct-mapped instruction-cache
+estimates. Rubric evidence is reassessed for the new RTL hashes.
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+```
+
+#### `7197bd1`, 2026-11-20 21:34:58, earl cameron
+
+```text
+Replace the fetch buffer with an instruction cache (architecture 0.2.0)
+
+A direct-mapped instruction cache of ICACHE_BEATS 8-byte lines (default
+512, 4 KiB) replaces the one-entry fetch buffer. Every bus fetch fills a
+line; a next instruction that hits goes straight to EXECUTE. Reset and
+fence.i clear the cache and a successful store clears the line holding
+its beat, so behaviour is unchanged. ICACHE_BEATS is a new parameter on
+rv64_core and rv64_bram_soc (MINOR); illegal sizes fail at elaboration.
+
+Main regression: 96/96 pass with 512 lines and with 2 lines. The 0.1.1
+profile predicted 988.8 clocks per run for Dhrystone with 512 lines.
+test_cpu.py gains --icache-beats; tb_core passes the size through.
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+```
+
+#### `f18223e`, 2026-11-20 21:37:44, earl cameron
+
+```text
+Issue loads and stores from EXECUTE (architecture 0.2.1)
+
+A load or store now puts its bus request out during EXECUTE, as soon as
+its address is known and no exception is pending. If the bus completes
+in that clock the instruction retires from EXECUTE; otherwise MEMORY
+holds the identical request from the pending registers, so requests stay
+stable under backpressure and faults stay precise. With the synchronous
+RAM each data access takes one clock less. Bus protocol and behaviour
+are unchanged (PATCH).
+
+Main regression: 96/96 pass with 512-line and 2-line instruction caches,
+including the reset-during-store and RAM-wrapper checks.
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+```
+
+#### `0573f1a`, 2026-11-20 21:39:58, earl cameron
+
+```text
+Acknowledge RAM writes in the same clock (architecture 0.2.2)
+
+The synchronous RAM wrapper now completes a write in the clock the
+request is presented: block RAM writes on that clock edge anyway, and the
+out-of-range error is decided combinationally from the address. Reads
+still answer one clock later. Stores therefore retire from EXECUTE.
+Core unchanged; bus protocol unchanged (PATCH).
+
+Main regression: 96/96 pass with 512-line and 2-line instruction caches,
+including the RAM-wrapper smoke test.
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+```
+
+#### `90ee1ea`, 2026-11-20 21:42:29, earl cameron
+
+```text
+Add a write-through data cache for loads (architecture 0.3.0)
+
+A direct-mapped data cache of DCACHE_BEATS 8-byte lines (default 512,
+4 KiB) serves loads. A successful load fills its line; a successful store
+updates a line already holding its beat (write-through, no allocation on
+stores). A load that hits completes in EXECUTE without a bus request.
+Behaviour is unchanged for this single-master system, but every address
+is now treated as cacheable: a PMA must mark peripheral regions
+uncacheable before any are added. DCACHE_BEATS is a new parameter on
+rv64_core and rv64_bram_soc (MINOR); illegal sizes fail at elaboration.
+
+Main regression: 96/96 pass with default caches and with 2-line
+instruction and data caches. test_cpu.py gains --dcache-beats.
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+```
+
+#### `88db627`, 2026-11-20 21:47:46, earl cameron
+
+```text
+Add the M extension (architecture 0.4.0)
+
+Implements mul, mulh, mulhsu, mulhu, div, divu, rem, remu and the word
+forms. Multiplies complete in EXECUTE. Divides complete in EXECUTE for
+divide-by-zero, signed overflow and dividends smaller than the divisor;
+otherwise a DIVIDE state runs one shift-subtract step per clock from the
+quotient's highest possible bit, so small quotients finish in a few
+clocks. ISA string becomes rv64im_zifencei (MINOR).
+
+The reference model implements M per the specification, checked against
+hand-computed results. The regression adds directed M tests (zero
+divisors, overflow, -1, extremes, long and short quotients) and two
+random programs mixing M operations: 108/108 pass, 66 instruction names,
+with default and 2-line caches. Dhrystone can now be built for
+rv64im_zifencei.
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+```
+
+#### Tags
+
+`cpu-v0.1.0` on `0483d99`, `cpu-v0.1.1` on `df7f489`, `cpu-v0.2.0` on `7197bd1`, `cpu-v0.2.1` on `f18223e`, `cpu-v0.2.2` on `0573f1a`, `cpu-v0.3.0` on `90ee1ea`, `cpu-v0.4.0` on `88db627`. Tags after `cpu-v0.1.0` are local until pushed.
+
 #### Tag `cpu-v0.1.0` on `0483d99`
 
 ```text
@@ -315,10 +483,10 @@ Full write-up: [cpu/dhrystone.md](cpu/dhrystone.md). Record: [cpu/dhrystone-resu
 
 #### Open at the end of the day
 
-- Commit the profiler, the per-commit run logs and this log update.
+- Push the loop commits and the tags `cpu-v0.1.1` to `cpu-v0.4.0`; they are local only.
 - Declare a performance target for the scope label (HG1).
-- Choose the first optimization; the profile points to a fetch buffer (architecture 0.1.1, no contract change).
-- Decide whether to commit or discard the two regenerated visualizer records.
+- Decide whether to commit or discard the two regenerated visualizer records, now rebuilt on 0.4.0.
+- Synthesize the core with its caches on a candidate part, and add a slow-memory model, before trusting the clock counts on hardware.
 - Merge or close Dependabot PRs 1 and 2.
 - Next benchmark: CoreMark. Next correctness step: an external model (Spike or Sail) in the regression.
 
@@ -339,3 +507,5 @@ One row per benchmark run, oldest first. Each run's full record (result, rubric 
 | 2026-11-20 21:38:42 -0500 | `f18223e` | yes | 0.2.1 | clang version 23.1.5 `-O2` | 794.7 | 0.7162 | 37.1 | [devlog-f18223e.md](devlog/devlog-f18223e.md) |
 | 2026-11-20 21:40:59 -0500 | `0573f1a` | yes | 0.2.2 | clang version 23.1.5 `-O2` | 718.7 | 0.7919 | 37.1 | [devlog-0573f1a.md](devlog/devlog-0573f1a.md) |
 | 2026-11-20 21:43:28 -0500 | `90ee1ea` | yes | 0.3.0 | clang version 23.1.5 `-O2` | 600.8 | 0.9473 | 37.1 | [devlog-90ee1ea.md](devlog/devlog-90ee1ea.md) |
+| 2026-11-20 21:48:47 -0500 | `88db627` | yes | 0.4.0 | clang version 23.1.5 `-O2` | 555.7 | 1.0242 | 37.1 | [devlog-88db627.md](devlog/devlog-88db627.md) |
+| 2026-11-20 21:49:53 -0500 | `88db627` | yes | 0.4.0 | clang version 23.1.5 `-O2` | 600.8 | 0.9473 | 37.1 | [devlog-88db627.md](devlog/devlog-88db627.md) |

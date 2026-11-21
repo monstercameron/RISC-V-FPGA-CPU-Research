@@ -127,7 +127,9 @@ def profile(profile_path, symbols_path, disassembly_path, runs, measured_region_
             if callee in HELPERS:
                 helper_calls[callee] += 1
     clocks = totals['clocks']
-    memory_ops = classes['load']['instructions'] + classes['store']['instructions']
+    # Loads and stores that actually waited in MEMORY; only these can save a clock
+    # by issuing earlier. (Before this fix the estimate counted every load and store.)
+    memory_waits = sum(1 for pc, ins, rd, nxt, f, e, m in rows if m > 0)
 
     def estimate(name, new_clocks, new_instructions, assumption):
         return {'name': name, 'instructions_per_run': new_instructions / runs, 'clocks_per_run': new_clocks / runs,
@@ -155,8 +157,8 @@ def profile(profile_path, symbols_path, disassembly_path, runs, measured_region_
                                   'Direct-mapped, filled on every fetch; a hit costs no fetch clocks. Stores to '
                                   'cached code are ignored by this estimate.'))
     estimates += [
-        estimate('Issue loads and stores in EXECUTE', clocks - memory_ops, n,
-                 'The data request starts in EXECUTE, so each load or store spends one fewer clock waiting in MEMORY.'),
+        estimate('Issue loads and stores in EXECUTE', clocks - memory_waits, n,
+                 'The data request starts in EXECUTE, so each load or store that waited in MEMORY waits one clock less.'),
         estimate('Issue the next fetch in EXECUTE', clocks - totals['fetch_misses'], n,
                  'A fetch that misses starts one clock earlier, during the previous instruction\'s EXECUTE. '
                  'Upper bound: not possible after a load or store, which uses the bus.'),

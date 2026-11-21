@@ -1,6 +1,6 @@
 # 1 + 1 on our CPU
 
-**Observed result: 2.** LLVM compiled the C below for RV64I, and the custom RTL core executed it with synchronous RAM. The run completed in **48 clocks**, with **13 retired instructions**, one RAM write and 15 events matching the independent sequential reference. EBREAK ends the program without retiring.
+**Observed result: 2.** LLVM compiled the C below for RV64I, and the custom RTL core executed it with synchronous RAM. The run completed in **32 clocks** on architecture 0.4.0 (48 on the first 0.1.0 core), with **13 retired instructions**, one RAM write and 15 events matching the independent sequential reference. EBREAK ends the program without retiring.
 
 ## C source
 

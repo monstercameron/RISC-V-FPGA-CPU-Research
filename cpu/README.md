@@ -39,7 +39,7 @@ Or inside Ubuntu/WSL with Python 3.11+, Icarus and vvp:
 bash sim/cpu/run.sh
 ```
 
-No compiler or FPGA is needed for the generated tests. Output is under ignored `build/cpu/`, including retirement traces and `verification.json`. The default suite runs 96 differential simulations plus the reset and RAM-wrapper checks. The recorded expanded run includes compiled firmware: **99 differential simulations plus reset and two RAM-wrapper checks, all passing**.
+No compiler or FPGA is needed for the generated tests. Output is under ignored `build/cpu/`, including retirement traces and `verification.json`. The default suite runs 108 differential simulations plus the reset and RAM-wrapper checks. The recorded expanded run on architecture 0.4.0 includes compiled firmware: **111 differential simulations plus reset and two RAM-wrapper checks, all passing**.
 
 To build and test the small C firmware using installed LLVM:
 
@@ -59,7 +59,7 @@ The compiler target for the firmware here is `rv64i_zifencei`, ABI `lp64`; since
 
 Add contained machine-mode traps, the selected privileged CSR set, `mret`, timer/external interrupts and a trap-handler firmware test. Preserve the retirement boundary and single-request memory contract. Then compare against an external established ISA model and run relevant architectural tests before broadening ISA support.
 
-The first benchmark, [Dhrystone](dhrystone.md), runs unmodified on the core in simulation at 0.260 DMIPS/MHz with software multiply and divide. Run `.\sim\cpu\bench\run_dhrystone.ps1`.
+The first benchmark, [Dhrystone](dhrystone.md), runs unmodified on the core in simulation: 0.260 DMIPS/MHz on the first 0.1.0 core, 1.024 DMIPS/MHz on 0.4.0 when built for `rv64im`. Run `.\sim\cpu\bench\run_dhrystone.ps1`.
 
 Reviews use the [CPU review rubric](review-rubric.md) to decide whether the core may be called good or performant. Neither claim is available yet.
 
