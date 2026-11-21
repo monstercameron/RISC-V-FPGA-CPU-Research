@@ -40,6 +40,7 @@ python -B scripts/check_repo.py
 | [CPU quick start](cpu/README.md) | Files, commands, tested behavior and current limits |
 | [CPU architecture](cpu/architecture.md) | Datapath, memory/trap contracts, RVA23 obligations and C0-C7 stages |
 | [CPU review rubric](cpu/review-rubric.md) | Gates, scores and evidence needed before calling the CPU good or performant |
+| [To do](TODO.md) | Prioritized CPU work list, including the RV64GC milestone |
 | [CPU RTL](rtl/cpu/rv64_core.sv) / [RAM wrapper](rtl/cpu/rv64_bram_soc.sv) | Original SystemVerilog implementation |
 | [LLM operations to RVA23](llm-rva23-mapping.md) / [assembly examples](isa/README.md) | Future workload mapping and optional BF16 instruction examples |
 | [Earlier accelerator plan](plan.md) / [memory plan](memory-plan.md) | Preserved LLM architecture and bandwidth research |
