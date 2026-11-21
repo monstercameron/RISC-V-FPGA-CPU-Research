@@ -79,6 +79,9 @@ Times are US Eastern (UTC-05:00). Each timestamp names its source:
 | 21:04:14 | Dhrystone rerun through the launcher, scorecard appended to the run log below: unchanged 2,188.2 clocks per run; 37.1/100, foundation band, no claims granted | record |
 | about 21:06 | Semantic versioning adopted for the CPU architecture; existing C0 core declared version 0.1.0 | approx. |
 | 21:08:12 | Dhrystone rerun to check the version reaches results and scorecards: version 0.1.0 recorded; +0.00% clocks per run against the 21:04 run; 37.1/100 | record |
+| 21:09:20 | Commit `699ad6c`, rubric scorecards, devlog rule and architecture versioning; pushed | git |
+| about 21:09 | Annotated tag `cpu-v0.1.0` created on `0483d99`, where the 0.1.0 RTL first landed, and pushed | approx. |
+| 21:09:28 to 21:10:39 | CI for `699ad6c`: all seven jobs pass. Repository check passes with the new version check; Dhrystone in CI (clang 21.1.6) scores 0.2495 DMIPS/MHz and 37.1/100 | CI |
 
 ### Commits
 
@@ -158,6 +161,32 @@ Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
 ```
 
 This section first listed the message as proposed, before the commit existed; it was updated with the hash once committed.
+
+#### `699ad6c`, 2026-11-20 21:09:20, earl cameron
+
+```text
+Add rubric scorecards, devlog rule and architecture versioning
+
+Every Dhrystone run now computes a review-rubric scorecard from
+cpu/rubric-evidence.json plus the run's own measurements and appends it,
+with the result and its trend, to the run log in DEVLOG.md. The first
+self-assessment scores 37.1 of 100 with no claims granted.
+
+AGENTS.md now requires every experiment to be documented in DEVLOG.md.
+
+The CPU architecture adopts semantic versioning: the existing C0 core is
+version 0.1.0, with bump rules, a release process using cpu-vX.Y.Z tags,
+a version history, a repository consistency check, and the version
+recorded in benchmark results and scorecards.
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+```
+
+#### Tag `cpu-v0.1.0` on `0483d99`
+
+```text
+CPU architecture 0.1.0: C0 integer foundation (multicycle RV64I and FENCE.I core, terminal laboratory trap record, unified 64-bit memory bus, retirement trace, synchronous RAM wrapper). See cpu/architecture.md section 9.
+```
 
 ### Details
 
@@ -243,9 +272,8 @@ Full write-up: [cpu/dhrystone.md](cpu/dhrystone.md). Record: [cpu/dhrystone-resu
 
 #### Open at the end of the day
 
-- Commit the AGENTS.md devlog rule, the rubric scorer and this log update.
+- Commit this log update.
 - Declare a performance target for the scope label (HG1).
-- Tag `cpu-v0.1.0` on `0483d99` and push the tag.
 - Decide whether to commit or discard the two regenerated visualizer records.
 - Merge or close Dependabot PRs 1 and 2.
 - Next benchmark: CoreMark. Next correctness step: an external model (Spike or Sail) in the regression.

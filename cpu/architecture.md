@@ -191,4 +191,4 @@ Once Zicsr arrives in C1, consider reporting the version in the implementation-d
 
 | Version | Date | Commit | Summary | Breaking | RTL hashes: core / RAM wrapper |
 |---|---|---|---|---|---|
-| 0.1.0 | Designed 2026-10-23; first committed 2026-11-20 | `0483d99` | C0 integer foundation: multicycle RV64I and FENCE.I core, terminal laboratory trap record, unified 64-bit memory bus, retirement trace, 16 KiB synchronous RAM wrapper. Called "revision 0" before versioning began. | Initial version | `831101d3f376` / `a38d2ca4a051` |
+| 0.1.0 | Designed 2026-10-23; first committed 2026-11-20 | `0483d99`, tag `cpu-v0.1.0` | C0 integer foundation: multicycle RV64I and FENCE.I core, terminal laboratory trap record, unified 64-bit memory bus, retirement trace, 16 KiB synchronous RAM wrapper. Called "revision 0" before versioning began. | Initial version | `831101d3f376` / `a38d2ca4a051` |
