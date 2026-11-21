@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Original CPU foundation, wide out-of-order implementation (architecture 0.14.5).
+// Original CPU foundation, wide out-of-order implementation (architecture 0.14.6).
 // RV64IM + B execution, serialized FENCE.I, terminal EEI. Same module name and
 // contract as rv64_core.sv and rv64_pipe.sv, plus a wider retirement trace (rt_*);
 // build with one of the three files. Architecture version: cpu/VERSION,
@@ -82,7 +82,7 @@ module rv64_core #(
     // Wide out-of-order core (0.10.0), first configured after measurements of the Apple M5
     // performance core (useless-husband/m5-uarch); since 0.12.0 16 instructions per clock
     // through fetch, rename and retirement (wider than the M5's measured 10 per clock), a
-    // 256-entry reorder buffer, 288 physical registers, a 128-entry issue queue, 8 integer ALUs of which 3 also execute branches, jumps,
+    // 256-entry reorder buffer, 288 physical registers, a 128-entry issue queue, 8 integer ALUs of which 4 (3 until 0.14.x) also execute branches, jumps,
     // system instructions and multiply/divide, 4 load ports and 3 store-address ports (3 and 2 until 0.13.0).
     // Multiply takes 3 clocks (pipelined), divide 7 (one unit). Loads that cannot finish
     // (cache miss, store data not ready, partial overlap with an older store) stay in
@@ -116,13 +116,13 @@ module rv64_core #(
     localparam integer Q_N = 64;
     localparam integer Q_B = 6;
     localparam integer N_ALU = 8;        // integer ports
-    localparam integer N_BR = 3;         // of which these also take branches, system and M
+    localparam integer N_BR = 4;         // of which these also take branches, system and M (3 until 0.14.x)
     localparam integer N_LD = 4;         // load ports (Zen 5: 4 loads per clock)
     localparam integer N_ST = 3;         // store-address ports (Lion Cove: 3)
     localparam integer NP = N_ALU + N_LD + N_ST;
     localparam integer MUL_LAT = 3;
     localparam integer DIV_LAT = 7;
-    localparam integer MQ_N = 8;         // multiplies in flight
+    localparam integer MQ_N = N_BR * MUL_LAT;   // multiplies in flight (8 until 0.14.x; must be >= N_BR * (MUL_LAT - 1))
     localparam integer BTB_BITS = 10;    // 1024 entries (256 until 0.11.1)
     localparam integer BTB_TAG = 10;
     localparam integer BTB_ENTRIES = 1 << BTB_BITS;
@@ -909,7 +909,12 @@ module rv64_core #(
                               !(iq_mdu[k] && iq_insn[k][14] && (dv_busy || dv_pend || divtaken))));
                     end else if (p < N_ALU + N_LD) ok = ok && iq_cls[k] == C_LD && (!ou_valid || a_age < ou_age || !mdp_wait[iq_pc[k][9:2]]) && (!fo_valid || a_age < fo_age);
                     else ok = ok && iq_cls[k] == C_ST;
-                    if (ok && (!bestv || a_age < best_age)) begin bestv = 1; best = k[IQ_B-1:0]; best_age = a_age; end
+                    // Branch-capable ports: a full-class instruction (branch, jump, system, M)
+                    // before any plain ALU one, oldest first within each.
+                    if (ok && (!bestv || (p < N_BR && iq_cls[k] == C_FULL && iq_cls[best] != C_FULL) ||
+                               (a_age < best_age && !(p < N_BR && iq_cls[k] != C_FULL && iq_cls[best] == C_FULL)))) begin
+                        bestv = 1; best = k[IQ_B-1:0]; best_age = a_age;
+                    end
                 end
                 if (bestv) begin
                     pick_v[p] = 1; pick[p] = best; chosen[best] = 1;
@@ -1089,6 +1094,7 @@ module rv64_core #(
                                     mq_pdst[k] = ex_pdst[p]; mq_writes[k] = ex_writes[p];
                                     mq_val[k] = mul_value(f3_, op == 7'h3b, opa(p), opb(p));
                                 end
+                                if (!placed) $fatal(1, "multiply pipeline full (MQ_N too small for N_BR)");
                             end else begin
                                 dv_busy = 1; dv_cnt = DIV_LAT - 2; dv_rob = x_rob; dv_pdst = ex_pdst[p]; dv_writes = ex_writes[p];
                                 dv_val = div_value(f3_, op == 7'h3b, opa(p), opb(p));

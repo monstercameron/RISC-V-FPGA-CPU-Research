@@ -635,6 +635,21 @@ def cases():
          li(14, 2), r_type(0x33, 15, 0, 14, 14), branch(0, 15, 14, 8), i_type(0x13, 23, 0, 23, 1),
          0x100073]
     yield 'rename_branches', p, 0, MASK
+    # More branch-capable ports (N_BR): six independent conditional branches per iteration
+    # on bits of a counter, so several resolve in one clock and some mispredict together
+    # (the oldest must win), a branch-class multiply among them, and an indirect jump.
+    body = [i_type(0x13, 20, 0, 20, 1)]                                   # x20 = iteration
+    for n in range(6):
+        body += [i_type(0x13, 21 + n % 3, 7, 20, 1 << n),                 # andi x21.., x20, bit n
+                 branch(0, 21 + n % 3, 0, 8), i_type(0x13, 13 + n, 0, 13 + n, 1)]   # count when set
+    body += [r_type(0x33, 24, 0, 20, 20, 1), add_(25, 25, 24),           # mul on a full port
+             (0 << 12) | (26 << 7) | 0x17,                                 # auipc x26, 0
+             i_type(0x67, 0, 0, 26, 8),                                    # jalr x0, 8(x26): skip one
+             i_type(0x13, 27, 0, 27, 1),                                   # skipped
+             i_type(0x13, 28, 0, 20, -40)]
+    body.append(branch(1, 28, 0, -4 * len(body)))                         # 40 iterations
+    p = prefix() + [i_type(0x13, 20, 0, 0, 0)] + body + [add_(29, 13, 14), add_(29, 29, 18), 0x100073]
+    yield 'branch_ports_many', p, 0, MASK
 
 def command(args):
     result = subprocess.run([str(x) for x in args], capture_output=True, text=True, timeout=60)
