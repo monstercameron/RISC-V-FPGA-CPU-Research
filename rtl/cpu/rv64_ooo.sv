@@ -65,8 +65,10 @@ module rv64_core #(
     //   load/store port: select, address and data-cache read, then tag check, store
     //   forwarding or a bus access;
     //   retire: up to two per clock from the ROB head; stores write the bus here.
-    // A load issues once every older store has its address and data; it takes the
-    // data of the youngest older store to its beat when that store covers its bytes,
+    // A store issues once its address is known and reads its data register when it
+    // retires (0.9.3). A load issues once every older store has its address; it takes
+    // the data of the youngest older store to its beat when that store covers its bytes
+    // (waiting until that data is written),
     // and otherwise (partial overlap) waits for those stores to retire and reads the
     // bus. A mispredicted branch redirects fetch when it executes; rename waits until
     // it retires, then the younger instructions are discarded and the map restored.
@@ -83,6 +85,7 @@ module rv64_core #(
     end endgenerate
     localparam integer ROB_N = 32;
     localparam integer IQ_N = 8;
+    localparam integer IQ_B = $clog2(IQ_N);
     integer i, k;
     // Registers used before their main section.
     reg div_early_r;
@@ -507,6 +510,20 @@ module rv64_core #(
     reg [63:0] dc_data [0:DCACHE_BEATS-1];
     reg [DC_TAG-1:0] dq_tag, ds_tag;
     reg [63:0] dq_data;
+    // A retired store's cache update, applied one clock after it retires (0.9.3): the
+    // bus write happens at retirement; the tags for the hit checks are read then.
+    reg p_valid;
+    reg [63:0] p_addr, p_wdata;
+    reg [7:0] p_wstrb;
+    wire [DC_INDEX-1:0] p_idx = p_addr[3 +: DC_INDEX];
+    wire [IC_INDEX-1:0] p_ic_idx = p_addr[3 +: IC_INDEX];
+    function automatic [63:0] merge_bytes(input [63:0] line, input [63:0] data, input [7:0] strb);
+        integer n;
+        begin
+            merge_bytes = line;
+            for (n = 0; n < 8; n = n + 1) if (strb[n]) merge_bytes[8*n +: 8] = data[8*n +: 8];
+        end
+    endfunction
 
     // ---------------- F stage -----------------------------------------------------
     reg f_valid;
@@ -515,7 +532,7 @@ module rv64_core #(
     reg [63:0] fetch_addr;
     wire [IC_INDEX-1:0] f_idx = f_pc[3 +: IC_INDEX];
     wire f_misaligned = f_pc[1:0] != 0;
-    wire f_hit = ic_valid[f_idx] && ic_tq == f_pc[63 -: IC_TAG];
+    wire f_hit = ic_valid[f_idx] && ic_tq == f_pc[63 -: IC_TAG] && !(p_valid && p_ic_idx == f_idx);
     localparam integer BTB_BITS = 8;
     localparam integer BTB_TAG = 10;
     localparam integer BTB_ENTRIES = 1 << BTB_BITS;
@@ -619,7 +636,8 @@ module rv64_core #(
     reg [63:0] rob_cause [0:ROB_N-1];
     reg [63:0] rob_tval [0:ROB_N-1];
     reg [63:0] rob_addr [0:ROB_N-1];   // store address
-    reg [63:0] rob_wdata [0:ROB_N-1];  // store data, shifted to its lanes
+    reg [5:0] rob_sps2 [0:ROB_N-1];    // a store's data register, read when it retires (0.9.3)
+    reg [63:0] prf_written;            // the physical register holds its value
     reg [7:0] rob_wstrb [0:ROB_N-1];
     reg [4:0] rob_head, rob_tail;
     reg [5:0] rob_count;
@@ -725,11 +743,8 @@ module rv64_core #(
     // Bus: the retiring store first, then a load miss, then a fetch; a presented
     // request is held until it completes.
     wire l2_miss = l2_valid && l2_load && !l2_exc && !fwd_hit && !l2_hit;
-    // The retiring store's cache tags are read one clock ahead (ds_tag, ic_sq); ds_ok
-    // says that read was for this head after its address was known.
-    reg ds_ok;
     wire h_exc = h_valid && rob_done[h] && rob_exc[h];
-    wire st_req = h_store && ds_ok && !fetch_active && !ld_active && !halted;
+    wire st_req = h_store && !fetch_active && !ld_active && !halted;
     wire ld_req = !fetch_active && !halted && (ld_active || (l2_miss && !h_store && !h_exc));
     wire f_want = f_valid && started && !halted && !f_misaligned && !f_hit;
     wire fetch_req = !halted && (fetch_active || (f_want && !h_store && !l2_miss && !h_exc));
@@ -738,7 +753,8 @@ module rv64_core #(
     assign mem_valid = !reset && (fetch_req || data_req);
     assign mem_instr = fetch_req;
     assign mem_addr = fetch_req ? fetch_beat : ld_req ? {l2_addr[63:3],3'b000} : {h_addr[63:3],3'b000};
-    assign mem_wdata = (fetch_req || ld_req) ? 64'b0 : rob_wdata[h];
+    wire [63:0] h_wdata = prf[rob_sps2[h]] << {h_addr[2:0],3'b000};
+    assign mem_wdata = (fetch_req || ld_req) ? 64'b0 : h_wdata;
     assign mem_wstrb = (fetch_req || ld_req) ? 8'b0 : rob_wstrb[h];
     wire fetch_done = fetch_req && mem_ready;
     wire fill = fetch_done && !mem_error;
@@ -771,9 +787,13 @@ module rv64_core #(
     wire f_two = !f_pc[2] && !f_fault && !f_btaken && !f_call && !f_return;
 
     // L2 completes: a hit now, forwarding, or a miss when its bus read returns.
-    wire [63:0] l2_beat = fwd_full ? rob_wdata[fwd_idx] : l2_hit ? dq_data : mem_rdata;
+    wire [63:0] l2_line = (p_valid && p_addr[63:3] == l2_addr[63:3]) ? merge_bytes(dq_data, p_wdata, p_wstrb) : dq_data;
+    // Forwarding reads the store's data register; it waits until that is written.
+    wire fwd_ok = fwd_full && prf_written[rob_sps2[fwd_idx]];
+    wire [63:0] fwd_data = prf[rob_sps2[fwd_idx]] << {rob_addr[fwd_idx][2:0],3'b000};
+    wire [63:0] l2_beat = fwd_ok ? fwd_data : l2_hit ? l2_line : mem_rdata;
     wire [63:0] l2_value = load_align(l2_beat, l2_addr[2:0], l2_f3);
-    wire l2_done = l2_valid && (l2_exc || fwd_full || (!fwd_hit && l2_hit) || ld_done);
+    wire l2_done = l2_valid && (l2_exc || fwd_ok || (!fwd_hit && l2_hit) || ld_done);
     wire l2_fault = ld_done && mem_error;
 
     // Retirement: the head, and the next entry when it needs nothing special.
@@ -804,28 +824,28 @@ module rv64_core #(
     // ready (a load also once every older store is known), so a load waiting for older
     // stores to retire never blocks an older memory instruction.
     reg sel_valid, sel1_valid, msel_valid, mem_any;
-    reg [2:0] sel, sel1, msel;
+    reg [IQ_B-1:0] sel, sel1, msel;
     reg [4:0] mem_age;
     always @* begin
         sel1_valid = 0; sel1 = 0;
         for (k = IQ_N-1; k >= 0; k = k - 1)
             if (iq_valid[k] && !iq_mem[k] && iq_simple[k] && iq_r1[k] && iq_r2[k]) begin
-                sel1_valid = 1; sel1 = k[2:0];
+                sel1_valid = 1; sel1 = k[IQ_B-1:0];
             end
         sel_valid = 0; sel = 0;
         for (k = IQ_N-1; k >= 0; k = k - 1)
-            if (iq_valid[k] && !iq_mem[k] && iq_r1[k] && iq_r2[k] && !(sel1_valid && sel1 == k[2:0]) &&
+            if (iq_valid[k] && !iq_mem[k] && iq_r1[k] && iq_r2[k] && !(sel1_valid && sel1 == k[IQ_B-1:0]) &&
                 !(iq_mdu[k] && (md_busy || e_mdu_pending))) begin
-                sel_valid = 1; sel = k[2:0];
+                sel_valid = 1; sel = k[IQ_B-1:0];
             end
         // Oldest memory instruction in the issue queue.
         mem_any = 0; msel = 0; mem_age = 0;
         for (k = 0; k < IQ_N; k = k + 1)
             if (iq_valid[k] && iq_mem[k] && (!mem_any || iq_rob[k] - rob_head < mem_age)) begin
-                mem_any = 1; msel = k[2:0]; mem_age = iq_rob[k] - rob_head;
+                mem_any = 1; msel = k[IQ_B-1:0]; mem_age = iq_rob[k] - rob_head;
             end
         msel_valid = mem_any && iq_r1[msel] &&
-                     (iq_load[msel] ? (!ou_valid || mem_age < ou_age) : iq_r2[msel]);
+                     (!iq_load[msel] || !ou_valid || mem_age < ou_age);  // a store needs only its address
     end
     // L1 moves on when it holds a store (which completes there) or L2 is free.
     wire l1_advance = l1_valid && (!l1_load || !l2_valid || l2_done);
@@ -865,12 +885,12 @@ module rv64_core #(
             fp1 = fp0; fp0 = k[5:0]; free_n = free_n == 2'd2 ? 2'd2 : free_n + 2'd1;
         end
     end
-    reg [2:0] is0, is1;      // lowest and second-lowest free issue-queue slots
+    reg [IQ_B-1:0] is0, is1;  // lowest and second-lowest free issue-queue slots
     reg [1:0] iq_n;
     always @* begin
         iq_n = 0; is0 = 0; is1 = 0;
         for (k = IQ_N-1; k >= 0; k = k - 1) if (!iq_valid[k]) begin
-            is1 = is0; is0 = k[2:0]; iq_n = iq_n == 2'd2 ? 2'd2 : iq_n + 2'd1;
+            is1 = is0; is0 = k[IQ_B-1:0]; iq_n = iq_n == 2'd2 ? 2'd2 : iq_n + 2'd1;
         end
     end
     wire [5:0] pdst0 = fp0;
@@ -909,21 +929,14 @@ module rv64_core #(
         else fetch_next = f_pc;
     end
     wire [IC_INDEX-1:0] next_idx = fetch_next[3 +: IC_INDEX];
-    // The ROB head after this clock, so the store-check tag copies are read ahead.
     wire [4:0] h_next = rob_head + {4'b0,retire} + {4'b0,retire1};
-    wire [63:0] hn_addr = rob_addr[h_next];
-    wire [DC_INDEX-1:0] hn_dc_idx = hn_addr[3 +: DC_INDEX];
-    wire [IC_INDEX-1:0] hn_ic_idx = hn_addr[3 +: IC_INDEX];
-    // Data-cache writes: a load fill (L2 miss returning) or a retiring store that hits.
-    wire st_hit = dc_valid[h_dc_idx] && ds_tag == h_addr[63 -: DC_TAG];
+    // Data-cache writes: a load fill (L2 miss returning), or the pending store update
+    // when its line is present.
     wire dc_fill = ld_done && !mem_error;
-    wire dc_st = retire && rob_store[h] && st_hit;
-    // The line a retiring store leaves, for a load reading the same line this clock.
-    reg [63:0] st_line;
-    always @* begin
-        st_line = dc_data[h_dc_idx];
-        for (k = 0; k < 8; k = k + 1) if (rob_wstrb[h][k]) st_line[8*k +: 8] = rob_wdata[h][8*k +: 8];
-    end
+    wire p_hit = p_valid && dc_valid[p_idx] && ds_tag == p_addr[63 -: DC_TAG];
+    wire dc_st = p_hit && !(dc_fill && l2_idx == p_idx);
+    // The line the pending update leaves, for a load reading it this clock.
+    wire [63:0] st_line = merge_bytes(dc_data[p_idx], p_wdata, p_wstrb);
     // Free list after discarding younger instructions: every register not mapped by
     // the retirement map (including the instruction retiring this clock).
     reg [63:0] flush_free;
@@ -941,26 +954,29 @@ module rv64_core #(
         // Cache read ports, with a write of the same edge passed through.
         ic_q <= (fill && fill_idx == next_idx) ? mem_rdata : ic_data[next_idx];
         ic_tq <= (fill && fill_idx == next_idx) ? fetch_beat[63 -: IC_TAG] : ic_tag[next_idx];
-        ic_sq <= (fill && fill_idx == hn_ic_idx) ? fetch_beat[63 -: IC_TAG] : ic_tag2[hn_ic_idx];
+        ic_sq <= (fill && fill_idx == h_ic_idx) ? fetch_beat[63 -: IC_TAG] : ic_tag2[h_ic_idx];
         if (fill) begin
             ic_tag[fill_idx] <= fetch_beat[63 -: IC_TAG];
             ic_tag2[fill_idx] <= fetch_beat[63 -: IC_TAG];
             ic_data[fill_idx] <= mem_rdata;
         end
         if (l1_valid && l1_load && l1_advance) begin
-            dq_data <= (dc_fill && l2_idx == l1_idx) ? mem_rdata : (dc_st && h_dc_idx == l1_idx) ? st_line : dc_data[l1_idx];
+            dq_data <= (dc_fill && l2_idx == l1_idx) ? mem_rdata : (dc_st && p_idx == l1_idx) ? st_line : dc_data[l1_idx];
             dq_tag <= (dc_fill && l2_idx == l1_idx) ? l2_addr[63 -: DC_TAG] : dc_tag[l1_idx];
         end
-        ds_tag <= (dc_fill && l2_idx == hn_dc_idx) ? l2_addr[63 -: DC_TAG] : dc_tag2[hn_dc_idx];
-        ds_ok <= !reset && rob_live[h_next] && rob_done[h_next] && !(flush_back) &&
-                 !(l1_advance && !l1_load && l1_rob == h_next);
+        // Tags at the head's address, read every clock: when a store retires, they are
+        // its pending update's hit checks in the next clock.
+        ds_tag <= (dc_fill && l2_idx == h_dc_idx) ? l2_addr[63 -: DC_TAG] : dc_tag2[h_dc_idx];
         if (dc_fill) begin
             dc_tag[l2_idx] <= l2_addr[63 -: DC_TAG];
             dc_tag2[l2_idx] <= l2_addr[63 -: DC_TAG];
             dc_data[l2_idx] <= mem_rdata;
-        end else if (dc_st) begin
+        end
+        // The pending store update writes in the same clock as a fill to another line
+        // (dc_st excludes a fill to its own line, which already holds the store's data).
+        if (dc_st) begin
             for (k = 0; k < 8; k = k + 1)
-                if (rob_wstrb[h][k]) dc_data[h_dc_idx][8*k +: 8] <= rob_wdata[h][8*k +: 8];
+                if (p_wstrb[k]) dc_data[p_idx][8*k +: 8] <= p_wdata[8*k +: 8];
         end
     end
 
@@ -976,7 +992,7 @@ module rv64_core #(
             btb_valid<=0; btb_ret<=0; ras_sp<=0; ras[0]<=0; ras[1]<=0; ras[2]<=0; ras[3]<=0;
             ic_valid<=0; dc_valid<=0;
             for (i = 0; i < 64; i = i + 1) prf[i]<=0;
-            prf_ready<={64{1'b1}};
+            prf_ready<={64{1'b1}}; prf_written<={64{1'b1}};
             for (i = 0; i < 32; i = i + 1) begin rat[i]<=i[5:0]; rrat[i]<=i[5:0]; end
             free_mask<={{32{1'b1}},32'b0};
             rob_head<=0; rob_tail<=0; rob_count<=0; rob_live<=0; rob_done<=0; rob_mp<=0;
@@ -993,6 +1009,7 @@ module rv64_core #(
             l1_valid<=0; l1_load<=0; l1_insn<=0; l1_ps1<=0; l1_ps2<=0; l1_pdst<=0; l1_rob<=0; l1_writes<=0;
             l2_valid<=0; l2_load<=0; l2_exc<=0; l2_dead<=0; l2_pdst<=0; l2_rob<=0; l2_writes<=0;
             l2_addr<=0; l2_cause<=0; l2_tval<=0; l2_f3<=0; l2_bytes<=0; l2_force<=0;
+            p_valid<=0; p_addr<=0; p_wdata<=0; p_wstrb<=0;
             trap_valid<=0; trap_pc<=0; trap_cause<=0; trap_tval<=0;
             retire_valid<=0; retire_pc<=0; retire_insn<=0;
             retire_rd<=0; retire_data<=0; retire_next_pc<=0;
@@ -1009,6 +1026,10 @@ module rv64_core #(
             end
             if (ld_req) ld_active<=!mem_ready;
             if (fill) ic_valid[fill_idx]<=1'b1;
+            // The pending store update: invalidate an instruction-cache line holding its beat.
+            if (p_valid && ic_valid[p_ic_idx] && ic_sq == p_addr[63 -: IC_TAG]) ic_valid[p_ic_idx]<=1'b0;
+            p_valid<=!h_trap && retire && rob_store[h];
+            if (retire && rob_store[h]) begin p_addr<=h_addr; p_wdata<=h_wdata; p_wstrb<=rob_wstrb[h]; end
 
             if (h_trap) begin
                 trap_valid<=1; trap_pc<=rob_pc[h];
@@ -1026,7 +1047,6 @@ module rv64_core #(
                         rrat[rob_rd[h]]<=rob_pdst[h];
                         free_mask[rob_opdst[h]]<=1'b1;
                     end
-                    if (rob_store[h] && ic_valid[h_ic_idx] && ic_sq == h_addr[63 -: IC_TAG]) ic_valid[h_ic_idx]<=1'b0;
                     if (rob_fencei[h]) ic_valid<=0;
                     rob_live[h]<=1'b0; rob_done[h]<=1'b0;
                     if (mp_pending && mp_rob == h) mp_pending<=0;
@@ -1086,7 +1106,7 @@ module rv64_core #(
                         end
                         rob_next[e_rob]<=next_pc;
                     end else begin
-                        if (e_writes) prf[e_pdst]<=result;
+                        if (e_writes) begin prf[e_pdst]<=result; prf_written[e_pdst]<=1'b1; end
                         rob_value[e_rob]<=result; rob_done[e_rob]<=1'b1;
                         rob_exc[e_rob]<=exception; rob_cause[e_rob]<=exception_cause; rob_tval[e_rob]<=exception_tval;
                         rob_next[e_rob]<=next_pc;
@@ -1100,7 +1120,7 @@ module rv64_core #(
                 end
                 // ---------------- execute: second integer port ----------------
                 if (x1_valid && !flush_back) begin
-                    if (x1_writes) prf[x1_pdst]<=x1_result;
+                    if (x1_writes) begin prf[x1_pdst]<=x1_result; prf_written[x1_pdst]<=1'b1; end
                     rob_value[x1_rob]<=x1_result; rob_done[x1_rob]<=1'b1; rob_exc[x1_rob]<=1'b0;
                     rob_next[x1_rob]<=x1_pc + 64'd4;
                     rob_mp[x1_rob]<=1'b0; rob_ctl[x1_rob]<=1'b0; rob_fencei[x1_rob]<=1'b0;
@@ -1109,7 +1129,7 @@ module rv64_core #(
                 if (md_busy && !flush_back) begin
                     if (md_done) begin
                         md_busy<=0;
-                        if (md_writes) begin prf[md_pdst]<=md_value; prf_ready[md_pdst]<=1'b1; end
+                        if (md_writes) begin prf[md_pdst]<=md_value; prf_ready[md_pdst]<=1'b1; prf_written[md_pdst]<=1'b1; end
                         rob_value[md_rob]<=md_value; rob_done[md_rob]<=1'b1; rob_exc[md_rob]<=1'b0;
                         rob_mp[md_rob]<=1'b0; rob_ctl[md_rob]<=1'b0; rob_fencei[md_rob]<=1'b0;
                     end else if (!md_mul) begin
@@ -1140,12 +1160,14 @@ module rv64_core #(
                     l2_addr<=l1_ea; l2_f3<=l1_f3; l2_pdst<=l1_pdst; l2_rob<=l1_rob; l2_writes<=l1_writes;
                     l2_bytes<=l1_bytes << l1_ea[2:0]; l2_force<=0;
                 end else if (l2_done) begin l2_valid<=0; l2_dead<=0; end
-                else if (l2_valid && fwd_hit && !fwd_full) l2_force<=1;  // read the bus once they retire
+                // A load that waits (for older stores to retire, or for a store's data)
+                // reads the bus afterwards: the line it read may have changed meanwhile.
+                else if (l2_valid) l2_force<=1;
                 if (l1_advance && !flush_back && !l1_load) begin
                     // A store only records its address and data; it writes at retirement.
                     rob_done[l1_rob]<=1'b1; rob_exc[l1_rob]<=l1_illegal || l1_misaligned;
                     rob_cause[l1_rob]<=l1_illegal ? 64'd2 : 64'd6; rob_tval[l1_rob]<=l1_illegal ? {32'b0,l1_insn} : l1_ea;
-                    rob_addr[l1_rob]<=l1_ea; rob_wdata[l1_rob]<=l1_b << {l1_ea[2:0],3'b000};
+                    rob_addr[l1_rob]<=l1_ea; rob_sps2[l1_rob]<=l1_ps2;
                     rob_wstrb[l1_rob]<=l1_bytes << l1_ea[2:0];
                     rob_mp[l1_rob]<=1'b0; rob_ctl[l1_rob]<=1'b0; rob_fencei[l1_rob]<=1'b0;
                 end
@@ -1159,7 +1181,7 @@ module rv64_core #(
                     rob_value[l2_rob]<=l2_value;
                     rob_mp[l2_rob]<=1'b0; rob_ctl[l2_rob]<=1'b0; rob_fencei[l2_rob]<=1'b0;
                     if (l2_writes && !l2_exc && !l2_fault) begin
-                        prf[l2_pdst]<=l2_value; prf_ready[l2_pdst]<=1'b1;
+                        prf[l2_pdst]<=l2_value; prf_ready[l2_pdst]<=1'b1; prf_written[l2_pdst]<=1'b1;
                     end
                 end
                 // ---------------- wakeup of waiting issue-queue entries ----------------
@@ -1187,7 +1209,7 @@ module rv64_core #(
                     rob_mp[rob_tail]<=1'b0; rob_ctl[rob_tail]<=1'b0; rob_fencei[rob_tail]<=1'b0;
                     rob_bhit[rob_tail]<=d0_bhit; rob_bctr[rob_tail]<=d0_bctr;
                     if (d0_writes) begin
-                        rat[d0_rd]<=pdst0; free_mask[pdst0]<=1'b0; prf_ready[pdst0]<=1'b0;
+                        rat[d0_rd]<=pdst0; free_mask[pdst0]<=1'b0; prf_ready[pdst0]<=1'b0; prf_written[pdst0]<=1'b0;
                     end
                 end
                 if (go1) begin
@@ -1209,7 +1231,7 @@ module rv64_core #(
                     rob_mp[rob_tail1]<=1'b0; rob_ctl[rob_tail1]<=1'b0; rob_fencei[rob_tail1]<=1'b0;
                     rob_bhit[rob_tail1]<=d1_bhit; rob_bctr[rob_tail1]<=d1_bctr;
                     if (d1_writes) begin
-                        rat[d1_rd]<=pdst1; free_mask[pdst1]<=1'b0; prf_ready[pdst1]<=1'b0;
+                        rat[d1_rd]<=pdst1; free_mask[pdst1]<=1'b0; prf_ready[pdst1]<=1'b0; prf_written[pdst1]<=1'b0;
                     end
                 end
                 rob_tail<=rob_tail + {4'b0,go0} + {4'b0,go1};
@@ -1223,7 +1245,7 @@ module rv64_core #(
                     rob_live<=0; rob_done<=0; rob_count<=0;
                     rob_head<=rob_head+5'd1; rob_tail<=rob_head+5'd1;
                     mp_pending<=0;
-                    prf_ready<={64{1'b1}};
+                    prf_ready<={64{1'b1}}; prf_written<={64{1'b1}};
                     for (i = 0; i < 32; i = i + 1) rat[i]<=(retire && rob_writes[h] && rob_rd[h] == i[4:0]) ? rob_pdst[h] : rrat[i];
                     free_mask<=flush_free;
                 end
