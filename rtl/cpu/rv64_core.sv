@@ -134,8 +134,18 @@ module rv64_core #(
     // JALR with an aligned target. Since 0.5.4 insn2 may be an aligned store when insn
     // does not use the bus, and an integer result of insn (not a load or multiply)
     // is forwarded to insn2's operands in the same clock.
-    reg [31:0] insn2;
+    reg [31:0] insn2_next;  // the instruction at pc+4, captured with insn
     reg insn2_valid;
+    // Branch folding (0.5.5): when insn is a jump or a taken branch, the second slot
+    // holds the instruction at its target, read from the instruction cache in the
+    // same clock; otherwise it holds the instruction at pc+4.
+    wire control0 = (op == 7'h6f || (op == 7'h67 && f3 == 0) || (op == 7'h63 && branch_taken)) && !exception;
+    wire [IC_INDEX-1:0] fold_index = next_pc[3 +: IC_INDEX];
+    wire fold_hit = ic_valid[fold_index] && ic_tag[fold_index] == next_pc[63 -: IC_TAG];
+    wire [31:0] insn2 = control0 ? (next_pc[2] ? ic_data[fold_index][63:32] : ic_data[fold_index][31:0])
+                                 : insn2_next;
+    wire slot2_valid = control0 ? fold_hit : insn2_valid;
+    wire [63:0] fetch_next = pc + 64'd4;  // the instruction after the one being fetched
     wire [6:0] op2 = insn2[6:0];
     wire [2:0] f3_2 = insn2[14:12];
     wire [6:0] f7_2 = insn2[31:25];
@@ -144,10 +154,11 @@ module rv64_core #(
     wire [4:0] rs2_2 = insn2[24:20];
     // insn's integer result, forwardable to insn2 (0.5.4).
     wire slot0_forward = (op == 7'h37 || op == 7'h17 || op == 7'h13 || op == 7'h1b ||
-                          ((op == 7'h33 || op == 7'h3b) && f7 != 7'h01)) && rd != 0;
+                          ((op == 7'h33 || op == 7'h3b) && f7 != 7'h01) ||
+                          op == 7'h6f || op == 7'h67) && rd != 0;  // links since 0.5.5
     wire [63:0] a2 = rs1_2 == 0 ? 64'b0 : (slot0_forward && rs1_2 == rd) ? result : regs[rs1_2];
     wire [63:0] b2 = rs2_2 == 0 ? 64'b0 : (slot0_forward && rs2_2 == rd) ? result : regs[rs2_2];
-    wire [63:0] pc2 = pc + 64'd4;
+    wire [63:0] pc2 = control0 ? next_pc : pc + 64'd4;
     wire [63:0] imm_i2 = {{52{insn2[31]}},insn2[31:20]};
     wire [63:0] imm_u2 = {{32{insn2[31]}},insn2[31:12],12'b0};
     reg simple2, uses_rs1_2, uses_rs2_2, branch2, taken2, load2, jump2, store2;
@@ -275,12 +286,12 @@ module rv64_core #(
     end
     wire slot0_writes = (load_op || write_rd) && rd != 0;
     wire [4:0] dest2 = (branch2 || store2) ? 5'b0 : rd2;
-    wire [63:0] next2 = jump2 ? jump_target2 : taken2 ? target2 : pc + 64'd8;
+    wire [63:0] next2 = jump2 ? jump_target2 : taken2 ? target2 : pc2 + 64'd4;
     // Same-register writes need no check: insn2's write lands last, as in program order.
     wire hazard2 = slot0_writes && !slot0_forward && ((uses_rs1_2 && rs1_2 == rd) || (uses_rs2_2 && rs2_2 == rd));
-    wire can_pair = insn2_valid && simple2 && !hazard2;
+    wire can_pair = slot2_valid && simple2 && !hazard2;
     wire slot0_alu = op == 7'h37 || op == 7'h17 || op == 7'h13 || op == 7'h1b ||
-                     ((op == 7'h33 || op == 7'h3b) && !is_div) || (op == 7'h63 && !branch_taken);
+                     ((op == 7'h33 || op == 7'h3b) && !is_div) || (op == 7'h63 && !branch_taken) || control0;
     wire pair_alu = can_pair && slot0_alu && !store2;
     wire pair_load = can_pair && load_hit && !store2;
     wire pair_store2 = can_pair && store2 && (slot0_alu || load_hit);
@@ -513,10 +524,10 @@ module rv64_core #(
                 insn<=successor[2] ? ic_data[successor[3 +: IC_INDEX]][63:32]
                                    : ic_data[successor[3 +: IC_INDEX]][31:0];
                 if (!successor[2]) begin
-                    insn2<=ic_data[successor[3 +: IC_INDEX]][63:32];
+                    insn2_next<=ic_data[successor[3 +: IC_INDEX]][63:32];
                     insn2_valid<=1'b1;
                 end else begin
-                    insn2<=ic_data[after_successor[3 +: IC_INDEX]][31:0];
+                    insn2_next<=ic_data[after_successor[3 +: IC_INDEX]][31:0];
                     insn2_valid<=ic_valid[after_successor[3 +: IC_INDEX]] &&
                         ic_tag[after_successor[3 +: IC_INDEX]]==after_successor[63 -: IC_TAG] &&
                         !(stored && store_addr[63:3]==after_successor[63:3]);
@@ -551,7 +562,7 @@ module rv64_core #(
             retire_rd<=0; retire_data<=0; retire_next_pc<=0;
             retire2_valid<=0; retire2_pc<=0; retire2_insn<=0;
             retire2_rd<=0; retire2_data<=0; retire2_next_pc<=0;
-            insn2<=0; insn2_valid<=0;
+            insn2_next<=0; insn2_valid<=0;
             pending_addr<=0; pending_wdata<=0; pending_wstrb<=0;
             pending_f3<=0; pending_rd<=0; pending_load<=0; pending_next_pc<=0;
             ic_valid<=0; dc_valid<=0;
@@ -568,11 +579,12 @@ module rv64_core #(
                         else begin
                             insn<=pc[2] ? mem_rdata[63:32] : mem_rdata[31:0];
                             if (!pc[2]) begin
-                                insn2<=mem_rdata[63:32]; insn2_valid<=1'b1;
-                            end else begin // next beat, if cached
-                                insn2<=ic_data[pc2[3 +: IC_INDEX]][31:0];
-                                insn2_valid<=ic_valid[pc2[3 +: IC_INDEX]] &&
-                                    ic_tag[pc2[3 +: IC_INDEX]]==pc2[63 -: IC_TAG];
+                                insn2_next<=mem_rdata[63:32]; insn2_valid<=1'b1;
+                            end else begin // next beat, if cached. Not pc2: in FETCH,
+                                // insn still holds the previous instruction (0.5.5 fix).
+                                insn2_next<=ic_data[fetch_next[3 +: IC_INDEX]][31:0];
+                                insn2_valid<=ic_valid[fetch_next[3 +: IC_INDEX]] &&
+                                    ic_tag[fetch_next[3 +: IC_INDEX]]==fetch_next[63 -: IC_TAG];
                             end
                             ic_valid[pc[3 +: IC_INDEX]]<=1'b1;
                             ic_tag[pc[3 +: IC_INDEX]]<=pc[63 -: IC_TAG];

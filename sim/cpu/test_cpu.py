@@ -157,6 +157,29 @@ def cases():
          i_type(3, 8, 3, 1, 8), 0x100073]                           # ld x8,8(x1)
     yield 'dual_issue_store_second', p, 0, MASK
 
+    # 0.5.5 branch folding: on the second pass the targets are cached, so the jump
+    # pairs with a target that reads its link (forwarded), and the taken backward
+    # branch pairs with the jump at its target.
+    p = [i_type(0x13, 10, 0, 0, 2), jal(1, 12),                    # 0: x10 = 2; 4: jal x1,+12 -> 16
+         0xffffffff, 0xffffffff,                                  # 8, 12 skipped
+         i_type(0x13, 2, 0, 1, 0), i_type(0x13, 10, 0, 10, -1),     # 16: x2 = x1; 20: x10 -= 1
+         branch(1, 10, 0, -20), 0x100073]                          # 24: bne x10,x0 -> 4; 28: ebreak
+    yield 'dual_issue_fold', p, 0, MASK
+
+    # Regression for a 0.5.5 bug found by the visualizer: while 0x2c is fetched after
+    # the jump at 0x40, that stale jump's target (0x2c - 0x14 = 0x18) is cached; the
+    # instruction captured for the second slot must be the one at 0x30, not 0x18.
+    p = [0xffffffff] * 14
+    p[0x00 // 4] = jal(0, 0x18)
+    p[0x18 // 4] = i_type(0x13, 5, 0, 0, 7)
+    p[0x1c // 4] = jal(0, 0x24)
+    p[0x2c // 4] = i_type(0x13, 6, 0, 0, 1)
+    p[0x30 // 4] = i_type(0x13, 7, 0, 0, 2)
+    p[0x34 // 4] = 0x100073
+    p += [0xffffffff, jal(0, -0x14)]                              # 0x38; 0x40 after padding
+    p.insert(14, 0xffffffff)
+    yield 'fetch_after_stale_jump', p, 0, MASK
+
     # Overwrite an initially illegal instruction, fence, then fetch the new word.
     p = [(0x02a01 << 12) | (5 << 7) | 0x37,
          i_type(0x13, 5, 0, 5, -1517), store(2, 0, 5, 512),

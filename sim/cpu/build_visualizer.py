@@ -153,7 +153,11 @@ def main():
             actual_trace.append(f'T {pc:016x} {cause:016x} {tval:016x}')
         frames.append([state,pc,flags,addr,value_id(wd),value_id(rdata),strobe,after,after_pc,
                        value_id(a),value_id(b),value_id(result),value_id(ea),retirement,retirement2])
-    if actual_trace!=expected_trace: raise AssertionError('Captured events differ from sequential ISA reference')
+    if actual_trace!=expected_trace:
+        index=next((i for i,(a,e) in enumerate(zip(actual_trace,expected_trace)) if a!=e),min(len(actual_trace),len(expected_trace)))
+        raise AssertionError('Captured events differ from sequential ISA reference at event '
+                             f'{index}: captured {actual_trace[max(0,index-4):index+3]} '
+                             f'expected {expected_trace[max(0,index-4):index+3]}')
     observed=[int.from_bytes(memory[0x3000+i*8:0x3008+i*8],'little') for i in range(len(expected))]
     if observed!=expected or registers[10]!=0 or not frames[-1][2]&32:
         raise AssertionError('C output or completion did not pass')
