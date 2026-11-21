@@ -138,6 +138,7 @@ No RISC-V matrix extension was ratified as of mid-2026. RISC-V International has
 ## Later
 
 - [ ] **C7 board bring-up**: exact part, constraints, reset synchronizer, timing closure and a programmed board running firmware. Can start on the C0 core.
-- [ ] **Remaining RVA23U64 extensions**: B, V, Zfhmin, Zfa and the rest of the architecture ledger (C2-C6).
+- [ ] **Remaining RVA23U64 extensions**: V, Zfhmin, Zfa and the rest of the architecture ledger (C2-C6).
+- [x] **B extension (Zba, Zbb, Zbs).** Architecture 0.6.0, in both issue slots; checked by directed and random tests and by building the same C with and without B (`sim/cpu/check_bitmanip.py`). Still needs an external-model comparison.
 - [ ] **Supervisor mode, Sv39 MMU and Linux boot**: a separate platform design, needed before large software runs.
 - [ ] **Large-software stress test**: V8 or a similar runtime, only after RV64GC, an MMU and Linux run on an FPGA board. It is too slow to run in RTL simulation.

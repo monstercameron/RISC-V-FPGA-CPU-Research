@@ -20,6 +20,7 @@ module tb_c_demo;
         cycles=cycles+1;
         if (retired) retirements=retirements+1;
         if (dut.retire2_valid) retirements=retirements+1; // second slot (0.5.0)
+        if (dut.retire3_valid) retirements=retirements+1; // third slot (0.7.0)
         if (cycles>2000000) $fatal(1,"C demo timeout");
         if (trapped) begin
             if (cause!==3 || tval!==0) $fatal(1,"unexpected trap");

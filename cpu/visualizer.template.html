@@ -52,7 +52,7 @@ const display=n=>hexMode?fullHex(n):signed(n).toString();
 const concise=n=>n>=-99999999n&&n<=99999999n?n.toString():('0x'+BigInt.asUintN(64,n).toString(16));
 const readWord=addr=>{let n=0n;for(let k=7;k>=0;k--)n=(n<<8n)|BigInt(memory[addr+k]);return n;};
 function baseState(){registers=Array(32).fill(0n);memory=new Uint8Array(16384);memory.set(D.initialBytes);written=new Set();retiredCount=0;}
-function applyFrame(i){const f=frames[i];if(f[2]&16){for(let lane=0;lane<8;lane++)if(f[6]&(1<<lane))memory[f[3]+lane]=Number((V[f[4]]>>BigInt(8*lane))&255n);written.add(f[3]);}if(f[13]>=0){const r=D.retirements[f[13]];if(r[1])registers[r[1]]=V[r[2]];retiredCount++;}if(f[14]>=0){const r=D.retirements[f[14]];if(r[1])registers[r[1]]=V[r[2]];retiredCount++;}}
+function applyFrame(i){const f=frames[i];if(f[2]&16){for(let lane=0;lane<8;lane++)if(f[6]&(1<<lane))memory[f[3]+lane]=Number((V[f[4]]>>BigInt(8*lane))&255n);written.add(f[3]);}if(f[13]>=0){const r=D.retirements[f[13]];if(r[1])registers[r[1]]=V[r[2]];retiredCount++;}if(f[14]>=0){const r=D.retirements[f[14]];if(r[1])registers[r[1]]=V[r[2]];retiredCount++;}if(f[15]>=0){const r=D.retirements[f[15]];if(r[1])registers[r[1]]=V[r[2]];retiredCount++;}}
 function snapshot(i){return {i,registers:registers.slice(),memory:memory.slice(),written:new Set(written),retiredCount};}
 function restore(s){registers=s.registers.slice();memory=s.memory.slice();written=new Set(s.written);retiredCount=s.retiredCount;cursor=s.i;}
 function seek(i){i=Math.max(-1,Math.min(frames.length-1,i));if(i<cursor||i-cursor>512){const slot=Math.floor((i+1)/512);restore(snapshots[slot]);}while(cursor<i)applyFrame(++cursor);render();}

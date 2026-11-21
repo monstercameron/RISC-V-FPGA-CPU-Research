@@ -10,17 +10,19 @@ module tb_core #(parameter integer MEM_BYTES=16384, parameter integer ICACHE_BEA
     wire [7:0] wstrb;
     reg ready=0,error=0;
     reg [63:0] rdata=0;
-    wire trapped,retired,retired2;
-    wire [63:0] tpc,cause,tval,rpc,rval,npc,rpc2,rval2,npc2;
-    wire [31:0] rinsn,rinsn2;
-    wire [4:0] rd,rd2;
+    wire trapped,retired,retired2,retired3;
+    wire [63:0] tpc,cause,tval,rpc,rval,npc,rpc2,rval2,npc2,rpc3,rval3,npc3;
+    wire [31:0] rinsn,rinsn2,rinsn3;
+    wire [4:0] rd,rd2,rd3;
     rv64_core #(.ICACHE_BEATS(ICACHE_BEATS),.DCACHE_BEATS(DCACHE_BEATS)) dut(.clk(clk),.reset(reset),.mem_valid(valid),.mem_instr(instr),
         .mem_addr(addr),.mem_wdata(wdata),.mem_wstrb(wstrb),.mem_ready(ready),
         .mem_rdata(rdata),.mem_error(error),.trap_valid(trapped),.trap_pc(tpc),
         .trap_cause(cause),.trap_tval(tval),.retire_valid(retired),.retire_pc(rpc),
         .retire_insn(rinsn),.retire_rd(rd),.retire_data(rval),.retire_next_pc(npc),
         .retire2_valid(retired2),.retire2_pc(rpc2),.retire2_insn(rinsn2),.retire2_rd(rd2),
-        .retire2_data(rval2),.retire2_next_pc(npc2));
+        .retire2_data(rval2),.retire2_next_pc(npc2),
+        .retire3_valid(retired3),.retire3_pc(rpc3),.retire3_insn(rinsn3),.retire3_rd(rd3),
+        .retire3_data(rval3),.retire3_next_pc(npc3));
 
     string image_path,trace_path,pending_write="";
     integer fd,i,lane,cycles=0,retire_count=0;
@@ -65,6 +67,11 @@ module tb_core #(parameter integer MEM_BYTES=16384, parameter integer ICACHE_BEA
                 if (!retired) $fatal(1,"second retirement slot without the first");
                 if (pending_write!="") begin $fdisplay(fd,"%s",pending_write); pending_write=""; end
                 $fdisplay(fd,"R %016h %08h %02h %016h %016h",rpc2,rinsn2,rd2,rval2,npc2);
+                retire_count=retire_count+1;
+            end
+            if (retired3) begin // third slot (0.7.0): after the second, never a store
+                if (!retired2) $fatal(1,"third retirement slot without the second");
+                $fdisplay(fd,"R %016h %08h %02h %016h %016h",rpc3,rinsn3,rd3,rval3,npc3);
                 retire_count=retire_count+1;
             end
             if (trapped) begin

@@ -40,7 +40,14 @@ module rv64_core #(
     output reg [31:0]  retire2_insn,
     output reg [4:0]   retire2_rd,
     output reg [63:0]  retire2_data,
-    output reg [63:0]  retire2_next_pc
+    output reg [63:0]  retire2_next_pc,
+    // Third retirement slot (0.7.0): after the second, in program order, same clock.
+    output reg         retire3_valid,
+    output reg [63:0]  retire3_pc,
+    output reg [31:0]  retire3_insn,
+    output reg [4:0]   retire3_rd,
+    output reg [63:0]  retire3_data,
+    output reg [63:0]  retire3_next_pc
 );
     localparam [2:0] FETCH=0, EXECUTE=1, MEMORY=2, HALTED=3, DIVIDE=4;
     reg [2:0] state;
@@ -399,6 +406,106 @@ module rv64_core #(
     wire pair_store = can_pair && store_op && !store2 && effective_addr[63:3] != pc2[63:3] &&
                       !(load2 && ea2[63:3] == effective_addr[63:3]);
 
+    // Third slot (0.7.0): the instruction at pc2+4, read from the instruction cache,
+    // when it is a simple integer or B operation. Its operands come from the register
+    // file or from the first slot's forwarded result, never from the second slot (so
+    // forwarding stays one ALU deep). It issues only with a pair whose second
+    // instruction is not a store and does not transfer control, and not when a
+    // first-slot store writes its beat.
+    function automatic [66:0] simple_alu(input [31:0] ins, input [63:0] x, input [63:0] y, input [63:0] pcv);
+        reg [6:0] o, g7;
+        reg [2:0] g3;
+        reg [63:0] r, im;
+        reg [31:0] w;
+        reg ok, use1, use2;
+        reg [64:0] bmv;
+        begin
+            o = ins[6:0]; g3 = ins[14:12]; g7 = ins[31:25];
+            im = {{52{ins[31]}}, ins[31:20]};
+            ok = 0; use1 = 1; use2 = 0; r = 0; w = 0;
+            case (o)
+                7'h37: begin ok = 1; use1 = 0; r = {{32{ins[31]}}, ins[31:12], 12'b0}; end
+                7'h17: begin ok = 1; use1 = 0; r = pcv + {{32{ins[31]}}, ins[31:12], 12'b0}; end
+                7'h13: begin
+                    ok = 1;
+                    case (g3)
+                        0: r = x + im;
+                        2: r = {63'b0, $signed(x) < $signed(im)};
+                        3: r = {63'b0, x < im};
+                        4: r = x ^ im;
+                        6: r = x | im;
+                        7: r = x & im;
+                        1: begin ok = ins[31:26] == 0; r = x << ins[25:20]; end
+                        5: begin
+                            ok = ins[31:26] == 0 || ins[31:26] == 6'h10;
+                            if (ins[30]) r = $signed(x) >>> ins[25:20]; else r = x >> ins[25:20];
+                        end
+                    endcase
+                end
+                7'h1b: begin
+                    case (g3)
+                        0: begin ok = 1; w = x[31:0] + im[31:0]; end
+                        1: begin ok = g7 == 0; w = x[31:0] << ins[24:20]; end
+                        5: begin
+                            ok = g7 == 0 || g7 == 7'h20;
+                            if (ins[30]) w = $signed(x[31:0]) >>> ins[24:20]; else w = x[31:0] >> ins[24:20];
+                        end
+                        default: ok = 0;
+                    endcase
+                    r = {{32{w[31]}}, w};
+                end
+                7'h33: begin
+                    use2 = 1;
+                    ok = g7 == 0 || (g7 == 7'h20 && (g3 == 0 || g3 == 5));
+                    case (g3)
+                        0: if (ins[30]) r = x - y; else r = x + y;
+                        1: r = x << y[5:0];
+                        2: r = {63'b0, $signed(x) < $signed(y)};
+                        3: r = {63'b0, x < y};
+                        4: r = x ^ y;
+                        5: if (ins[30]) r = $signed(x) >>> y[5:0]; else r = x >> y[5:0];
+                        6: r = x | y;
+                        7: r = x & y;
+                    endcase
+                end
+                7'h3b: begin
+                    use2 = 1;
+                    ok = (g7 == 0 && (g3 == 0 || g3 == 1 || g3 == 5)) || (g7 == 7'h20 && (g3 == 0 || g3 == 5));
+                    case (g3)
+                        0: if (ins[30]) w = x[31:0] - y[31:0]; else w = x[31:0] + y[31:0];
+                        1: w = x[31:0] << y[4:0];
+                        5: if (ins[30]) w = $signed(x[31:0]) >>> y[4:0]; else w = x[31:0] >> y[4:0];
+                        default: w = 0;
+                    endcase
+                    r = {{32{w[31]}}, w};
+                end
+                default: ok = 0;
+            endcase
+            bmv = bitmanip(ins, x, y);
+            if ((o == 7'h13 || o == 7'h1b || o == 7'h33 || o == 7'h3b) && bmv[64]) begin
+                ok = 1; r = bmv[63:0]; use2 = o == 7'h33 || o == 7'h3b;
+            end
+            simple_alu = {ok, use1, use2, r};
+        end
+    endfunction
+    wire [63:0] pc3 = pc2 + 64'd4;
+    wire [IC_INDEX-1:0] index3 = pc3[3 +: IC_INDEX];
+    wire hit3 = ic_valid[index3] && ic_tag[index3] == pc3[63 -: IC_TAG];
+    wire [31:0] insn3 = pc3[2] ? ic_data[index3][63:32] : ic_data[index3][31:0];
+    wire [4:0] rd3 = insn3[11:7];
+    wire [4:0] rs1_3 = insn3[19:15];
+    wire [4:0] rs2_3 = insn3[24:20];
+    wire [63:0] a3 = rs1_3 == 0 ? 64'b0 : (slot0_forward && rs1_3 == rd) ? result : regs[rs1_3];
+    wire [63:0] b3 = rs2_3 == 0 ? 64'b0 : (slot0_forward && rs2_3 == rd) ? result : regs[rs2_3];
+    wire [66:0] alu3 = simple_alu(insn3, a3, b3, pc3);
+    wire uses_rs1_3 = alu3[65], uses_rs2_3 = alu3[64];
+    wire [63:0] result3 = alu3[63:0];
+    wire reads3 = (uses_rs1_3 && rs1_3 != 0) || (uses_rs2_3 && rs2_3 != 0);
+    wire hazard3 = (dest2 != 0 && ((uses_rs1_3 && rs1_3 == dest2) || (uses_rs2_3 && rs2_3 == dest2))) ||
+                   (slot0_writes && !slot0_forward && ((uses_rs1_3 && rs1_3 == rd) || (uses_rs2_3 && rs2_3 == rd)));
+    wire issue3 = (pair_alu || pair_load || pair_store) && !store2 && !jump2 && !(branch2 && taken2) &&
+                  hit3 && alu3[66] && !hazard3 && !(store_op && effective_addr[63:3] == pc3[63:3]);
+
     // One DIVIDE step, and whether it is the last.
     wire div_take = div_rem >= div_den;
     wire [63:0] div_rem_next = div_take ? div_rem - div_den : div_rem;
@@ -603,7 +710,11 @@ module rv64_core #(
     task automatic retire(input [4:0] dest, input [63:0] data, input [63:0] successor,
                           input flush, input stored, input [63:0] store_addr, input pair);
         reg [63:0] after_successor;
+        reg triple;
         begin
+            // A third instruction issues with the pair when issue3 allows (0.7.0).
+            triple = pair && issue3;
+            if (triple) successor = pc3 + 64'd4;
             after_successor = successor + 64'd4;
             retire_valid<=1; retire_pc<=pc; retire_insn<=insn;
             retire_rd<=dest; retire_data<=dest==0 ? 64'b0 : data;
@@ -612,8 +723,14 @@ module rv64_core #(
             if (pair) begin
                 retire2_valid<=1; retire2_pc<=pc2; retire2_insn<=insn2;
                 retire2_rd<=dest2; retire2_data<=dest2==0 ? 64'b0 : result2;
-                retire2_next_pc<=successor;
+                retire2_next_pc<=triple ? pc3 : successor;
                 if (dest2!=0) regs[dest2]<=result2;
+            end
+            if (triple) begin
+                retire3_valid<=1; retire3_pc<=pc3; retire3_insn<=insn3;
+                retire3_rd<=rd3; retire3_data<=rd3==0 ? 64'b0 : result3;
+                retire3_next_pc<=successor;
+                if (rd3!=0) regs[rd3]<=result3;
             end
             pc<=successor;
             insn2_valid<=0;
@@ -664,6 +781,8 @@ module rv64_core #(
             retire_rd<=0; retire_data<=0; retire_next_pc<=0;
             retire2_valid<=0; retire2_pc<=0; retire2_insn<=0;
             retire2_rd<=0; retire2_data<=0; retire2_next_pc<=0;
+            retire3_valid<=0; retire3_pc<=0; retire3_insn<=0;
+            retire3_rd<=0; retire3_data<=0; retire3_next_pc<=0;
             insn2_next<=0; insn2_valid<=0;
             pending_addr<=0; pending_wdata<=0; pending_wstrb<=0;
             pending_f3<=0; pending_rd<=0; pending_load<=0; pending_next_pc<=0;
@@ -672,7 +791,7 @@ module rv64_core #(
             div_neg_q<=0; div_neg_r<=0; div_want_rem<=0; div_is_word<=0;
             for (i=0;i<32;i=i+1) regs[i]<=0;
         end else begin
-            retire_valid<=0; retire2_valid<=0;
+            retire_valid<=0; retire2_valid<=0; retire3_valid<=0;
             case (state)
                 FETCH: begin
                     if (pc[1:0]!=0) report_trap(0,pc);

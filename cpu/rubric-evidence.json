@@ -2,18 +2,18 @@
   "rubric": "cpu/review-rubric.md",
   "rubric_revision": 1,
   "assessed": "2026-11-20",
-  "assessed_at_commit": "cpu-v0.6.0",
+  "assessed_at_commit": "cpu-v0.7.0",
   "assessed_by": "Author self-assessment, not an independent review (rubric HG8 and R9.4).",
-  "architecture_version": "0.6.0",
+  "architecture_version": "0.7.0",
   "rtl_sha256": {
-    "rtl/cpu/rv64_bram_soc.sv": "94a9e078dbd90cf124fb58f360ee95d6e7e7cc3d29f5ff03a0af8d6811e0760d",
-    "rtl/cpu/rv64_core.sv": "ea4e77e4cad22f4b01d0f1c191b03e3ed3567a70c82cb1af89a174a56331d5d8"
+    "rtl/cpu/rv64_bram_soc.sv": "1043cf3322255e6eddc1349d4fe7228ff876afc582b66dd7037fb8bfbe925a4b",
+    "rtl/cpu/rv64_core.sv": "72a8e92ff35c149be89fa0794ed1b7c69aa37d0f3824882b21b070d80752f00f"
   },
   "scope": {
     "isa": "rv64im_zba_zbb_zbs_zifencei",
     "environment": "machine-level laboratory terminal trap; no privilege modes",
     "class": "multicycle",
-    "configuration": "RESET_PC 0; ICACHE_BEATS 512; DCACHE_BEATS 512; limited dual issue (0.5.0); retirement trace ports always present",
+    "configuration": "RESET_PC 0; ICACHE_BEATS 512; DCACHE_BEATS 512; up to three instructions per clock (0.5.0 to 0.7.0); retirement trace ports always present",
     "platform": "rv64_bram_soc synchronous RAM: reads answer the next clock, writes in the same clock; 64 KiB for benchmarks, 16 KiB for the regression",
     "hardware": "none (simulation only)",
     "target": null
@@ -236,7 +236,7 @@
     },
     "R7.1": {
       "score": 2,
-      "evidence": "Trace has PC, instruction, destination, value and next PC for up to two retirements per clock; no source values, memory fields or trap flags."
+      "evidence": "Trace has PC, instruction, destination, value and next PC for up to three retirements per clock; no source values, memory fields or trap flags."
     },
     "R7.2": {
       "score": 3,

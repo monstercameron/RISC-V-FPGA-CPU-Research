@@ -6,10 +6,11 @@
 module tb_bench #(parameter integer RAM_WORDS = 8192);
     reg clk=0,reset=1;
     always #5 clk=~clk;
-    wire trapped,retired,retired2;
+    wire trapped,retired,retired2,retired3;
     wire [63:0] pc,cause,tval,rpc;
     rv64_bram_soc #(.RAM_WORDS(RAM_WORDS)) dut(.clk(clk),.reset(reset),.trapped(trapped),
-        .trap_pc(pc),.trap_cause(cause),.trap_tval(tval),.retire_valid(retired),.retire_pc(rpc),.retire2_valid(retired2));
+        .trap_pc(pc),.trap_cause(cause),.trap_tval(tval),.retire_valid(retired),.retire_pc(rpc),.retire2_valid(retired2),
+        .retire3_valid(retired3));
 
     string image_path,profile_path;
     reg [63:0] mailbox=64'hffffffffffffffff, marker=0;
@@ -38,6 +39,7 @@ module tb_bench #(parameter integer RAM_WORDS = 8192);
         cycles=cycles+1;
         if (retired) retirements=retirements+1;
         if (retired2) retirements=retirements+1;
+        if (retired3) retirements=retirements+1;
         // +profile: one line per instruction retired inside the timed region with
         // the clocks it spent in FETCH, EXECUTE (with DIVIDE) and MEMORY.
         if (retired) begin
@@ -48,6 +50,9 @@ module tb_bench #(parameter integer RAM_WORDS = 8192);
             if (retired2 && profile_fd!=0 && start_cycle>=0 && stop_cycle<0)
                 $fdisplay(profile_fd,"R %016h %08h %02h %016h 0 0 0",dut.cpu.retire2_pc,
                     dut.cpu.retire2_insn,dut.cpu.retire2_rd,dut.cpu.retire2_next_pc);
+            if (retired3 && profile_fd!=0 && start_cycle>=0 && stop_cycle<0)
+                $fdisplay(profile_fd,"R %016h %08h %02h %016h 0 0 0",dut.cpu.retire3_pc,
+                    dut.cpu.retire3_insn,dut.cpu.retire3_rd,dut.cpu.retire3_next_pc);
             in_fetch=0; in_execute=0; in_memory=0;
         end
         case (dut.cpu.state)

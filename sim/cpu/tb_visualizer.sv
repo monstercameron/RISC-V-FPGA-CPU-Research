@@ -33,14 +33,17 @@ module tb_visualizer;
             dut.cpu.result,dut.cpu.effective_addr,flags,dut.addr,dut.wdata,dut.rdata,dut.wstrb);
         // All architectural effects below are sampled after the same edge.
         #1;
-        $fdisplay(fd,"%h %h %h %h %h %h %h %h %h %h %h %h %h %h %h %h %h",
+        $fdisplay(fd,"%h %h %h %h %h %h %h %h %h %h %h %h %h %h %h %h %h %h %h %h %h %h %h",
             dut.cpu.state,dut.cpu.pc,retired,dut.cpu.retire_pc,dut.cpu.retire_insn,
             dut.cpu.retire_rd,dut.cpu.retire_data,dut.cpu.retire_next_pc,
             trapped,cause,tval,
             dut.cpu.retire2_valid,dut.cpu.retire2_pc,dut.cpu.retire2_insn,
-            dut.cpu.retire2_rd,dut.cpu.retire2_data,dut.cpu.retire2_next_pc);
+            dut.cpu.retire2_rd,dut.cpu.retire2_data,dut.cpu.retire2_next_pc,
+            dut.cpu.retire3_valid,dut.cpu.retire3_pc,dut.cpu.retire3_insn,
+            dut.cpu.retire3_rd,dut.cpu.retire3_data,dut.cpu.retire3_next_pc);
         if (retired) retirements=retirements+1;
         if (dut.cpu.retire2_valid) retirements=retirements+1; // second slot (0.5.0)
+        if (dut.cpu.retire3_valid) retirements=retirements+1; // third slot (0.7.0)
         if (trapped) begin
             if (cause!==3 || tval!==0 || dut.cpu.regs[10]!==0)
                 $fatal(1,"unexpected terminal condition");

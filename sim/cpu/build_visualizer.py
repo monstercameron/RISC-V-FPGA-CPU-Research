@@ -117,10 +117,10 @@ def main():
     frames=[];retirements=[];writes=0
     for line in (OUT/'clocks.trace').read_text().splitlines():
         raw=line.split()
-        if len(raw)!=30: raise AssertionError('Malformed clock capture')
+        if len(raw)!=36: raise AssertionError('Malformed clock capture')
         cycle=int(raw[0]); x=[int(field,16) for field in raw[1:]]
         (state,pc,insn,a,b,result,ea,flags,addr,wd,rdata,strobe,after,after_pc,retired,rpc,rinsn,rd,rval,npc,
-         trapped,cause,tval,retired2,rpc2,rinsn2,rd2,rval2,npc2)=x
+         trapped,cause,tval,retired2,rpc2,rinsn2,rd2,rval2,npc2,retired3,rpc3,rinsn3,rd3,rval3,npc3)=x
         if cycle!=len(frames)+1: raise AssertionError('Non-contiguous clocks')
         if pc not in assembly: raise AssertionError('Missing instruction disassembly')
         if state in (1,2) and int(assembly[pc][2],16)!=insn: raise AssertionError('Instruction mismatch')
@@ -148,11 +148,17 @@ def main():
             retirement2=len(retirements)
             retirements.append([cycle,rd2,value_id(rval2),rpc2,npc2])
             if rd2: registers[rd2]=rval2
+        retirement3=-1
+        if retired3:  # third slot (architecture 0.7.0), never a store
+            actual_trace.append(f'R {rpc3:016x} {rinsn3:08x} {rd3:02x} {rval3:016x} {npc3:016x}')
+            retirement3=len(retirements)
+            retirements.append([cycle,rd3,value_id(rval3),rpc3,npc3])
+            if rd3: registers[rd3]=rval3
         if trapped:
             flags|=32
             actual_trace.append(f'T {pc:016x} {cause:016x} {tval:016x}')
         frames.append([state,pc,flags,addr,value_id(wd),value_id(rdata),strobe,after,after_pc,
-                       value_id(a),value_id(b),value_id(result),value_id(ea),retirement,retirement2])
+                       value_id(a),value_id(b),value_id(result),value_id(ea),retirement,retirement2,retirement3])
     if actual_trace!=expected_trace:
         index=next((i for i,(a,e) in enumerate(zip(actual_trace,expected_trace)) if a!=e),min(len(actual_trace),len(expected_trace)))
         raise AssertionError('Captured events differ from sequential ISA reference at event '
@@ -188,7 +194,7 @@ def main():
     # Events come from the retirement records of both slots, so an instruction that
     # retired on the second slot (architecture 0.5.0 and later) is found too.
     for j,f in enumerate(frames):
-        for index in (f[13],f[14]):
+        for index in (f[13],f[14],f[15]):
             if index<0: continue
             _,_,_,rpc,npc=retirements[index]
             word=int(assembly[rpc][2],16);op=word&127

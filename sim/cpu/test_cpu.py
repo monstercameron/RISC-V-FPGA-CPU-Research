@@ -194,6 +194,16 @@ def cases():
          branch(1, 10, 0, -20), 0x100073]                          # 24: bne x10,x0 -> 4; 28: ebreak
     yield 'dual_issue_fold', p, 0, MASK
 
+    # 0.7.0 third slot, exercised on the second pass when the lines are cached:
+    # forwarding from the first slot, a third that depends on the second (must wait),
+    # and three writes to one register in one clock (the last must win).
+    p = [i_type(0x13, 10, 0, 0, 2),                                   # 0
+         i_type(0x13, 1, 0, 0, 1), i_type(0x13, 2, 0, 1, 2), i_type(0x13, 3, 0, 1, 3),   # 4, 8, 12
+         i_type(0x13, 4, 0, 0, 4), i_type(0x13, 5, 0, 4, 1), i_type(0x13, 6, 0, 5, 1),   # 16, 20, 24
+         i_type(0x13, 7, 0, 0, 7), i_type(0x13, 7, 0, 0, 8), i_type(0x13, 7, 0, 0, 9),   # 28, 32, 36
+         i_type(0x13, 10, 0, 10, -1), branch(1, 10, 0, -40), 0x100073]  # 40, 44 -> 4, 48
+    yield 'triple_issue', p, 0, MASK
+
     # Regression for a 0.5.5 bug found by the visualizer: while 0x2c is fetched after
     # the jump at 0x40, that stale jump's target (0x2c - 0x14 = 0x18) is cached; the
     # instruction captured for the second slot must be the one at 0x30, not 0x18.
