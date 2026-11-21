@@ -15,7 +15,8 @@ from reference import MASK, execute
 ROOT = Path(__file__).resolve().parents[2]
 # Programs written to exercise an issue slot, and the testbench counter that must be
 # non-zero for them (checked with the default caches and no bus wait cycles).
-SLOT_USE = {'dual_issue_fold': 'slot2', 'triple_issue': 'slot3'}
+# The single-issue pipelined core (0.8.0) has no second or third slot.
+SLOT_USE = {}
 OUT = ROOT / 'build/cpu'
 
 
