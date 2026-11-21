@@ -104,6 +104,7 @@ module rv64_core #(
     localparam integer BTB_TAG = 10;
     localparam integer BTB_ENTRIES = 1 << BTB_BITS;
     localparam integer RAS_N = 16;
+    localparam integer TAKEN_MAX = 2;    // predicted-taken transfers followed per fetch group (0.10.1)
     localparam [1:0] C_ALU = 0, C_FULL = 1, C_LD = 2, C_ST = 3;
     integer i, j, k, s, p;
 
@@ -554,6 +555,9 @@ module rv64_core #(
     reg [3:0] g_n;
     reg [63:0] g_next;
     reg g_ras_push, g_ras_pop;
+    reg [3:0] g_sp [0:7];
+    reg [2:0] g_taken;
+    reg [3:0] cur_sp;
     reg [63:0] g_ras_val;
     reg [BTB_BITS-1:0] bi;
     reg [IC_INDEX-1:0] fi;
@@ -990,37 +994,44 @@ module rv64_core #(
             end
             rb_count = rb_count_new;
 
-            // ---- fetch: up to FW instructions from the cache, ending at a predicted-taken
-            // transfer, a call or a return
+            // ---- fetch: up to FW instructions from the cache, following up to TAKEN_MAX
+            // predicted-taken transfers (since 0.10.1) and at most one call or return
             if (!rflush && !mp_any && !d_redirect && !f_hold) begin
                 g_n = 0; g_next = f_pc; stop = 0; g_ras_push = 0; g_ras_pop = 0; g_ras_val = 0;
+                g_taken = 0; cur_sp = ras_sp;
                 if (f_pc[1:0] != 0 || f_err) begin
                     // A fetch fault becomes one instruction that traps if it retires.
                     g_pc[0] = f_pc; g_insn[0] = 0; g_pred[0] = f_pc + 64'd4; g_fp[0] = 0; g_bh[0] = 0; g_bc[0] = 0;
-                    g_fault[0] = 1; g_fmis[0] = f_pc[1:0] != 0; g_n = 1; g_next = f_pc; stop = 1;
+                    g_fault[0] = 1; g_fmis[0] = f_pc[1:0] != 0; g_n = 1; g_next = f_pc; stop = 1; g_sp[0] = ras_sp;
                 end
                 npc = f_pc;
                 for (s = 0; s < FW; s = s + 1) if (!stop) begin
                     fi = npc[3 +: IC_INDEX];
+                    wi = 0;
+                    if (ic_valid[fi] && ic_tag[fi] == npc[63 -: IC_TAG]) wi = npc[2] ? ic_data[fi][63:32] : ic_data[fi][31:0];
+                    op = wi[6:0];
+                    isctl = op == 7'h6f || (op == 7'h67 && wi[14:12] == 0);
+                    ok = isctl && (wi[11:7] == 1 || wi[11:7] == 5);                     // a call
+                    hit = op == 7'h67 && wi[14:12] == 0 && wi[11:7] == 0 && (wi[19:15] == 1 || wi[19:15] == 5);  // a return
                     if (!(ic_valid[fi] && ic_tag[fi] == npc[63 -: IC_TAG])) stop = 1;
+                    else if ((ok || hit) && (g_ras_push || g_ras_pop)) stop = 1;     // one call or return per group
                     else begin
-                        wi = npc[2] ? ic_data[fi][63:32] : ic_data[fi][31:0];
                         bi = npc[2 +: BTB_BITS];
-                        hit = btb_valid[bi] && btb_tag[bi] == npc[2+BTB_BITS +: BTB_TAG];
-                        tkp = hit && (btb_ret[bi] || btb_ctr[bi][1]);
-                        tgt = btb_ret[bi] ? ras[ras_sp] : {npc[63:32], btb_target[bi], 2'b00};
+                        fdone = btb_valid[bi] && btb_tag[bi] == npc[2+BTB_BITS +: BTB_TAG];
+                        tkp = fdone && (btb_ret[bi] || btb_ctr[bi][1]);
+                        tgt = btb_ret[bi] ? ras[cur_sp] : {npc[63:32], btb_target[bi], 2'b00};
                         g_pc[s] = npc; g_insn[s] = wi; g_pred[s] = tkp ? tgt : npc + 64'd4;
-                        g_fp[s] = tkp; g_bh[s] = hit; g_bc[s] = btb_ctr[bi]; g_fault[s] = 0; g_fmis[s] = 0;
+                        g_fp[s] = tkp; g_bh[s] = fdone; g_bc[s] = btb_ctr[bi]; g_fault[s] = 0; g_fmis[s] = 0;
                         g_n = s + 1;
-                        op = wi[6:0];
-                        isctl = op == 7'h6f || (op == 7'h67 && wi[14:12] == 0);
-                        if (isctl && (wi[11:7] == 1 || wi[11:7] == 5)) begin g_ras_push = 1; g_ras_val = npc + 64'd4; stop = 1; end
-                        else if (op == 7'h67 && wi[14:12] == 0 && wi[11:7] == 0 && (wi[19:15] == 1 || wi[19:15] == 5)) begin
-                            g_ras_pop = 1; stop = 1;
-                        end
-                        if (tkp) stop = 1;
+                        if (ok) begin g_ras_push = 1; g_ras_val = npc + 64'd4; cur_sp = cur_sp + 1; end
+                        else if (hit) begin g_ras_pop = 1; cur_sp = cur_sp - 1; end
+                        g_sp[s] = cur_sp;
                         g_next = g_pred[s];
-                        npc = npc + 64'd4;
+                        if (tkp) begin
+                            g_taken = g_taken + 1;
+                            if (g_taken >= TAKEN_MAX || tgt[1:0] != 0) stop = 1;
+                        end
+                        npc = g_pred[s];
                     end
                 end
                 if (g_n != 0 && q_count + g_n <= Q_N) begin
@@ -1028,7 +1039,7 @@ module rv64_core #(
                         j = (q_tail + s) % Q_N;
                         q_pc[j] = g_pc[s]; q_insn[j] = g_insn[s]; q_pred[j] = g_pred[s]; q_fpred[j] = g_fp[s];
                         q_bhit[j] = g_bh[s]; q_bctr[j] = g_bc[s]; q_fault[j] = g_fault[s]; q_fmis[j] = g_fmis[s];
-                        q_rsp[j] = (s == g_n - 1) ? (g_ras_push ? ras_sp + 4'd1 : g_ras_pop ? ras_sp - 4'd1 : ras_sp) : ras_sp;
+                        q_rsp[j] = g_sp[s];
                     end
                     q_tail = q_tail + g_n; q_count = q_count + g_n;
                     if (g_ras_push) begin ras_sp = ras_sp + 1; ras[ras_sp] = g_ras_val; end
