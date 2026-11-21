@@ -6,12 +6,16 @@ import argparse
 import hashlib
 import json
 import random
+import re
 import shutil
 import subprocess
 
 from reference import MASK, execute
 
 ROOT = Path(__file__).resolve().parents[2]
+# Programs written to exercise an issue slot, and the testbench counter that must be
+# non-zero for them (checked with the default caches and no bus wait cycles).
+SLOT_USE = {'dual_issue_fold': 'slot2', 'triple_issue': 'slot3'}
 OUT = ROOT / 'build/cpu'
 
 
@@ -204,6 +208,42 @@ def cases():
          i_type(0x13, 10, 0, 10, -1), branch(1, 10, 0, -40), 0x100073]  # 40, 44 -> 4, 48
     yield 'triple_issue', p, 0, MASK
 
+    # Branches right after a pair, where a third slot would see them (a third-slot
+    # branch was tried and dropped on 2026-11-21): taken backward using the first
+    # slot's result, finally not taken; one that depends on the second slot.
+    p = [i_type(0x13, 10, 0, 0, 3),                                   # 0: x10 = 3
+         i_type(0x13, 10, 0, 10, -1), i_type(0x13, 2, 0, 2, 1),       # 4: x10 -= 1; 8: x2 += 1
+         branch(1, 10, 0, -8),                                        # 12: bne x10,x0 -> 4
+         i_type(0x13, 5, 0, 0, 2),                                    # 16: x5 = 2
+         i_type(0x13, 8, 0, 8, 1), i_type(0x13, 6, 0, 6, 1),          # 20: x8 += 1; 24: x6 += 1
+         branch(0, 6, 0, 8),                                          # 28: beq x6,x0 -> 36 (never)
+         i_type(0x13, 5, 0, 5, -1), i_type(0x13, 9, 0, 9, 1),         # 32: x5 -= 1; 36: x9 += 1
+         branch(1, 5, 0, -20), 0x100073]                              # 40: bne x5,x0 -> 20; 44
+    yield 'triple_branch', p, 0, MASK
+
+    # A taken branch with a misaligned target right after a pair, reached on the
+    # second pass with the lines cached: it must trap precisely.
+    p = [i_type(0x13, 10, 0, 0, 2),                                   # 0: x10 = 2
+         i_type(0x13, 10, 0, 10, -1), i_type(0x13, 2, 0, 0, 1),       # 4: x10 -= 1; 8: x2 = 1
+         branch(0, 10, 0, 6),                                         # 12: beq x10,x0 -> 18
+         jal(0, -12)]                                                 # 16: j 4
+    yield 'triple_branch_misaligned', p, 0, MASK
+
+    # 0.7.1: a multiply never pairs, so a store after it must not reach the bus before
+    # the multiply retires (found by mutation during the 0.7.1 review: with multiplies
+    # allowed to pair, the store went out early and again after MULTIPLY).
+    muls = [(0x33, 0), (0x33, 1), (0x33, 2), (0x33, 3), (0x3b, 0)]
+    for pad in (0, 1):
+        p = prefix() + [i_type(0x13, 0, 0, 0, 0)] * pad
+        for op, f3 in muls:
+            p += [r_type(op, 20, f3, 3, 7, 1), store(3, 30, 7, 96),
+                  r_type(op, 21, f3, 4, 7, 1), store(2, 30, 8, 100)]
+        yield f'mul_then_store_pad{pad}', p + [i_type(3, 22, 3, 30, 96), 0x100073], 0, MASK
+
+    # Every multiply into x0 (no write, trace data 0), then a use of x0.
+    p = prefix() + [r_type(op, 0, f3, 3, 4, 1) for op, f3 in muls] + [i_type(0x13, 5, 0, 0, 1), 0x100073]
+    yield 'mul_into_x0', p, 0, MASK
+
     # Regression for a 0.5.5 bug found by the visualizer: while 0x2c is fetched after
     # the jump at 0x40, that stale jump's target (0x2c - 0x14 = 0x18) is cached; the
     # instruction captured for the second slot must be the one at 0x30, not 0x18.
@@ -376,6 +416,13 @@ def main():
                     a=actual[index] if index<len(actual) else '<missing>'
                     e=expected[index] if index<len(expected) else '<missing>'
                     if a!=e: raise AssertionError(f'{name} stall={stalls} event {index}:\nactual {a}\nexpect {e}')
+            # Structural coverage: these programs exist to exercise an issue slot, so
+            # check that the slot was used (default caches, where the lines stay cached).
+            if args.icache_beats is None and stalls == 0 and name in SLOT_USE:
+                field = SLOT_USE[name]
+                used = re.search(field + r'=(\d+)', output)
+                if not used or int(used[1]) == 0:
+                    raise AssertionError(f'{name}: expected {field} > 0, simulator said {output.strip()}')
             records.append({'case':name,'max_wait_cycles':stalls,'events':len(actual),'result':'PASS','simulator_summary':output.strip()})
     required=set('lui auipc jal jalr beq bne blt bge bltu bgeu lb lh lw ld lbu lhu lwu sb sh sw sd addi slti sltiu xori ori andi slli srli srai add sub sll slt sltu xor srl sra or and addiw slliw srliw sraiw addw subw sllw srlw sraw fence fence.i ecall ebreak mul mulh mulhsu mulhu div divu rem remu mulw divw divuw remw remuw sh1add sh2add sh3add add.uw sh1add.uw sh2add.uw sh3add.uw slli.uw andn orn xnor clz ctz cpop clzw ctzw cpopw max maxu min minu sext.b sext.h zext.h rol ror rolw rorw rori roriw orc.b rev8 bclr bclri bext bexti binv binvi bset bseti'.split())
     missing=required-coverage

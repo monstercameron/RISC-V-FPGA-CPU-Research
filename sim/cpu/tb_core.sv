@@ -25,7 +25,7 @@ module tb_core #(parameter integer MEM_BYTES=16384, parameter integer ICACHE_BEA
         .retire3_data(rval3),.retire3_next_pc(npc3));
 
     string image_path,trace_path,pending_write="";
-    integer fd,i,lane,cycles=0,retire_count=0;
+    integer fd,i,lane,cycles=0,retire_count=0,slot2_count=0,slot3_count=0,slot3_branches=0;
     integer max_stall=0,delay_left=0,seed_arg=1,fault_kind=0,max_cycles=200000;
     reg [31:0] rng;
     reg [63:0] fault_addr=64'hffffffffffffffff;
@@ -67,19 +67,21 @@ module tb_core #(parameter integer MEM_BYTES=16384, parameter integer ICACHE_BEA
                 if (!retired) $fatal(1,"second retirement slot without the first");
                 if (pending_write!="") begin $fdisplay(fd,"%s",pending_write); pending_write=""; end
                 $fdisplay(fd,"R %016h %08h %02h %016h %016h",rpc2,rinsn2,rd2,rval2,npc2);
-                retire_count=retire_count+1;
+                retire_count=retire_count+1; slot2_count=slot2_count+1;
             end
             if (retired3) begin // third slot (0.7.0): after the second, never a store
                 if (!retired2) $fatal(1,"third retirement slot without the second");
                 $fdisplay(fd,"R %016h %08h %02h %016h %016h",rpc3,rinsn3,rd3,rval3,npc3);
-                retire_count=retire_count+1;
+                retire_count=retire_count+1; slot3_count=slot3_count+1;
+                if (rinsn3[6:0]==7'h63) slot3_branches=slot3_branches+1;
             end
             if (trapped) begin
                 if (valid) $fatal(1,"request after terminal trap");
                 if (pending_write!="") $fdisplay(fd,"%s",pending_write);
                 $fdisplay(fd,"T %016h %016h %016h",tpc,cause,tval);
                 $fclose(fd);
-                $display("DONE retirements=%0d cycles=%0d",retire_count,cycles);
+                $display("DONE retirements=%0d cycles=%0d slot2=%0d slot3=%0d slot3_branches=%0d",
+                         retire_count,cycles,slot2_count,slot3_count,slot3_branches);
                 $finish;
             end
             if (!valid) begin ready=0; active=0; end

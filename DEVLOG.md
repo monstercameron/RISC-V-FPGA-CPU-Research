@@ -20,6 +20,29 @@ Times are US Eastern (UTC-05:00). Each timestamp names its source:
 
 ---
 
+## 2026-11-21: slot-3 branch trial, validation of 0.7.1, pipelining plan
+
+### Findings
+
+- A third-slot conditional branch does not pay: it moves branches from the start of a group to the end of the previous one, but a branch at the start of a group already folds its target into the second slot, so the clock count barely changes (+0.4% DMIPS/MHz). Dropped.
+- The independent review of 0.7.1 found no bug in the committed design but a missing test: allowing a multiply to pair (the pre-0.7.1 rule) puts a store on the bus early, and the regression did not notice. The test is now in the regression and catches it.
+- Absolute performance, not DMIPS/MHz, decides the next steps: 0.3.0 reaches 22.49 MHz on ECP5 (about 21 DMIPS), with 79% of its critical path in routing. A pipelining plan was drafted (below); its figures are estimates until measured.
+
+### Timeline
+
+| Time | Event | Source |
+|---|---|---|
+| 00:00 to 00:02 | Candidate 0.7.2 written: conditional branch in the third slot (compare on the third slot's operands, target `pc3 + imm`, taken target misaligned does not issue there; the group's successor is the branch's outcome). New tests `triple_branch`, `triple_branch_misaligned`. Testbench `tb_core.sv` now counts second-slot, third-slot and third-slot-branch retirements on its DONE line, and `test_cpu.py` checks that `dual_issue_fold` and `triple_issue` use their slot (default caches, no wait cycles) | output |
+| 00:02:25 | Regression: 52 programs x 3 wait patterns = 156 runs pass with default caches (15.7 s) and with 2-line caches (11.8 s); `triple_branch` retires 2 branches from the third slot | output |
+| 00:04:31 | Unlogged Dhrystone run on the candidate (`rv64imb`, reference runtime, `-NoDevlog`): 2.2250 DMIPS/MHz, 255.8 clocks per run against 256.8 (-0.4%) | output |
+| about 00:06 | Blocker count on the candidate's trace (a scratch script groups the measured profile trace into issue groups): pairs stopped by a third-slot branch fell from 36.0 to 3.0 per run, but pairs stopped by a third-slot store rose from 18.0 to 48.0; triples rose by only 1.0 per run. The branch used to start the next group and fold its target into the second slot; now that target starts a group of its own. Candidate reverted; tests kept as plain differential tests | output |
+| 00:00 to 00:07 | Independent validation of 0.7.1 by a review agent in a separate worktree at `c1b113f`: regression 150/150 (14.1 s) and 150/150 with 2-line caches (12.3 s); `check_bitmanip.py` passes (6.3 s, 28 B instructions, 33,124 and 15,003 retired); visualizer lessons pass after a rebuild (15.9 s); `check_repo.py` passes; RTL hashes, `cpu/VERSION`, tag and the 0.7.1 run rows agree with the records. No bug found in the multiply path. Mutants: reverting the pairing rule (`!m_op` to `!is_div`) passed the whole regression; three other multiply mutants were caught. Its focused scratch test caught the first. Tools: Icarus Verilog 12.0, Python 3.12.3 (WSL) and 3.12.10 (Windows), clang 18.1.3 (WSL) and 23.1.5 (Windows) | output |
+| 00:07 | Review follow-ups: new tests `mul_then_store_pad0`, `mul_then_store_pad1` (a store after each multiply kind) and `mul_into_x0`; regression 55 programs x 3 = 165 runs pass with default and 2-line caches; with the pairing mutant applied, `mul_then_store_pad1` fails at event 14 (a store's W line before the multiply's R line). `runlog.py` no longer strips the leading space of `git status` output, which had cut the first character from the first dirty file name in run logs (for example "`EVLOG.md`"). `cpu/architecture.md` now lists the DIVIDE and MULTIPLY states and excludes multiplies from first-slot pairing in its text. Also reported: `cpu/programs-verification.json` and `cpu/visualizer-verification.json` still hold the RTL hashes of the initial commit (the regenerated copies in the working tree are current), and `cpu/dhrystone-rv64im-fastrt-results.json` is still the 0.6.0 run | output |
+| about 00:05 | Pipelining plan drafted by a planning agent from the RTL and the measurements: five short stages (PC, cache read, decode and register read, execute, memory and retire), instruction and data caches in block RAM, register file in LUT RAM (two copies for two read ports; a live-value table for two-wide), forwarding from two registered stages, static then BTB prediction, two-wide issue at most (slot 3 dropped), traps acted on at retirement. Estimates, not measurements: single-issue pipeline about 0.8 DMIPS/MHz at 60 to 75 MHz; two-wide about 1.3 DMIPS/MHz at 50 to 60 MHz (65 to 80 DMIPS, against about 21 for 0.3.0) | output |
+| 00:07:44 | ECP5 synthesis of 0.7.0 and 0.7.1 still running after 30 minutes in Yosys `synth_ecp5` (0.3.0 took 59.5 s) | output |
+
+---
+
 ## 2026-11-20: setup, review rubric, roadmap and first benchmark
 
 ### Findings
@@ -216,6 +239,8 @@ Each step changes the core, passes the main regression, is committed and tagged 
 | 0.6.0, `rv64imb`, fast runtime | Same core, fast runtime using `orc.b` | 247.8 | 0.556 | 2.2964 | | 1.02x |
 | 0.7.0, `rv64imb` build | ALU-only third issue slot | 256.8 | 0.467 | 2.2163 | 8.52x | 1.11x |
 | 0.7.0, `rv64imb`, fast runtime | Same core, fast runtime | 216.9 | 0.486 | 2.6243 | | 1.14x |
+| 0.7.1, `rv64imb` build | Registered multiplier (LUT depth 80 to 52); this build does not multiply at run time | 256.8 | 0.467 | 2.2163 | 8.52x | 1.00x |
+| 0.7.1, `rv64im` build | Same core; this build multiplies, each multiply now one clock longer | 261.8 | | 2.1739 | | 0.99x |
 
 Every step measured what the previous profile estimated. The loop stopped after 0.4.0 because the core completes about one instruction per clock; see findings 23 to 27.
 

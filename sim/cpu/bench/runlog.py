@@ -33,7 +33,8 @@ def git(root, *args):
         # WSL sees Windows files as executable; ignore mode bits when checking for changes.
         done = subprocess.run(['git', '-c', 'safe.directory=*', '-c', 'core.fileMode=false', '-C', str(root), *args],
                               capture_output=True, text=True, timeout=30)
-        return done.stdout.strip() if done.returncode == 0 else None
+        # rstrip only: `git status --porcelain` lines start with a significant space.
+        return done.stdout.rstrip() if done.returncode == 0 else None
     except (OSError, subprocess.TimeoutExpired):
         return None
 
