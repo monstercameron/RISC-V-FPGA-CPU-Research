@@ -72,6 +72,43 @@ def image_for(words):
     return result
 
 
+def ras_wrong_path_call_program():
+    """Frontend hand-off 8 (Codex 1739-3): wrong-path return then call; see the case."""
+    def slli(rd, rs, sh): return i_type(0x13, rd, 1, rs, sh)
+    def srli(rd, rs, sh): return i_type(0x13, rd, 5, rs, sh)
+    def xor(rd, a, b): return r_type(0x33, rd, 4, a, b)
+    def div(rd, a, b): return r_type(0x33, rd, 4, a, b, 1)
+    def sd(rs2, base, off): return ((off >> 5) << 25) | rs2 << 20 | base << 15 | 3 << 12 | (off & 31) << 7 | 0x23
+    PAD = 640    # more than ROB + fetch queue: the wrong path cannot reach the next call of f
+    f = 48 + 4 * PAD + 16                                              # address of f
+    g = f + 48
+    p = [i_type(0x13, 10, 0, 0, 24),                                   # 0: x10 = 24 iterations
+         i_type(0x13, 11, 0, 0, 0x5a5),                                # 4: x11 = seed
+         (3 << 12) | (2 << 7) | 0x37,                                  # 8: x2 = 0x3000 (lui; was x12 = 1)
+         slli(13, 11, 13), xor(11, 11, 13),                            # 12: xorshift64
+         srli(13, 11, 7), xor(11, 11, 13),                             # 20
+         slli(13, 11, 17), xor(11, 11, 13),                            # 28
+         jal(1, f - 36),                                               # 36: call f
+         jal(1, g - 40),                                               # 40: call g
+         i_type(0x13, 10, 0, 10, -1)]                                  # 44: x10 -= 1
+    p += [0x00000013] * PAD                                            # 48: nops
+    p += [branch(1, 10, 0, 12 - (48 + 4 * PAD)),                       # bne x10 -> 12
+          0x100073, 0x00000013, 0x00000013]                            # ebreak; pad
+    assert 4 * len(p) == f
+    # f keeps ra in memory, so its returns read ra from a load (as compiled code does) and
+    # are predicted and checked at execute, not resolved at rename from a constant ra.
+    p += [sd(1, 2, 0), i_type(0x13, 12, 0, 0, 1),                      # f: sd ra,0(x2); x12 = 1
+          div(6, 11, 12), div(6, 6, 12), i_type(0x13, 6, 7, 6, 1),     # x6 = x11 / 1 / 1; x6 &= 1
+          branch(0, 6, 0, 16),                                         # f+20: beq x6, x0 -> f+36
+          i_type(0x13, 20, 0, 20, 1), i_type(3, 1, 3, 2, 0),           # x20 += 1; ld ra,0(x2)
+          i_type(0x67, 0, 0, 1, 0),                                    # f+32: ret
+          i_type(0x13, 21, 0, 21, 1), i_type(3, 1, 3, 2, 0),           # f+36: x21 += 1; ld ra,0(x2)
+          i_type(0x67, 0, 0, 1, 0)]                                    # f+44: ret
+    assert 4 * len(p) == g
+    p += [i_type(0x13, 22, 0, 22, 1), i_type(0x67, 0, 0, 1, 0)]        # g: x22 += 1; ret
+    return p
+
+
 def cases():
     p = prefix()
     for op in (0x33, 0x3b):
@@ -672,6 +709,13 @@ def cases():
          r_type(0x33, 26, 0, 25, 25), store(3, 21, 25, 0x28),            # add x26 = 2*x25; sd x25 via x21
          i_type(3, 27, 3, 21, 0x20), r_type(0x33, 28, 0, 27, 26), 0x100073]
     yield 'fold_offset_late_producers', p, 0, MASK
+    # Frontend hand-off 8: a mispredicted branch inside f sends fetch down a wrong path that
+    # returns from f (pops the return stack) and then calls g (writes the entry the restored
+    # pointer names). The correct path's return from f must still be predicted (performance;
+    # values are checked here). The branch depends on two divides, so it resolves late, and
+    # its direction comes from an xorshift sequence, so it keeps mispredicting.
+    p = ras_wrong_path_call_program()
+    yield 'ras_wrong_path_call', p, 0, MASK
 
 def command(args, timeout=60):
     result = subprocess.run([str(x) for x in args], capture_output=True, text=True, timeout=timeout)

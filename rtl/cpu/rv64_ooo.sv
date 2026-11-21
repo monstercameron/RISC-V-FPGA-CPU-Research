@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Original CPU foundation, wide out-of-order implementation (architecture 0.14.8).
+// Original CPU foundation, wide out-of-order implementation (architecture 0.14.9).
 // RV64IM + B execution, serialized FENCE.I, terminal EEI. Same module name and
 // contract as rv64_core.sv and rv64_pipe.sv, plus a wider retirement trace (rt_*);
 // build with one of the three files. Architecture version: cpu/VERSION,
@@ -429,6 +429,7 @@ module rv64_core #(
     reg [P_B-1:0] rb_sps2 [0:ROB_N-1];
     reg [7:0] rb_wstrb [0:ROB_N-1];
     reg [RAS_B-1:0] rb_rsp [0:ROB_N-1];      // return-stack pointer after this instruction's fetch
+    reg [63:0] rb_rtos [0:ROB_N-1];          // and the top entry's value then (restored with it)
     reg [ROB_B-1:0] rb_head, rb_tail;
     reg [ROB_B:0] rb_count;
     // Issue queue.
@@ -508,6 +509,7 @@ module rv64_core #(
     reg [31:0] q_t [0:Q_N-1];          // clock from which a queue entry may be renamed
     reg [1:0] q_bctr [0:Q_N-1];
     reg [RAS_B-1:0] q_rsp [0:Q_N-1];
+    reg [63:0] q_rtos [0:Q_N-1];
     // Loop predictor (0.11.0): for each conditional branch, the run length of its usual
     // direction before one opposite outcome. An instance's iteration number comes from
     // the youngest earlier instance still in flight, else from the retired count, so
@@ -586,6 +588,7 @@ module rv64_core #(
     reg [LP_BITS-1:0] g_lpi;
     reg [7:0] lp_it;
     reg [RAS_B-1:0] d_redirect_sp;
+    reg [63:0] d_redirect_tos;
     reg [RAS_B-1:0] g_ras_pop_sp;
     reg f_stale;                    // the held fetch was issued before a redirect
     reg [FW-1:0] g_lpmask;
@@ -746,6 +749,7 @@ module rv64_core #(
     reg [6:0] g_n;
     reg [63:0] g_next;
     reg [RAS_B-1:0] g_sp [0:FW-1];
+    reg [63:0] g_tos [0:FW-1];
     reg [4:0] g_taken;
     reg [4:0] g_cr;
     reg [63:0] gras [0:RAS_N-1];      // the fetch group's copy of the return stack
@@ -1272,10 +1276,11 @@ module rv64_core #(
                 f_pc = rflush_pc; f_err = 0; f_hold = 0; if (bus_hold == 1) f_stale = 1;
                 // A refetched load restores its own return-stack pointer (it may be the oldest).
                 ras_sp = rflush_ld ? rb_rsp[rflush_e] : rb_rsp[rb_head + n_ret[ROB_B-1:0] - 1'b1];
+                ras[ras_sp] = rflush_ld ? rb_rtos[rflush_e] : rb_rtos[rb_head + n_ret[ROB_B-1:0] - 1'b1];
             end else if (mp_any) begin
                 squash_after(o_age);
                 for (i = 0; i < 32; i = i + 1) begin rat[i] = snap[b_rob][i]; rat_off[i] = snap_off[b_rob][i]; end
-                ras_sp = rb_rsp[b_rob];
+                ras_sp = rb_rsp[b_rob]; ras[ras_sp] = rb_rtos[b_rob];
                 rb_tail = b_rob + 1;
                 rb_count_new = {1'b0, o_age} + 1 - n_ret;
                 q_head = 0; q_tail = 0; q_count = 0;
@@ -1368,7 +1373,7 @@ module rv64_core #(
                             rb_pc[e] = wpc; rb_insn[e] = wi; rb_next[e] = d_want; rb_rd[e] = rd_; rb_writes[e] = writes_;
                             rb_store[e] = op == 7'h23 && !isfault; rb_load[e] = op == 7'h03 && !isfault;
                             rb_fencei[e] = 0; rb_ctl[e] = 0; rb_sta[e] = 0; rb_viol[e] = 0; rb_ldv[e] = 0; rb_wstrb[e] = 0; rb_taken[e] = 0; rb_ret[e] = 0;
-                            rb_bhit[e] = q_bhit[j]; rb_bctr[e] = q_bctr[j]; rb_rsp[e] = q_rsp[j];
+                            rb_bhit[e] = q_bhit[j]; rb_bctr[e] = q_bctr[j]; rb_rsp[e] = q_rsp[j]; rb_rtos[e] = q_rtos[j];
                             rb_li[e] = q_li[j]; rb_lp[e] = op == 7'h63 && !isfault; rb_ld[e] = tkp;
                             rb_fence[e] = op == 7'h0f && f3_ == 3'd0 && !isfault;
                             rb_opdst[e] = rat[rd_]; rb_pdst[e] = writes_ ? (elim_ ? ep_ : fp) : 0;
@@ -1415,14 +1420,14 @@ module rv64_core #(
                             rb_tail = rb_tail + 1; rb_count_new = rb_count_new + 1; n_ren = n_ren + 1;
                             if (!isfault && !done_) ui = ui + 1;
                             if (writes_ && !elim_) up = up + 1;
-                            if (d_want != q_pred[j]) begin d_redirect = 1; d_redirect_pc = d_want; d_redirect_sp = q_rsp[j]; stop = 1; end
+                            if (d_want != q_pred[j]) begin d_redirect = 1; d_redirect_pc = d_want; d_redirect_sp = q_rsp[j]; d_redirect_tos = q_rtos[j]; stop = 1; end
                         end
                     end
                 end
                 q_head = q_head + n_ren; q_count = q_count - n_ren;
                 if (d_redirect) begin
                     q_head = 0; q_tail = 0; q_count = 0;
-                    f_pc = d_redirect_pc; f_err = 0; f_hold = 0; ras_sp = d_redirect_sp; if (bus_hold == 1) f_stale = 1;
+                    f_pc = d_redirect_pc; f_err = 0; f_hold = 0; ras_sp = d_redirect_sp; ras[ras_sp] = d_redirect_tos; if (bus_hold == 1) f_stale = 1;
                 end
             end
             rb_count = rb_count_new;
@@ -1436,7 +1441,7 @@ module rv64_core #(
                 if (f_pc[1:0] != 0 || f_err) begin
                     // A fetch fault becomes one instruction that traps if it retires.
                     g_pc[0] = f_pc; g_insn[0] = 0; g_pred[0] = f_pc + 64'd4; g_fp[0] = 0; g_bh[0] = 0; g_bc[0] = 0;
-                    g_fault[0] = 1; g_fmis[0] = f_pc[1:0] != 0; g_n = 1; g_next = f_pc; stop = 1; g_sp[0] = ras_sp;
+                    g_fault[0] = 1; g_fmis[0] = f_pc[1:0] != 0; g_n = 1; g_next = f_pc; stop = 1; g_sp[0] = ras_sp; g_tos[0] = ras[ras_sp];
                 end
                 npc = f_pc;
                 for (s = 0; s < FW; s = s + 1) if (!stop) begin
@@ -1505,7 +1510,7 @@ module rv64_core #(
                         g_n = s + 1;
                         if (ok) begin g_cr = g_cr + 1; cur_sp = cur_sp + 1; gras[cur_sp] = npc + 64'd4; end
                         else if (hit) begin g_cr = g_cr + 1; cur_sp = cur_sp - 1; end
-                        g_sp[s] = cur_sp;
+                        g_sp[s] = cur_sp; g_tos[s] = gras[cur_sp];
                         g_next = g_pred[s];
                         if (tkp) begin
                             g_taken = g_taken + 1;
@@ -1519,7 +1524,7 @@ module rv64_core #(
                         j = (q_tail + s) % Q_N;
                         q_pc[j] = g_pc[s]; q_insn[j] = g_insn[s]; q_pred[j] = g_pred[s]; q_fpred[j] = g_fp[s];
                         q_bhit[j] = g_bh[s]; q_bctr[j] = g_bc[s]; q_fault[j] = g_fault[s]; q_fmis[j] = g_fmis[s];
-                        q_rsp[j] = g_sp[s]; q_t[j] = fe_clk + FE_DEPTH;
+                        q_rsp[j] = g_sp[s]; q_rtos[j] = g_tos[s]; q_t[j] = fe_clk + FE_DEPTH;
                         q_lp[j] = g_lpmask[s]; q_ld[j] = g_fp[s]; q_li[j] = g_li[s]; q_lp_c[j] = g_insn[s][6:0] == 7'h63 && !g_fault[s];
                     end
                     q_tail = q_tail + g_n; q_count = q_count + g_n;
