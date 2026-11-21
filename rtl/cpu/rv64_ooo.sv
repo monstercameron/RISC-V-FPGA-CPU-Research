@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Original CPU foundation, wide out-of-order implementation (architecture 0.14.0).
+// Original CPU foundation, wide out-of-order implementation (architecture 0.14.1).
 // RV64IM + B execution, serialized FENCE.I, terminal EEI. Same module name and
 // contract as rv64_core.sv and rv64_pipe.sv, plus a wider retirement trace (rt_*);
 // build with one of the three files. Architecture version: cpu/VERSION,
@@ -103,15 +103,15 @@ module rv64_core #(
     generate if (DCACHE_BEATS < 2 || (DCACHE_BEATS & (DCACHE_BEATS - 1)) != 0) begin : bad_dcache_size
         initial $fatal(1, "DCACHE_BEATS must be a power of two of at least 2");
     end endgenerate
-    localparam integer FW = RW < 16 ? RW : 16;   // fetch and rename width (RW until 0.13.0)
+    localparam integer FW = 32;          // fetch and rename width (RW until 0.13.0)
     localparam integer ROB_N = 512;       // 256 until 0.13.0
     localparam integer ROB_B = 9;
     localparam integer PRF_N = 32 + ROB_N;
     localparam integer P_B = 10;
     localparam integer IQ_N = 128;
     localparam integer IQ_B = 7;
-    localparam integer Q_N = 32;
-    localparam integer Q_B = 5;
+    localparam integer Q_N = 64;
+    localparam integer Q_B = 6;
     localparam integer N_ALU = 8;        // integer ports
     localparam integer N_BR = 3;         // of which these also take branches, system and M
     localparam integer N_LD = 4;         // load ports (Zen 5: 4 loads per clock)
