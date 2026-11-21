@@ -56,6 +56,9 @@ module tb_core #(parameter integer MEM_BYTES=16384, parameter integer ICACHE_BEA
     // Multi-store write lanes used, and store faults reported on lanes 2..4 (lane cover).
     integer lane2=0,lane3=0,lane4=0,fault_lane2=0,fault_lane3=0,fault_lane4=0;
     integer max_stall=0,delay_left=0,seed_arg=1,fault_kind=0,max_cycles=200000;
+    // +max_retired=N (benchmark checkpoint pieces): stop once N instructions have
+    // retired, closing the trace without a trap line. Off by default.
+    integer max_retired=0;
     reg [31:0] rng;
     reg [63:0] fault_addr=64'hffffffffffffffff;
     reg active=0,held=0;
@@ -74,6 +77,7 @@ module tb_core #(parameter integer MEM_BYTES=16384, parameter integer ICACHE_BEA
         if ($value$plusargs("fault_kind=%d",fault_kind)) begin end
         if ($value$plusargs("fault_addr=%h",fault_addr)) begin end
         if ($value$plusargs("max_cycles=%d",max_cycles)) begin end
+        if ($value$plusargs("max_retired=%d",max_retired)) begin end
         rng=seed_arg==0 ? 1 : seed_arg;
         for (i=0;i<MEM_BYTES;i=i+1) memory[i]=0;
         $readmemh(image_path,memory);
@@ -133,6 +137,12 @@ module tb_core #(parameter integer MEM_BYTES=16384, parameter integer ICACHE_BEA
                 if (rinsn3[6:0]==7'h63) slot3_branches=slot3_branches+1;
             end
 `endif
+            if (max_retired>0 && retire_count>=max_retired && !trapped) begin
+                // A write still pending belongs to a store beyond the limit; it is not logged.
+                $fclose(fd);
+                $display("LIMIT retirements=%0d cycles=%0d",retire_count,cycles);
+                $finish;
+            end
             if (trapped) begin
                 if (valid) $fatal(1,"request after terminal trap");
                 if (pending_write!="") $fdisplay(fd,"%s",pending_write);

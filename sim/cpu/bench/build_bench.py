@@ -4,6 +4,11 @@ Compiles each source file separately (Dhrystone's ground rules forbid merging
 procedures across files), links with a generated linker script for the chosen
 RAM size, and writes the images the testbenches load. Runs on Windows with the
 installed LLVM or on Linux with clang, lld and llvm tools on PATH.
+
+Benchmarks: dhrystone (riscv-tests edition) and lzma, a scaled-down 7-Zip
+LZMA benchmark kernel (lzma_bench.c with the LZMA SDK in vendor/lzma/). The
+lzma build needs the M extension and 1 MiB of RAM; --lzma-dict-log sets its
+dictionary (data = dictionary + 1/64).
 SPDX-License-Identifier: MIT
 """
 from pathlib import Path
@@ -35,6 +40,23 @@ VENDOR_SHA256 = {
     'dhrystone_main.c': '45f1aeb092b50ccbd2f37782e5b054b446c93c49771a45a36c940386f72d338d',
 }
 
+# LZMA SDK files from 7-Zip 26.06; vendor/lzma/SOURCE.txt records them.
+LZMA_VENDOR = BENCH / 'vendor/lzma'
+LZMA_VENDOR_SHA256 = {
+    '7zTypes.h': 'a5d03b8cb65cd3a2a56bde46dd68fb356d2ebacd9d70283e7d4d20b4e0a64713',
+    'Compiler.h': 'd5e42be77d26beaa8c81d3e62ef99fc5685736cfc079779fdb9154d05fa8bc4a',
+    'CpuArch.h': '259145c6f4b085f44284014574f39f3f562fc78466746bfb388efe06b4dd59b4',
+    'LzFind.c': 'f73da68845094a85b006a0d2da80b3ecdec92a1ca0f85df637e565c642e8d5ba',
+    'LzFind.h': '42732b38df9bb18f82866d7deaa8663f6c6f9cb10e2a2cdfa9e6f420c2e2f239',
+    'LzHash.h': '42d146d2130dfe49d0b21d15cc6f0fe9d79ac0ebb629985fe3aedde7b2bee80e',
+    'LzmaDec.c': '4e6ec665a6df01f1722e2b2fc36dc5e3aa7c3890e0f8cb11c6a07c9a01f3309b',
+    'LzmaDec.h': '3aaf07b4ae4173a2d103179455dc7089b5ddbc7fc3db3c0e40964a7499c69266',
+    'LzmaEnc.c': '67f23656339b5e19015acac41acbcf36ea7787a8419907dce91c1dd336a2fb0f',
+    'LzmaEnc.h': 'c5e78398309363dd181840b7ba0bcb856f66619f755d5e2f5e04f7437186ba5f',
+    'Precomp.h': 'c8903f2e36a771a272d8981e1e9ffed5ba16ca3d2f3dca6d1414d2340a6829d0',
+}
+LZMA_ISAS = ISAS[1:]  # the kernel multiplies; no software helpers are linked
+
 # Upstream sources are 1988-era K&R C, so they build as gnu89. clang ignores
 # upstream's "#pragma GCC optimize no-inline"; -fno-inline keeps that intent.
 BENCHMARKS = {
@@ -48,6 +70,22 @@ BENCHMARKS = {
         'vendor_flags': ['-std=gnu89', '-fno-inline', '-Wno-unknown-pragmas',
                          '-Wno-implicit-int', '-Wno-implicit-function-declaration',
                          '-Wno-deprecated-non-prototype', '-Wno-return-type'],
+    },
+    # Z7_ST: 7-Zip's single-threaded build (7z b -mmt1), no LzFindMt.
+    'lzma': {
+        'sources': [
+            (LZMA_VENDOR / 'LzmaEnc.c', 'vendor'),
+            (LZMA_VENDOR / 'LzmaDec.c', 'vendor'),
+            (LZMA_VENDOR / 'LzFind.c', 'vendor'),
+            (BENCH / 'lzma_bench.c', 'port'),
+            (BENCH / 'lzma_bench_data.c', 'port'),
+            (BENCH / 'lzma_runtime.c', 'port'),
+        ],
+        'vendor_flags': ['-std=c11'],
+        'include': [BENCH / 'include-lzma', BENCH / 'include', LZMA_VENDOR],
+        'defines': ['-DZ7_ST'],
+        'required': ('lzma_bench_pass', 'bench_generate_lz', 'LzmaEnc_Encode', 'LzmaDec_DecodeToDic'),
+        'headers': [BENCH / 'include-lzma', LZMA_VENDOR],
     },
 }
 
@@ -101,9 +139,12 @@ def run(command, log=None):
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--benchmark', choices=sorted(BENCHMARKS), default='dhrystone')
-    parser.add_argument('--ram-kib', type=int, default=64, help='RAM size in KiB, a power of two from 32 to 1024')
+    parser.add_argument('--ram-kib', type=int, help='RAM size in KiB, a power of two from 32 to 1024 '
+                        '(default 64; 1024 for lzma)')
     parser.add_argument('--opt', choices=['O1', 'O2', 'O3', 'Os'], default='O2')
-    parser.add_argument('--isa', choices=ISAS, default=ISAS[0])
+    parser.add_argument('--isa', choices=ISAS, help=f'Default {ISAS[0]}; {LZMA_ISAS[-1]} for lzma')
+    parser.add_argument('--lzma-dict-log', type=int, default=12,
+                        help='lzma only: dictionary size 2^N bytes, N from 12 (the LZMA minimum) to 16')
     parser.add_argument('--runtime', choices=('reference', 'fast'), default='reference',
                         help='reference: byte-at-a-time strcpy/strcmp (compared across cores); '
                              'fast: word-at-a-time (a labelled, separate configuration)')
@@ -111,16 +152,34 @@ def main():
         parser.add_argument('--' + name, default=tool('clang' if name == 'clang' else 'llvm-' + name))
     parser.add_argument('--out-dir', help='Default: build/cpu/bench/<benchmark>, plus -rv64im for that ISA')
     args = parser.parse_args()
+    lzma = args.benchmark == 'lzma'
+    if args.ram_kib is None:
+        args.ram_kib = 1024 if lzma else 64
+    if args.isa is None:
+        args.isa = LZMA_ISAS[-1] if lzma else ISAS[0]
+    if lzma:
+        if args.isa not in LZMA_ISAS:
+            parser.error('--benchmark lzma needs the M extension (rv64im or rv64imb)')
+        if args.runtime != 'reference':
+            parser.error('--runtime applies to dhrystone only')
+        if not 12 <= args.lzma_dict_log <= 16:
+            parser.error('--lzma-dict-log must be from 12 to 16')
     if args.ram_kib not in (32, 64, 128, 256, 512, 1024):
         parser.error('--ram-kib must be a power of two from 32 to 1024')
     suffix = ('' if args.isa == ISAS[0] else '-' + isa_label(args.isa)) + \
         ('' if args.runtime == 'reference' else '-fastrt')
+    if lzma:
+        suffix = f'-d{args.lzma_dict_log}-{isa_label(args.isa)}'
     out = (ROOT / (args.out_dir or f'build/cpu/bench/{args.benchmark}{suffix}')).resolve()
     if not out.is_relative_to((ROOT / 'build').resolve()):
         parser.error('--out-dir must be inside the repository build/ directory')
     for name, digest in VENDOR_SHA256.items():
         if sha(VENDOR / name) != digest:
             raise SystemExit(f'Vendored {name} differs from its recorded upstream identity')
+    if lzma:
+        for name, digest in LZMA_VENDOR_SHA256.items():
+            if sha(LZMA_VENDOR / name) != digest:
+                raise SystemExit(f'Vendored {name} differs from its recorded upstream identity')
     out.mkdir(parents=True, exist_ok=True)
 
     spec = BENCHMARKS[args.benchmark]
@@ -135,6 +194,9 @@ def main():
               '-mcmodel=medany', '-msmall-data-limit=0', '-mno-relax', f'-{args.opt}',
               '-ffreestanding', '-fno-builtin', '-fno-stack-protector', '-fno-common',
               '-nostdlibinc', '-I', BENCH / 'include', '-I', VENDOR]
+    if lzma:
+        common = common[:-4] + [x for d in spec['include'] for x in ('-I', d)] + spec['defines'] + \
+            [f'-DLZMA_BENCH_DICT_LOG={args.lzma_dict_log}']
     port_flags = ['-std=c11', '-Wall', '-Wextra', '-Werror']
     started = time.perf_counter()
     commands, objects = [], []
@@ -166,7 +228,8 @@ def main():
         if match:
             symbols[match[3]] = int(match[1], 16)
             kinds[match[3]] = match[2]
-    for required in ('_start', 'main', '__bss_start', '__bss_end', '__bench_mailbox', 'setStats'):
+    for required in ('_start', 'main', '__bss_start', '__bss_end', '__bench_mailbox') + \
+            spec.get('required', ('setStats',)):
         if required not in symbols:
             raise RuntimeError(f'Missing symbol {required}')
     if symbols['__bench_mailbox'] != mailbox:
@@ -188,10 +251,14 @@ def main():
 
     inputs = [source for source, _ in spec['sources']] + [BENCH / 'start.S', Path(__file__)]
     inputs += sorted((BENCH / 'include').glob('*.h'))
+    for directory in spec.get('headers', []):
+        inputs += sorted(directory.glob('*.h'))
     report = {
         'benchmark': args.benchmark,
         'compiler': run([args.clang, '--version']).splitlines()[0],
         'isa': args.isa, 'abi': ABI, 'optimization': args.opt, 'runtime': args.runtime,
+        **({'lzma': {'dict_log': args.lzma_dict_log, 'dict_bytes': 1 << args.lzma_dict_log,
+                     'data_bytes': (1 << args.lzma_dict_log) + (1 << args.lzma_dict_log) // 64}} if lzma else {}),
         'ram_bytes': ram_bytes, 'ram_words': ram_bytes // 8,
         'mailbox_address': mailbox, 'stack_top': mailbox, 'stack_reserve_bytes': STACK_RESERVE,
         'payload_bytes': len(payload),

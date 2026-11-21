@@ -1,0 +1,35 @@
+LZMA SDK files from 7-Zip 26.06
+Repository: https://github.com/ip7z/7zip
+Commit: d3296e39e1f1f92c7b41c0c3848e65640428d42d (committed 2026-11-07)
+Version: 26.06 (C/7zVersion.h, MY_VERSION_NUMBERS "26.06")
+Path: C/
+Files (byte-identical to the upstream git blobs, LF line endings as stored
+upstream; git blob ids in brackets):
+  7zTypes.h   a5d03b8cb65cd3a2a56bde46dd68fb356d2ebacd9d70283e7d4d20b4e0a64713 [af47668055f4aa318d94005a33d199198b7ab775]
+  Compiler.h  d5e42be77d26beaa8c81d3e62ef99fc5685736cfc079779fdb9154d05fa8bc4a [707e46de05c175e6a2ed10c5a1689f975564be15]
+  CpuArch.h   259145c6f4b085f44284014574f39f3f562fc78466746bfb388efe06b4dd59b4 [93042209f95218233a25c4228d87abf1b67bbda4]
+  LzFind.c    f73da68845094a85b006a0d2da80b3ecdec92a1ca0f85df637e565c642e8d5ba [330bc17293153e3d4f99bdd21c4833bd8fc01cde]
+  LzFind.h    42732b38df9bb18f82866d7deaa8663f6c6f9cb10e2a2cdfa9e6f420c2e2f239 [67e8a6e0286ee0877043601039c5fbdae8588148]
+  LzHash.h    42d146d2130dfe49d0b21d15cc6f0fe9d79ac0ebb629985fe3aedde7b2bee80e [2b6290b64c08f7eb44568a67e90abcf4a611f979]
+  LzmaDec.c   4e6ec665a6df01f1722e2b2fc36dc5e3aa7c3890e0f8cb11c6a07c9a01f3309b [5bc5094cd57dd0c087f31bf4bfdb24562120dcfc]
+  LzmaDec.h   3aaf07b4ae4173a2d103179455dc7089b5ddbc7fc3db3c0e40964a7499c69266 [b0ce28fa02a1adc422b7269c4e6d2c2d26fc60b9]
+  LzmaEnc.c   67f23656339b5e19015acac41acbcf36ea7787a8419907dce91c1dd336a2fb0f [f54e67014961f1014509b61641df86f2f57b968c]
+  LzmaEnc.h   c5e78398309363dd181840b7ba0bcb856f66619f755d5e2f5e04f7437186ba5f [3feb5b4af0a45bcdba68cf729177a3c642b7f1e3]
+  Precomp.h   c8903f2e36a771a272d8981e1e9ffed5ba16ca3d2f3dca6d1414d2340a6829d0 [83b720e1150b6c2a93c79719feee2da86325c317]
+(SHA-256 first; sim/cpu/bench/build_bench.py refuses to build if one differs.)
+License: public domain. Every file above states "Igor Pavlov : Public domain"
+  in its header. 7-Zip's DOC/License.txt (copy: ../../../../../licenses/7ZIP-License.txt)
+  says files are public domain where the source file states it; DOC/readme.txt
+  and DOC/lzma.txt: "LZMA SDK is written and placed in the public domain by
+  Igor Pavlov."
+Downloaded: 2026-11-21 (from the clone in build/third-party/7zip/, taken with
+  git cat-file so the bytes are the committed blobs, not the CRLF checkout).
+Local changes: none. Built with -DZ7_ST (single-threaded, as 7z b -mmt1).
+
+Not copied here, but derived from 7-Zip under the GNU LGPL 2.1 or later
+(CPP/7zip/UI/Common/Bench.cpp states no licence, so DOC/License.txt applies):
+  sim/cpu/bench/lzma_bench_data.c  benchmark data generator, translated to C
+  sim/cpu/bench/lzma_rating.py     rating formulas, translated to Python
+  (licence text: ../../../../../licenses/7ZIP-LGPL-2.1.txt). The generator was
+  checked byte-identical to the upstream C++ text for 60 size/bits/salt cases,
+  including the 7z b -md22 size (4 MiB + 64 KiB).

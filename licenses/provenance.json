@@ -26,6 +26,18 @@
       "source": "https://github.com/riscv-software-src/riscv-tests/blob/3df703cd52d5f0d8224e3c50bf03c6cb70efff98/LICENSE",
       "sha256": "43b7309213293b4323d65301a90e05472579abcd51feb260a850354bcb49ff8f",
       "retrieved": "2026-11-20"
+    },
+    {
+      "path": "licenses/7ZIP-License.txt",
+      "source": "https://github.com/ip7z/7zip/blob/d3296e39e1f1f92c7b41c0c3848e65640428d42d/DOC/License.txt",
+      "sha256": "dac8389b6bc39339537bc351772106afe7951cb242cdf03e855b67c3a683deb1",
+      "retrieved": "2026-11-21"
+    },
+    {
+      "path": "licenses/7ZIP-LGPL-2.1.txt",
+      "source": "https://github.com/ip7z/7zip/blob/d3296e39e1f1f92c7b41c0c3848e65640428d42d/DOC/copying.txt",
+      "sha256": "dc626520dcd53a22f727af3ee42c770e56c97a64fe3adb063799d8ab032fe551",
+      "retrieved": "2026-11-21"
     }
   ]
 }

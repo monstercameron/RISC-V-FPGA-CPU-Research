@@ -2,6 +2,10 @@
 // Benchmark bench: the core with its synchronous RAM wrapper. Counts clocks
 // and retired instructions between the program's start and stop marker writes
 // to mailbox word 0, then prints the mailbox for the Python runner to check.
+// Marker values 16-255 are laps, printed without changing the region. With
+// +sample_from=N +sample_to=M (retirement counts since reset) the bench instead
+// times that retirement window, prints it and stops there; markers are then only
+// reported. The LZMA benchmark runner uses both; Dhrystone uses neither.
 `timescale 1ns/1ps
 module tb_bench #(parameter integer RAM_WORDS = 8192);
     reg clk=0,reset=1;
@@ -16,6 +20,7 @@ module tb_bench #(parameter integer RAM_WORDS = 8192);
     reg [63:0] mailbox=64'hffffffffffffffff, marker=0;
     integer index,i,cycles=0,retirements=0,max_cycles=50000000,profile_fd=0;
     integer start_cycle=-1,start_retired=-1,stop_cycle=-1,stop_retired=-1;
+    integer sample_from=-1,sample_to=-1,sample_cycle=-1,sample_retired=-1,laps=0;
     // Clocks spent in each core state since the previous retirement.
     integer in_fetch=0,in_execute=0,in_memory=0,w;
     initial begin
@@ -26,6 +31,9 @@ module tb_bench #(parameter integer RAM_WORDS = 8192);
         end
         if (!$value$plusargs("mailbox=%h",mailbox)) $fatal(1,"missing +mailbox");
         if ($value$plusargs("max_cycles=%d",max_cycles)) begin end
+        if ($value$plusargs("sample_from=%d",sample_from) != $value$plusargs("sample_to=%d",sample_to))
+            $fatal(1,"+sample_from and +sample_to go together");
+        if (sample_to>=0 && !(sample_from>=0 && sample_to>sample_from)) $fatal(1,"bad sample window");
         if (mailbox[2:0]!=0 || mailbox+256>RAM_WORDS*8) $fatal(1,"mailbox outside RAM");
         index=mailbox>>3;
         $readmemh(image_path,dut.ram);
@@ -78,19 +86,40 @@ module tb_bench #(parameter integer RAM_WORDS = 8192);
             default: begin end
         endcase
         if (cycles>max_cycles) $fatal(1,"benchmark exceeded %0d cycles",max_cycles);
-        if (dut.ram[index]!==marker) begin
+        if (sample_to>=0) begin
+            if (sample_cycle<0 && retirements>=sample_from) begin
+                sample_cycle=cycles; sample_retired=retirements;
+            end
+            if (dut.ram[index]!==marker) begin
+                $display("MARK %0d cycles=%0d retirements=%0d",dut.ram[index],cycles,retirements);
+                marker=dut.ram[index];
+            end
+            if (retirements>=sample_to || trapped) begin
+                $display("SAMPLE cycles=%0d retirements=%0d from_cycle=%0d from_retired=%0d to_cycle=%0d to_retired=%0d trapped=%0d",
+                    cycles-sample_cycle,retirements-sample_retired,sample_cycle,sample_retired,cycles,retirements,trapped);
+                $finish;
+            end
+        end else if (dut.ram[index]!==marker) begin
             if (dut.ram[index]==1 && start_cycle<0) begin
                 start_cycle=cycles; start_retired=retirements;
             end else if (dut.ram[index]==2 && start_cycle>=0 && stop_cycle<0) begin
                 stop_cycle=cycles; stop_retired=retirements;
+            end else if (dut.ram[index]>=16 && dut.ram[index]<256) begin
+                // Lap markers (16-255, used by the LZMA benchmark to split its phases):
+                // reported with the same sampling as the region, which they do not change.
+                $display("LAP %0d cycles=%0d retirements=%0d",dut.ram[index],cycles,retirements);
+                laps=laps+1;
             end else $fatal(1,"unexpected marker value %0h",dut.ram[index]);
             marker=dut.ram[index];
         end
-        if (trapped) begin
+        if (trapped && sample_to<0) begin
             if (cause!==3 || tval!==0) $fatal(1,"unexpected trap cause=%0d tval=%016h pc=%016h",cause,tval,pc);
             if (stop_cycle<0) $fatal(1,"benchmark did not write both markers");
             $display("COUNTERS cycles=%0d retirements=%0d trap_pc=%016h",cycles,retirements,pc);
             $display("REGION cycles=%0d retirements=%0d",stop_cycle-start_cycle,stop_retired-start_retired);
+            // With laps, also the region's absolute edges, so laps can be related to it.
+            if (laps>0) $display("EDGES start_cycle=%0d start_retired=%0d stop_cycle=%0d stop_retired=%0d",
+                start_cycle,start_retired,stop_cycle,stop_retired);
             for (i=1;i<32;i=i+1) $display("MAILBOX %0d %016h",i,dut.ram[index+i]);
             if (profile_fd!=0) $fclose(profile_fd);
             $finish;

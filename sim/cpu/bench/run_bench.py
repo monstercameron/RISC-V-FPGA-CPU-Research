@@ -10,6 +10,9 @@ build_bench.py. Two checks run:
    must match the project's sequential reference model.
 
 Results are simulation evidence (rubric class E1), not a compliant benchmark run.
+
+--benchmark lzma runs the scaled-down 7-Zip LZMA kernel instead; lzma_run.py
+describes its phases, checkpoint sampling and checks.
 SPDX-License-Identifier: MIT
 """
 from pathlib import Path
@@ -73,7 +76,7 @@ def command(args, timeout=300):
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    parser.add_argument('--benchmark', choices=['dhrystone'], default='dhrystone')
+    parser.add_argument('--benchmark', choices=['dhrystone', 'lzma'], default='dhrystone')
     parser.add_argument('--out-dir', help='Default: build/cpu/bench/<benchmark>')
     parser.add_argument('--stalls', type=int, nargs='+', default=[0, 7],
                         help='Maximum random memory wait cycles for each differential run')
@@ -85,7 +88,19 @@ def main():
     parser.add_argument('--devlog', action='store_true',
                         help='Write this run, its rubric scorecard and profile to devlog/devlog-<commit>.md '
                              'and add a row to the run index in DEVLOG.md')
+    lzma_options = parser.add_argument_group('lzma only')
+    lzma_options.add_argument('--lzma-mode', choices=('full', 'sampled'),
+                              help='full: whole program from reset; sampled: checkpointed pieces '
+                                   '(default full, sampled for ooo)')
+    lzma_options.add_argument('--sample-instructions', type=int, help='Instructions per piece (sampled mode)')
+    lzma_options.add_argument('--warmup-instructions', type=int, help='Warm-up before each piece (sampled mode)')
+    lzma_options.add_argument('--jobs', type=int, default=3, help='Simulations run at once (sampled mode)')
+    lzma_options.add_argument('--no-differential', action='store_true', help='Skip the piece trace checks')
+    lzma_options.add_argument('--differential-every', type=int, default=1,
+                              help='Trace-check every K-th piece of each phase (always the first)')
     args = parser.parse_args()
+    if args.benchmark == 'lzma' and args.devlog:
+        parser.error('--devlog records Dhrystone runs only; log LZMA runs in DEVLOG.md by hand')
     if not shutil.which('iverilog') or not shutil.which('vvp'):
         parser.error('iverilog and vvp are required; on Windows use run_dhrystone.ps1')
     out = (ROOT / (args.out_dir or f'build/cpu/bench/{args.benchmark}')).resolve()
@@ -106,6 +121,10 @@ def main():
         (snap / name).parent.mkdir(parents=True, exist_ok=True)
         shutil.copyfile(ROOT / name, snap / name)
     rtl = [snap / core_file, snap / 'rtl/cpu/rv64_bram_soc.sv']
+    if args.benchmark == 'lzma':
+        import lzma_run
+        lzma_run.run(args, ROOT, out, build, snap, rtl, core_file, command, sha)
+        return
 
     # 1. Timing on the core plus synchronous RAM wrapper.
     timing_vvp = out / 'tb_bench.vvp'

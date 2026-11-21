@@ -58,3 +58,55 @@ so a simulation finishes in minutes; see the benchmark's own notes), so its rati
 after calibrating the same scaled kernel on a real CPU, and compression results in particular depend
 on memory latency, which our model idealizes (1-clock SRAM, 4 KiB caches). Quote our numbers as
 simulation of a scaled kernel, with those caveats.
+
+## Optimization target: 10,000 MIPS (set 2026-11-21)
+
+The user set the core's optimization target to a **10,000 MIPS** single-thread 7-Zip rating (`7z b -mmt1`,
+`-md22`, compression and decompression each). A rating is a speed, so a per-clock target depends on the
+clock; the goal is stated at **4 GHz**, near the clock at which the X925 above rates 8,000:
+
+| Clock | Per-MHz rating needed (`7z b`) | Compared with the X925 (1.9 per MHz) |
+|---|---:|---|
+| 3 GHz | 3.33 | 1.75x |
+| **4 GHz (goal)** | **2.50** | **1.3x** |
+| 5 GHz | 2.00 | 1.05x |
+| 100 MHz (FPGA class) | 100 | not reachable by any core; an FPGA build is measured per MHz only |
+
+At 4 GHz the target is about 1.3x the X925 and 1.1x / 1.0x Apple M1 per clock (2.22 / 2.52). On the
+scaled kernel our simulation runs, the X925's ratio between kernel and `7z b` (4.37x compression,
+1.34x decompression) puts the goal at about **10.9 compression / 3.35 decompression kernel MIPS/MHz**.
+That conversion is an estimate from one real CPU: the kernel's 4 KiB dictionary removes most of the
+cache-miss cost that dominates `7z b` compression, so a core that does well on the kernel can still miss
+the target on the real benchmark. A full-dictionary result needs a realistic memory hierarchy in the
+model, which it does not have yet (1-clock memory).
+
+## The scaled kernel on our cores (simulation)
+
+`sim/cpu/bench/lzma_bench.c` runs 7-Zip's LZMA benchmark kernel (the LZMA SDK C sources of 7-Zip 26.06,
+the same benchmark data generator and level-5 BT4 encoder settings as `7z b`) at a size a simulation can
+finish: 4 KiB dictionary (the LZMA minimum), 4,160 bytes of data, 2,220 bytes packed. Ratings use
+7-Zip's own formulas (compression: 870 commands per data byte; decompression: 190 per packed byte plus 4
+per data byte) divided by clocks, so they are per MHz and independent of clock rate. Because the small
+dictionary fits in cache, the kernel rates a real CPU far higher than `7z b` does: on the X925 the same
+kernel gives 8.34 / 2.59 MIPS/MHz against 1.91 / 1.93 from `7z b -md22` (compression 4.4x, decompression
+1.34x). Compare our cores with the native figure for the same kernel, not with the `7z b` tables above.
+
+| Core (architecture 0.14.6 RTL, rv64imb, clang -O2) | Compress MIPS/MHz | Decompress MIPS/MHz | Compress / decompress IPC |
+|---|---:|---:|---|
+| **Goal at 4 GHz (estimated kernel equivalent of 10,000 MIPS)** | **10.9** | **3.35** | |
+| Arm Cortex-X925, native (user's laptop, ~4.27 GHz) | 8.34 | 2.59 | n/a |
+| Multicycle core (`rv64_core.sv`) | 1.61 (19% of X925) | 1.69 (65%) | 1.36 / 1.66 |
+| Pipelined core (`rv64_pipe.sv`) | 0.96 (12%) | 0.89 (34%) | 0.82 / 0.87 |
+| Out-of-order core (`rv64_ooo.sv`), whole program under Verilator | 3.39 (41%) | 2.56 (99%) | 2.87 / 2.50 |
+
+All simulated figures are idealized-model simulation (1-clock memory, 4 KiB caches). The multicycle and
+pipelined results are whole-program runs checked against the reference model and an independent liblzma
+decode. The out-of-order figures come from one
+whole-program run under Verilator 5.020, whose clock counts matched Icarus exactly on every case that
+Icarus can finish (Dhrystone on all three cores, the multicycle and pipelined LZMA runs, two
+out-of-order LZMA windows); its result mailbox passed and equals the multicycle core's. Compress kernel
+1,067,884 clocks for 3,065,963 instructions; decompress kernel 171,494 clocks for 429,119. An earlier
+sampled Icarus estimate (13 of 21 compress pieces) gave 3.32 / 2.555. Against the goal (10.9 / 3.35),
+out-of-order compression is at 31% and decompression at 76%. Benchmark design and commands:
+[lzma-benchmark.md](lzma-benchmark.md).
+
