@@ -61,8 +61,11 @@ module rv64_core #(
     //   integer port: select, then read physical registers and execute;
     //   load/store port: select, address and data-cache read, then tag check and data;
     //   retire: one instruction per clock from the ROB head; stores write the bus here.
-    // A load issues only when every older store has retired (stores write at
-    // retirement, so no store-to-load ordering hazard exists). A mispredicted branch
+    // A load issues once every older store has its address and data (0.9.1). In its
+    // second stage it checks the older stores still waiting to retire: if the
+    // youngest one writing its 8-byte beat covers all the load's bytes, that data is
+    // forwarded; if it covers only some, the load waits until they retire and then
+    // reads the bus (memory is current: the data cache is write-through). A mispredicted branch
     // redirects fetch when it executes; rename waits until that branch retires, then
     // the younger instructions are discarded and the map is restored from the
     // retirement map.
@@ -528,6 +531,8 @@ module rv64_core #(
     reg l1_writes, l2_writes;
     reg [63:0] l2_addr, l2_cause, l2_tval;
     reg [2:0] l2_f3;
+    reg [7:0] l2_bytes;   // the load's bytes within its beat
+    reg l2_force;         // an older store overlapped partly: read the bus
     wire [63:0] l1_a = prf[l1_ps1];
     wire [63:0] l1_b = prf[l1_ps2];
     wire [2:0] l1_f3 = l1_insn[14:12];
@@ -539,7 +544,33 @@ module rv64_core #(
     wire [7:0] l1_bytes = l1_f3[1:0] == 0 ? 8'h01 : l1_f3[1:0] == 1 ? 8'h03 : l1_f3[1:0] == 2 ? 8'h0f : 8'hff;
     wire [DC_INDEX-1:0] l1_idx = l1_ea[3 +: DC_INDEX];
     wire [DC_INDEX-1:0] l2_idx = l2_addr[3 +: DC_INDEX];
-    wire l2_hit = dc_valid[l2_idx] && dq_tag == l2_addr[63 -: DC_TAG];
+    wire l2_hit = dc_valid[l2_idx] && dq_tag == l2_addr[63 -: DC_TAG] && !l2_force;
+    // Older stores waiting to retire that write the load's beat; the youngest wins.
+    wire [4:0] l2_age = l2_rob - rob_head;
+    reg fwd_hit;
+    reg [4:0] fwd_idx;
+    reg [4:0] fwd_scan;
+    always @* begin
+        fwd_hit = 0; fwd_idx = 0;
+        for (k = 0; k < ROB_N; k = k + 1) begin
+            fwd_scan = rob_head + k[4:0];
+            if (k[4:0] < l2_age && rob_live[fwd_scan] && rob_store[fwd_scan] &&
+                rob_addr[fwd_scan][63:3] == l2_addr[63:3] && (rob_wstrb[fwd_scan] & l2_bytes) != 0) begin
+                fwd_hit = 1; fwd_idx = fwd_scan;
+            end
+        end
+    end
+    wire fwd_full = fwd_hit && ((rob_wstrb[fwd_idx] & l2_bytes) == l2_bytes);
+    // Oldest store without its address and data yet: younger loads wait for it.
+    reg ou_valid;
+    reg [4:0] ou_age;
+    always @* begin
+        ou_valid = 0; ou_age = 0;
+        for (k = ROB_N-1; k >= 0; k = k - 1)
+            if (rob_live[rob_head + k[4:0]] && rob_store[rob_head + k[4:0]] && !rob_done[rob_head + k[4:0]]) begin
+                ou_valid = 1; ou_age = k[4:0];
+            end
+    end
 
     function automatic [63:0] load_align(input [63:0] beat, input [2:0] lane, input [2:0] size);
         reg [63:0] s;
@@ -567,13 +598,13 @@ module rv64_core #(
     wire [IC_INDEX-1:0] h_ic_idx = h_addr[3 +: IC_INDEX];
     // Bus: the retiring store first, then a load miss, then a fetch; a presented
     // request is held until it completes.
-    wire l2_miss = l2_valid && l2_load && !l2_exc && !l2_hit;
+    wire l2_miss = l2_valid && l2_load && !l2_exc && !fwd_hit && !l2_hit;
     // The retiring store's cache tags are read one clock ahead (ds_tag, ic_sq); ds_ok
     // says that read was for this head after its address was known.
     reg ds_ok;
     wire h_exc = h_valid && rob_done[h] && rob_exc[h];
     wire st_req = h_store && ds_ok && !fetch_active && !ld_active && !halted;
-    wire ld_req = l2_miss && !fetch_active && !halted && (ld_active || (!h_store && !h_exc));
+    wire ld_req = !fetch_active && !halted && (ld_active || (l2_miss && !h_store && !h_exc));
     wire f_want = f_valid && started && !halted && !f_misaligned && !f_hit;
     wire fetch_req = !halted && (fetch_active || (f_want && !h_store && !l2_miss && !h_exc));
     wire [63:0] fetch_beat = fetch_active ? fetch_addr : {f_pc[63:3],3'b000};
@@ -596,9 +627,9 @@ module rv64_core #(
     wire f_ready = f_valid && started && !halted && (f_misaligned || f_hit || fetch_for_f);
 
     // L2 completes: a hit now, or a miss when its bus read returns.
-    wire [63:0] l2_beat = l2_hit ? dq_data : mem_rdata;
+    wire [63:0] l2_beat = fwd_full ? rob_wdata[fwd_idx] : l2_hit ? dq_data : mem_rdata;
     wire [63:0] l2_value = load_align(l2_beat, l2_addr[2:0], l2_f3);
-    wire l2_done = l2_valid && (l2_exc || !l2_load || l2_hit || ld_done);
+    wire l2_done = l2_valid && (l2_exc || fwd_full || (!fwd_hit && l2_hit) || ld_done);
     wire l2_fault = ld_done && mem_error;
 
     // Retirement of the ROB head.
@@ -633,7 +664,8 @@ module rv64_core #(
             if (iq_valid[k] && !iq_mem[k] && iq_r1[k] && iq_r2[k] && !(iq_mdu[k] && (md_busy || e_mdu_pending))) begin
                 sel_valid = 1; sel = k[2:0];
             end
-            if (iq_valid[k] && iq_mem[k] && iq_r1[k] && (iq_load[k] ? iq_stseq[k] == st_retired : iq_r2[k])) begin
+            if (iq_valid[k] && iq_mem[k] && iq_r1[k] &&
+                (iq_load[k] ? (!ou_valid || iq_rob[k] - rob_head < ou_age) : iq_r2[k])) begin
                 msel_valid = 1; msel = k[2:0];
             end
         end
@@ -716,6 +748,12 @@ module rv64_core #(
     wire st_hit = dc_valid[h_dc_idx] && ds_tag == h_addr[63 -: DC_TAG];
     wire dc_fill = ld_done && !mem_error;
     wire dc_st = retire && rob_store[h] && st_hit;
+    // The line a retiring store leaves, for a load reading the same line this clock.
+    reg [63:0] st_line;
+    always @* begin
+        st_line = dc_data[h_dc_idx];
+        for (k = 0; k < 8; k = k + 1) if (rob_wstrb[h][k]) st_line[8*k +: 8] = rob_wdata[h][8*k +: 8];
+    end
 
     wire [2:0] state = halted ? HALTED : (data_req && !mem_ready) ? MEMORY
                      : (!retire && f_valid && !f_ready) ? FETCH : EXECUTE;
@@ -740,7 +778,7 @@ module rv64_core #(
             ic_data[fill_idx] <= mem_rdata;
         end
         if (l1_valid && l1_load && l1_advance) begin
-            dq_data <= (dc_fill && l2_idx == l1_idx) ? mem_rdata : dc_data[l1_idx];
+            dq_data <= (dc_fill && l2_idx == l1_idx) ? mem_rdata : (dc_st && h_dc_idx == l1_idx) ? st_line : dc_data[l1_idx];
             dq_tag <= (dc_fill && l2_idx == l1_idx) ? l2_addr[63 -: DC_TAG] : dc_tag[l1_idx];
         end
         ds_tag <= (dc_fill && l2_idx == hn_dc_idx) ? l2_addr[63 -: DC_TAG] : dc_tag2[hn_dc_idx];
@@ -781,7 +819,7 @@ module rv64_core #(
             dv_a<=0; dv_b<=0; dv_f3<=0; dv_word<=0; div_setup<=0; div_early_r<=0; div_early_val<=0;
             l1_valid<=0; l1_load<=0; l1_insn<=0; l1_ps1<=0; l1_ps2<=0; l1_pdst<=0; l1_rob<=0; l1_writes<=0;
             l2_valid<=0; l2_load<=0; l2_exc<=0; l2_wait<=0; l2_dead<=0; l2_pdst<=0; l2_rob<=0; l2_writes<=0;
-            l2_addr<=0; l2_cause<=0; l2_tval<=0; l2_f3<=0;
+            l2_addr<=0; l2_cause<=0; l2_tval<=0; l2_f3<=0; l2_bytes<=0; l2_force<=0;
             trap_valid<=0; trap_pc<=0; trap_cause<=0; trap_tval<=0;
             retire_valid<=0; retire_pc<=0; retire_insn<=0;
             retire_rd<=0; retire_data<=0; retire_next_pc<=0;
@@ -904,8 +942,10 @@ module rv64_core #(
                         l2_valid<=1; l2_load<=1; l2_dead<=0; l2_exc<=l1_illegal || l1_misaligned;
                         l2_cause<=l1_illegal ? 64'd2 : 64'd4; l2_tval<=l1_illegal ? {32'b0,l1_insn} : l1_ea;
                         l2_addr<=l1_ea; l2_f3<=l1_f3; l2_pdst<=l1_pdst; l2_rob<=l1_rob; l2_writes<=l1_writes;
+                        l2_bytes<=l1_bytes << l1_ea[2:0]; l2_force<=0;
                     end
                 end else if (l2_done) begin l2_valid<=0; l2_dead<=0; end
+                else if (l2_valid && fwd_hit && !fwd_full) l2_force<=1;  // read the bus once they retire
                 if (l1_advance && !flush_back && !l1_load) begin
                     begin
                         // A store only records its address and data; it writes at retirement.

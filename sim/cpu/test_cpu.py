@@ -246,6 +246,22 @@ def cases():
                   r_type(op, 21, f3, 4, 7, 1), store(2, 30, 8, 100)]
         yield f'mul_then_store_pad{pad}', p + [i_type(3, 22, 3, 30, 96), 0x100073], 0, MASK
 
+    # 0.9.1 store-to-load forwarding in the out-of-order core: a load right after
+    # stores to its beat, with full cover, partial cover, narrower and wider loads,
+    # two stores where the younger wins, and a dependent store-load chain; run twice
+    # so the second pass hits in the caches.
+    body = [store(3, 30, 5, 0x300), i_type(3, 10, 3, 30, 0x300),                    # full
+            store(0, 30, 6, 0x301), i_type(3, 11, 3, 30, 0x300),                    # byte into dword
+            store(3, 30, 7, 0x308), i_type(3, 12, 2, 30, 0x30c),                    # word of a dword
+            store(2, 30, 8, 0x310), i_type(3, 13, 6, 30, 0x310), i_type(3, 14, 0, 30, 0x313),
+            store(1, 30, 9, 0x318), store(1, 30, 4, 0x31a), i_type(3, 15, 2, 30, 0x318),  # two halves
+            store(3, 30, 3, 0x320), store(3, 30, 2, 0x320), i_type(3, 16, 3, 30, 0x320),  # younger wins
+            i_type(3, 17, 3, 30, 0x300), r_type(0x33, 18, 0, 17, 17), store(3, 30, 18, 0x328),
+            i_type(3, 19, 3, 30, 0x328), i_type(0x13, 20, 0, 20, -1)]
+    p = prefix() + [i_type(0x13, 20, 0, 0, 2)] + body
+    p += [branch(1, 20, 0, -4 * len(body)), 0x100073]
+    yield 'store_load_forwarding', p, 0, MASK
+
     # Every multiply into x0 (no write, trace data 0), then a use of x0.
     p = prefix() + [r_type(op, 0, f3, 3, 4, 1) for op, f3 in muls] + [i_type(0x13, 5, 0, 0, 1), 0x100073]
     yield 'mul_into_x0', p, 0, MASK
