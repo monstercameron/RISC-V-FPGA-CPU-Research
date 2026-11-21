@@ -11,12 +11,18 @@ module tb_bench #(parameter integer RAM_WORDS = 8192);
     rv64_bram_soc #(.RAM_WORDS(RAM_WORDS)) dut(.clk(clk),.reset(reset),.trapped(trapped),
         .trap_pc(pc),.trap_cause(cause),.trap_tval(tval),.retire_valid(retired),.retire_pc(rpc));
 
-    string image_path;
+    string image_path,profile_path;
     reg [63:0] mailbox=64'hffffffffffffffff, marker=0;
-    integer index,i,cycles=0,retirements=0,max_cycles=50000000;
+    integer index,i,cycles=0,retirements=0,max_cycles=50000000,profile_fd=0;
     integer start_cycle=-1,start_retired=-1,stop_cycle=-1,stop_retired=-1;
+    // Clocks spent in each core state since the previous retirement.
+    integer in_fetch=0,in_execute=0,in_memory=0;
     initial begin
         if (!$value$plusargs("image=%s",image_path)) $fatal(1,"missing +image");
+        if ($value$plusargs("profile=%s",profile_path)) begin
+            profile_fd=$fopen(profile_path,"w");
+            if (!profile_fd) $fatal(1,"cannot open +profile file");
+        end
         if (!$value$plusargs("mailbox=%h",mailbox)) $fatal(1,"missing +mailbox");
         if ($value$plusargs("max_cycles=%d",max_cycles)) begin end
         if (mailbox[2:0]!=0 || mailbox+256>RAM_WORDS*8) $fatal(1,"mailbox outside RAM");
@@ -31,6 +37,20 @@ module tb_bench #(parameter integer RAM_WORDS = 8192);
     always @(negedge clk) if (!reset) begin
         cycles=cycles+1;
         if (retired) retirements=retirements+1;
+        // +profile: one line per instruction retired inside the timed region with
+        // the clocks it spent in FETCH, EXECUTE and MEMORY (states 0, 1, 2).
+        if (retired) begin
+            if (profile_fd!=0 && start_cycle>=0 && stop_cycle<0)
+                $fdisplay(profile_fd,"R %016h %08h %02h %016h %0d %0d %0d",dut.cpu.retire_pc,
+                    dut.cpu.retire_insn,dut.cpu.retire_rd,dut.cpu.retire_next_pc,in_fetch,in_execute,in_memory);
+            in_fetch=0; in_execute=0; in_memory=0;
+        end
+        case (dut.cpu.state)
+            0: in_fetch=in_fetch+1;
+            1: in_execute=in_execute+1;
+            2: in_memory=in_memory+1;
+            default: begin end
+        endcase
         if (cycles>max_cycles) $fatal(1,"benchmark exceeded %0d cycles",max_cycles);
         if (dut.ram[index]!==marker) begin
             if (dut.ram[index]==1 && start_cycle<0) begin
@@ -46,6 +66,7 @@ module tb_bench #(parameter integer RAM_WORDS = 8192);
             $display("COUNTERS cycles=%0d retirements=%0d trap_pc=%016h",cycles,retirements,pc);
             $display("REGION cycles=%0d retirements=%0d",stop_cycle-start_cycle,stop_retired-start_retired);
             for (i=1;i<32;i=i+1) $display("MAILBOX %0d %016h",i,dut.ram[index+i]);
+            if (profile_fd!=0) $fclose(profile_fd);
             $finish;
         end
     end

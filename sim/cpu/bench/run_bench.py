@@ -101,7 +101,7 @@ def main():
              '-o', timing_vvp, *rtl, ROOT / 'sim/cpu/bench/tb_bench.sv'])
     started = time.perf_counter()
     output = command(['vvp', timing_vvp, f'+image={out / "bench-words.hex"}', f'+mailbox={mailbox:x}',
-                      f'+max_cycles={args.max_cycles}'])
+                      f'+max_cycles={args.max_cycles}', f'+profile={out / "profile.trace"}'])
     timing_seconds = time.perf_counter() - started
     (out / 'timing-run.txt').write_text(output, encoding='utf-8')
     counters = re.search(r'COUNTERS cycles=(\d+) retirements=(\d+) trap_pc=([0-9a-f]{16})', output)
@@ -150,15 +150,12 @@ def main():
         if traced_region != region_retired or traced_total != total_retired:
             raise AssertionError('Timing and differential runs disagree on retired instruction counts')
         differential.append({'max_wait_cycles': stalls, 'events': len(actual_trace), 'result': 'PASS',
-                             'simulator_summary': summary.strip().splitlines()[0], 'trace': trace_path})
+                             'simulator_summary': summary.strip().splitlines()[0]})
 
-    # Every traced run retires the same instructions; the zero-wait run also gives a cycle count to check.
-    zero = next((d for d in differential if d['max_wait_cycles'] == 0), None)
-    tb_cycles = int(re.search(r'cycles=(\d+)', zero['simulator_summary'])[1]) if zero else None
-    profile = bench_profile.profile((zero or differential[0])['trace'], out / 'symbols.txt', out / 'bench.disasm.txt',
-                                    mailbox, runs, region_cycles, total_cycles, tb_cycles)
-    for d in differential:
-        del d['trace']
+    profile = bench_profile.profile(out / 'profile.trace', out / 'symbols.txt', out / 'bench.disasm.txt',
+                                    runs, region_cycles)
+    if profile['instructions'] != region_retired:
+        raise AssertionError('Profile and timing run disagree on the timed instruction count')
 
     cycles_per_run = region_cycles / runs
     report = {
@@ -188,12 +185,13 @@ def main():
         'result_checks': checks,
         'differential': differential,
         'profile': {
-            'model_check': profile['model'],
-            'fetch_share_of_clocks': profile['instructions'] * profile['model']['fetch'] / profile['clocks'],
-            'classes_per_run': {k: {'instructions': n / runs, 'clocks': c / runs} for k, n, c in profile['classes']},
-            'functions_per_run': {name: {'instructions': n / runs, 'clocks': c / runs, 'calls': calls / runs}
-                                  for name, n, c, calls in profile['functions']},
-            'fetch_reuse_share': profile['fetch_reuse']['share'],
+            'per_instruction_clock_sum': profile['clocks'],
+            'state_clocks_per_run': {k: profile['totals'][k] / runs for k in ('fetch', 'execute', 'memory')},
+            'fetch_share_of_clocks': profile['totals']['fetch'] / profile['clocks'],
+            'bus_fetches_per_run': profile['totals']['fetch_misses'] / runs,
+            'classes_per_run': {k: {f: v / runs for f, v in d.items()} for k, d in profile['classes'].items()},
+            'functions_per_run': {name: {f: v / runs for f, v in d.items()} for name, d in profile['functions']},
+            'instruction_cache_estimates': profile['cache'],
             'estimates': profile['estimates'],
         },
         'instruction_names_executed': sorted(c for c in coverage if ':' not in c),
@@ -234,7 +232,7 @@ def main():
           f'{", ".join(granted) if granted else "none"}' + ('; evidence is stale' if card['evidence_stale'] else '') + '.')
     top = profile['functions'][0]
     print(f'Profile: fetch is {100 * report["profile"]["fetch_share_of_clocks"]:.1f}% of clocks; '
-          f'busiest function `{top[0]}` takes {100 * top[2] / profile["clocks"]:.1f}% of clocks.')
+          f'busiest function `{top[0]}` takes {100 * top[1]["clocks"] / profile["clocks"]:.1f}% of clocks.')
     if log_path:
         print(f'Logged this run to {log_path} and indexed it in DEVLOG.md.')
     print(f'Results: {(out / "results.json").relative_to(ROOT).as_posix()}')

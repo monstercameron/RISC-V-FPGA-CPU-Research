@@ -93,6 +93,18 @@ Times are US Eastern (UTC-05:00). Each timestamp names its source:
 | 21:11:38 to 21:13:05 | CI for `35565c0`: all seven jobs pass | CI |
 | about 21:18 | Trace profiler written; dry run on the 21:08 trace: model matches the measured timed region exactly | approx. |
 | 21:21:17 | First profiled Dhrystone run, logged to [devlog/devlog-35565c0.md](devlog/devlog-35565c0.md): unchanged 2,188.2 clocks per run, 37.1/100 | record |
+| about 21:25 | Optimization loop started (user goal: optimize from the profile, re-benchmark, repeat until clocks stop dropping, record every change and run). Commit `04b19db` (profiler and per-commit logs), local only | approx. |
+| 21:27:12 | Baseline run on `04b19db`, 0.1.0 core: 2,188.2 clocks per run; [devlog-04b19db.md](devlog/devlog-04b19db.md) | record |
+| about 21:31 | 0.1.1 fetch buffer written; main regression 96/96 pass plus reset and RAM-wrapper checks | approx. |
+| about 21:35 | Profiler switched from a fixed clock model to measured per-state clocks from the benchmark testbench. Unlogged tooling check on the uncommitted 0.1.1 tree: 1,706.2 clocks per run, per-instruction clocks equal the timed region exactly | output |
+
+### Optimization loop
+
+Each step changes the core, passes the main regression, is committed and tagged with its architecture version, and is then benchmarked with Dhrystone (clang 23.1.5 `-O2`, 64 KiB RAM). Run records are linked from the run index at the end of this file.
+
+| Version | Change | Clocks per run | CPI | DMIPS/MHz | vs 0.1.0 | Gain over previous |
+|---|---|---:|---:|---:|---:|---:|
+| 0.1.0 | Baseline multicycle core | 2,188.2 | 3.647 | 0.2601 | 1.00x | |
 
 ### Commits
 
@@ -301,3 +313,4 @@ One row per benchmark run, oldest first. Each run's full record (result, rubric 
 | 2026-11-20 21:04:14 -0500 | `3110337` | yes | unrecorded | clang version 23.1.5 `-O2` | 2,188.2 | 0.2601 | 37.1 | [devlog-3110337.md](devlog/devlog-3110337.md) |
 | 2026-11-20 21:08:12 -0500 | `3110337` | yes | 0.1.0 | clang version 23.1.5 `-O2` | 2,188.2 | 0.2601 | 37.1 | [devlog-3110337.md](devlog/devlog-3110337.md) |
 | 2026-11-20 21:21:17 -0500 | `35565c0` | yes | 0.1.0 | clang version 23.1.5 `-O2` | 2,188.2 | 0.2601 | 37.1 | [devlog-35565c0.md](devlog/devlog-35565c0.md) |
+| 2026-11-20 21:27:12 -0500 | `04b19db` | yes | 0.1.0 | clang version 23.1.5 `-O2` | 2,188.2 | 0.2601 | 37.1 | [devlog-04b19db.md](devlog/devlog-04b19db.md) |

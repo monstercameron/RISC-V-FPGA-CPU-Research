@@ -2,12 +2,12 @@
   "rubric": "cpu/review-rubric.md",
   "rubric_revision": 1,
   "assessed": "2026-11-20",
-  "assessed_at_commit": "3110337",
+  "assessed_at_commit": "cpu-v0.1.1",
   "assessed_by": "Author self-assessment, not an independent review (rubric HG8 and R9.4).",
-  "architecture_version": "0.1.0",
+  "architecture_version": "0.1.1",
   "rtl_sha256": {
     "rtl/cpu/rv64_bram_soc.sv": "a38d2ca4a05142f1982635fb9824a29b80abc94e31635415d3b341df0c06ae57",
-    "rtl/cpu/rv64_core.sv": "831101d3f376ed35f96e4549eb0e9cf67fd59ef79bdf025b3ddbf432aebd75d1"
+    "rtl/cpu/rv64_core.sv": "93117e8a6f97f11a4882d3bc3a909bb929c0a51d9471d6725c8e84c13f7dce98"
   },
   "scope": {
     "isa": "rv64i_zifencei",
@@ -20,72 +20,267 @@
   },
   "benchmark_set_complete": false,
   "gates": {
-    "HG1": {"status": "not met", "evidence": "Scope label lacks the performance target (rubric section 2). RTL hashes are recorded."},
-    "HG2": {"status": "auto", "evidence": "Computed from build/cpu/verification.json: must be PASS on the current RTL hashes."},
-    "HG3": {"status": "not met", "evidence": "Only the project-written reference model; no official architectural tests or external model."},
-    "HG4": {"status": "met", "evidence": "Every implemented cause (0-7, 11) is triggered in sim/cpu/test_cpu.py with exact PC, cause and value; terminal trap record only."},
-    "HG5": {"status": "met", "evidence": "No capability CSR; multiply and CSR encodings are tested to trap."},
-    "HG6": {"status": "not met", "evidence": "No known-issue list exists to review."},
-    "HG7": {"status": "not met", "evidence": "Icarus -Wall only; no dedicated lint or synthesis run."},
-    "HG8": {"status": "not met", "evidence": "No independent reviewer has reproduced the results."},
-    "PG1": {"status": "auto", "evidence": "Met only when HG1-HG8 are all met."},
-    "PG2": {"status": "not met", "evidence": "No post-route timing."},
-    "PG3": {"status": "not met", "evidence": "No CoreMark; Dhrystone runs are non-compliant simulation runs."},
-    "PG4": {"status": "met", "evidence": "Benchmarks run the same RTL hashes as the regression; no benchmark-only configuration."},
-    "PG5": {"status": "not met", "evidence": "No board measurement."}
+    "HG1": {
+      "status": "not met",
+      "evidence": "Scope label lacks the performance target (rubric section 2). RTL hashes are recorded."
+    },
+    "HG2": {
+      "status": "auto",
+      "evidence": "Computed from build/cpu/verification.json: must be PASS on the current RTL hashes."
+    },
+    "HG3": {
+      "status": "not met",
+      "evidence": "Only the project-written reference model; no official architectural tests or external model."
+    },
+    "HG4": {
+      "status": "met",
+      "evidence": "Every implemented cause (0-7, 11) is triggered in sim/cpu/test_cpu.py with exact PC, cause and value; terminal trap record only."
+    },
+    "HG5": {
+      "status": "met",
+      "evidence": "No capability CSR; multiply and CSR encodings are tested to trap."
+    },
+    "HG6": {
+      "status": "not met",
+      "evidence": "No known-issue list exists to review."
+    },
+    "HG7": {
+      "status": "not met",
+      "evidence": "Icarus -Wall only; no dedicated lint or synthesis run."
+    },
+    "HG8": {
+      "status": "not met",
+      "evidence": "No independent reviewer has reproduced the results."
+    },
+    "PG1": {
+      "status": "auto",
+      "evidence": "Met only when HG1-HG8 are all met."
+    },
+    "PG2": {
+      "status": "not met",
+      "evidence": "No post-route timing."
+    },
+    "PG3": {
+      "status": "not met",
+      "evidence": "No CoreMark; Dhrystone runs are non-compliant simulation runs."
+    },
+    "PG4": {
+      "status": "met",
+      "evidence": "Benchmarks run the same RTL hashes as the regression; no benchmark-only configuration."
+    },
+    "PG5": {
+      "status": "not met",
+      "evidence": "No board measurement."
+    }
   },
   "criteria": {
-    "R1.1": {"score": 2, "evidence": "All 53 instructions pass local differential tests (E1); no architectural tests or external lockstep (needs E2)."},
-    "R1.2": {"score": 2, "evidence": "Directed illegal encodings trap (E1); no random-word sweep against an external model."},
-    "R1.3": {"score": 2, "evidence": "Extreme constants, shift limits and word sign extension are tested; no written corner table."},
-    "R1.4": {"score": 3, "evidence": "Every width, byte lane and sign/zero extension tested; misaligned accesses trap per the declared policy."},
-    "R1.5": {"score": 2, "evidence": "x0, alignment and no-side-effect traps are checked through trace comparison, not by assertions in every simulation."},
-    "R1.6": {"score": 2, "evidence": "Suite enforces coverage of all 53 instruction names; no per-item ledger mapping RTL to tests for the claimed ISA."},
-    "R2.1": {"score": 3, "evidence": "Every implemented cause triggered with correct PC, cause and value; faulting instruction does not retire."},
-    "R2.2": {"score": null, "na": "Laboratory terminal-trap core: no trap return."},
-    "R2.3": {"score": null, "na": "No interrupts in the laboratory environment."},
-    "R2.4": {"score": null, "na": "No CSRs implemented."},
-    "R2.5": {"score": 2, "evidence": "Reset tested during one stalled store only (sim/cpu/tb_reset.sv), not in every control state."},
-    "R2.6": {"score": null, "na": "No data-independent-timing extension claimed."},
-    "R3.1": {"score": 1, "evidence": "Oracle is the project-written sim/cpu/reference.py."},
-    "R3.2": {"score": 2, "evidence": "Suite fails on missing instruction names or branch outcomes; trap causes and lanes are covered but not enforced as coverage bins."},
-    "R3.3": {"score": 0, "evidence": "No structural coverage measured."},
-    "R3.4": {"score": 1, "evidence": "1,800 random instructions, register and immediate arithmetic only."},
-    "R3.5": {"score": 0, "evidence": "No formal verification."},
-    "R3.6": {"score": 0, "evidence": "No injected-defect or mutation testing."},
-    "R3.7": {"score": 3, "evidence": "Full suite runs in CI on every push; recorded results name the RTL hashes."},
-    "R4.1": {"score": "auto", "evidence": "Computed from the Dhrystone run's clocks per instruction; capped at 2 while the benchmark set lacks CoreMark."},
-    "R4.2": {"score": 0, "evidence": "No CoreMark result."},
-    "R4.3": {"score": 0, "evidence": "No synthesis or timing."},
-    "R4.4": {"score": 0, "evidence": "No achieved frequency, so no absolute throughput."},
-    "R4.5": {"score": 2, "evidence": "Fetch, execute and load/store clock costs documented in cpu/dhrystone.md; branches, traps and stalls not tabulated."},
-    "R4.6": {"score": 1, "evidence": "Clocks per instruction reported at zero added wait cycles only."},
-    "R4.7": {"score": 0, "evidence": "No area measurement or comparator."},
-    "R4.8": {"score": 2, "evidence": "Each Dhrystone run is logged with RTL hashes and compared with the previous run; no automated failure on regression."},
-    "R5.1": {"score": 0, "evidence": "No synthesis."},
-    "R5.2": {"score": 0, "evidence": "No synthesis."},
-    "R5.3": {"score": 0, "evidence": "No constraints."},
-    "R5.4": {"score": 0, "evidence": "No timing report."},
-    "R5.5": {"score": 0, "evidence": "No reset synchronizer or crossing report."},
-    "R5.6": {"score": 0, "evidence": "No power estimate."},
-    "R5.7": {"score": 0, "evidence": "No complete FPGA flow build."},
-    "R6.1": {"score": 3, "evidence": "Trace testbench fails on any change to a stalled request and on any request after a trap, in every run."},
-    "R6.2": {"score": 2, "evidence": "Random waits up to 19 clocks; no stall of 1,000 clocks tested."},
-    "R6.3": {"score": 3, "evidence": "Fetch, load and store bus errors each tested; precise trap and no write."},
-    "R6.4": {"score": 1, "evidence": "Reads carry no access size; fetch reads a full 8-byte beat. Documented limitation."},
-    "R6.5": {"score": 2, "evidence": "RAM_WORDS tested at 2048 and 8192; RESET_PC only at its default."},
-    "R6.6": {"score": 2, "evidence": "Unmodified clang output runs, including Dhrystone; CoreMark not yet."},
-    "R7.1": {"score": 2, "evidence": "Trace has PC, instruction, destination, value and next PC; no source values, memory fields or trap flags."},
-    "R7.2": {"score": 3, "evidence": "Trap cause, PC and value stay stable and visible after any trap."},
-    "R7.3": {"score": null, "na": "Simulation-only review."},
-    "R7.4": {"score": 0, "evidence": "Trace logic cannot be removed by a parameter."},
-    "R8.1": {"score": 1, "evidence": "Icarus -Wall only; no dedicated lint run."},
-    "R8.2": {"score": 2, "evidence": "Synthesizable style by inspection; not yet accepted by a synthesis tool."},
-    "R8.3": {"score": 2, "evidence": "Architecture document written with the RTL; no item-by-item check recorded."},
-    "R8.4": {"score": 2, "evidence": "Retirement boundary is clean, but no long-operation interface exists yet to judge."},
-    "R9.1": {"score": 3, "evidence": "Documented commands reproduce the regression and Dhrystone locally and in CI; C demo and lessons not in CI."},
-    "R9.2": {"score": 4, "evidence": "Tool versions, flags and hashes recorded; benchmark runner refuses stale builds automatically."},
-    "R9.3": {"score": 2, "evidence": "New documents carry scope and evidence class; older C demo documents do not use the evidence classes."},
-    "R9.4": {"score": 1, "evidence": "Self-assessed by the author."}
+    "R1.1": {
+      "score": 2,
+      "evidence": "All 53 instructions pass local differential tests (E1); no architectural tests or external lockstep (needs E2)."
+    },
+    "R1.2": {
+      "score": 2,
+      "evidence": "Directed illegal encodings trap (E1); no random-word sweep against an external model."
+    },
+    "R1.3": {
+      "score": 2,
+      "evidence": "Extreme constants, shift limits and word sign extension are tested; no written corner table."
+    },
+    "R1.4": {
+      "score": 3,
+      "evidence": "Every width, byte lane and sign/zero extension tested; misaligned accesses trap per the declared policy."
+    },
+    "R1.5": {
+      "score": 2,
+      "evidence": "x0, alignment and no-side-effect traps are checked through trace comparison, not by assertions in every simulation."
+    },
+    "R1.6": {
+      "score": 2,
+      "evidence": "Suite enforces coverage of all 53 instruction names; no per-item ledger mapping RTL to tests for the claimed ISA."
+    },
+    "R2.1": {
+      "score": 3,
+      "evidence": "Every implemented cause triggered with correct PC, cause and value; faulting instruction does not retire."
+    },
+    "R2.2": {
+      "score": null,
+      "na": "Laboratory terminal-trap core: no trap return."
+    },
+    "R2.3": {
+      "score": null,
+      "na": "No interrupts in the laboratory environment."
+    },
+    "R2.4": {
+      "score": null,
+      "na": "No CSRs implemented."
+    },
+    "R2.5": {
+      "score": 2,
+      "evidence": "Reset tested during one stalled store only (sim/cpu/tb_reset.sv), not in every control state."
+    },
+    "R2.6": {
+      "score": null,
+      "na": "No data-independent-timing extension claimed."
+    },
+    "R3.1": {
+      "score": 1,
+      "evidence": "Oracle is the project-written sim/cpu/reference.py."
+    },
+    "R3.2": {
+      "score": 2,
+      "evidence": "Suite fails on missing instruction names or branch outcomes; trap causes and lanes are covered but not enforced as coverage bins."
+    },
+    "R3.3": {
+      "score": 0,
+      "evidence": "No structural coverage measured."
+    },
+    "R3.4": {
+      "score": 1,
+      "evidence": "1,800 random instructions, register and immediate arithmetic only."
+    },
+    "R3.5": {
+      "score": 0,
+      "evidence": "No formal verification."
+    },
+    "R3.6": {
+      "score": 0,
+      "evidence": "No injected-defect or mutation testing."
+    },
+    "R3.7": {
+      "score": 3,
+      "evidence": "Full suite runs in CI on every push; recorded results name the RTL hashes."
+    },
+    "R4.1": {
+      "score": "auto",
+      "evidence": "Computed from the Dhrystone run's clocks per instruction; capped at 2 while the benchmark set lacks CoreMark."
+    },
+    "R4.2": {
+      "score": 0,
+      "evidence": "No CoreMark result."
+    },
+    "R4.3": {
+      "score": 0,
+      "evidence": "No synthesis or timing."
+    },
+    "R4.4": {
+      "score": 0,
+      "evidence": "No achieved frequency, so no absolute throughput."
+    },
+    "R4.5": {
+      "score": 2,
+      "evidence": "Per-instruction FETCH, EXECUTE and MEMORY clocks are measured on every Dhrystone run and logged; branches, traps and stalls are not tabulated separately."
+    },
+    "R4.6": {
+      "score": 1,
+      "evidence": "Clocks per instruction reported at zero added wait cycles only."
+    },
+    "R4.7": {
+      "score": 0,
+      "evidence": "No area measurement or comparator."
+    },
+    "R4.8": {
+      "score": 2,
+      "evidence": "Each Dhrystone run is logged with RTL hashes and compared with the previous run; no automated failure on regression."
+    },
+    "R5.1": {
+      "score": 0,
+      "evidence": "No synthesis."
+    },
+    "R5.2": {
+      "score": 0,
+      "evidence": "No synthesis."
+    },
+    "R5.3": {
+      "score": 0,
+      "evidence": "No constraints."
+    },
+    "R5.4": {
+      "score": 0,
+      "evidence": "No timing report."
+    },
+    "R5.5": {
+      "score": 0,
+      "evidence": "No reset synchronizer or crossing report."
+    },
+    "R5.6": {
+      "score": 0,
+      "evidence": "No power estimate."
+    },
+    "R5.7": {
+      "score": 0,
+      "evidence": "No complete FPGA flow build."
+    },
+    "R6.1": {
+      "score": 3,
+      "evidence": "Trace testbench fails on any change to a stalled request and on any request after a trap, in every run."
+    },
+    "R6.2": {
+      "score": 2,
+      "evidence": "Random waits up to 19 clocks; no stall of 1,000 clocks tested."
+    },
+    "R6.3": {
+      "score": 3,
+      "evidence": "Fetch, load and store bus errors each tested; precise trap and no write."
+    },
+    "R6.4": {
+      "score": 1,
+      "evidence": "Reads carry no access size; fetch reads a full 8-byte beat. Documented limitation."
+    },
+    "R6.5": {
+      "score": 2,
+      "evidence": "RAM_WORDS tested at 2048 and 8192; RESET_PC only at its default."
+    },
+    "R6.6": {
+      "score": 2,
+      "evidence": "Unmodified clang output runs, including Dhrystone; CoreMark not yet."
+    },
+    "R7.1": {
+      "score": 2,
+      "evidence": "Trace has PC, instruction, destination, value and next PC; no source values, memory fields or trap flags."
+    },
+    "R7.2": {
+      "score": 3,
+      "evidence": "Trap cause, PC and value stay stable and visible after any trap."
+    },
+    "R7.3": {
+      "score": null,
+      "na": "Simulation-only review."
+    },
+    "R7.4": {
+      "score": 0,
+      "evidence": "Trace logic cannot be removed by a parameter."
+    },
+    "R8.1": {
+      "score": 1,
+      "evidence": "Icarus -Wall only; no dedicated lint run."
+    },
+    "R8.2": {
+      "score": 2,
+      "evidence": "Synthesizable style by inspection; not yet accepted by a synthesis tool."
+    },
+    "R8.3": {
+      "score": 2,
+      "evidence": "Architecture document written with the RTL; no item-by-item check recorded."
+    },
+    "R8.4": {
+      "score": 2,
+      "evidence": "Retirement boundary is clean, but no long-operation interface exists yet to judge."
+    },
+    "R9.1": {
+      "score": 3,
+      "evidence": "Documented commands reproduce the regression and Dhrystone locally and in CI; C demo and lessons not in CI."
+    },
+    "R9.2": {
+      "score": 4,
+      "evidence": "Tool versions, flags and hashes recorded; benchmark runner refuses stale builds automatically."
+    },
+    "R9.3": {
+      "score": 2,
+      "evidence": "New documents carry scope and evidence class; older C demo documents do not use the evidence classes."
+    },
+    "R9.4": {
+      "score": 1,
+      "evidence": "Self-assessed by the author."
+    }
   }
 }
