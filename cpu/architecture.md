@@ -1,4 +1,4 @@
-# CPU architecture, version 0.1.1
+# CPU architecture, version 0.2.0
 
 Versioned with [semantic versioning](https://semver.org/); rules and history are in section 9. "Revision 0" in this document is version 0.1.0.
 
@@ -18,6 +18,7 @@ The implemented foundation is an RV64I instruction execution engine, plus local 
 | Register file | 32 x64, combinational reads, one sequential write; x0 reads zero | Simple initial implementation; synthesis must measure mux/register cost |
 | ALU | Add/subtract, shifts, comparisons, bitwise, RV64 word operations | A complete useful base arithmetic path |
 | Memory port | Unified 64-bit, byte strobes, one outstanding transaction | Compatible with simple synchronous RAM and later adapters |
+| Instruction cache (0.2.0) | Direct-mapped, 8-byte lines, `ICACHE_BEATS` lines, store-coherent | Fetch was more than half of all clocks |
 | Instruction alignment | 32 bits until C arrives | Explicitly trap taken misaligned branches/jumps |
 | Data alignment | Naturally aligned accesses; misalignment traps | Keeps first LSU bounded; must change for RVA23's specified main-memory behavior |
 | Trap handling | Sticky external record and halt until reset | Laboratory EEI; no implicit software handler or hidden emulation |
@@ -44,7 +45,7 @@ The implemented foundation is an RV64I instruction execution engine, plus local 
  Any fault -> precise external trap record -> HALTED
 ```
 
-States are FETCH, EXECUTE, MEMORY and HALTED. Instruction fetch and data accesses use the same bus. Fetch holds its request until completion, then captures the selected 32-bit half of the 64-bit response. Since 0.1.1 the core also keeps that 8-byte beat in a one-entry fetch buffer: when the next instruction is in the same beat it goes straight to EXECUTE without a bus request. Reset, `fence.i` and any successful store to the buffered beat clear the buffer, so fetched instructions always reflect completed stores, as before. EXECUTE decodes and either retires a non-memory instruction, records a memory operation, or faults. MEMORY waits for exactly one completion and only then retires a successful load/store. HALTED issues nothing.
+States are FETCH, EXECUTE, MEMORY and HALTED. Instruction fetch and data accesses use the same bus. Fetch holds its request until completion, then captures the selected 32-bit half of the 64-bit response. Since 0.2.0 every fetched beat also goes into a direct-mapped instruction cache of `ICACHE_BEATS` 8-byte lines (default 512, 4 KiB; a power of two of at least 2, checked at elaboration). When the next instruction hits, the core goes straight to EXECUTE without a bus request. Reset and `fence.i` clear the whole cache and a successful store clears the line holding its beat, so fetched instructions always reflect completed stores, as before. The hit check reads the cache with the just-computed next PC; its timing cost must be checked at synthesis. EXECUTE decodes and either retires a non-memory instruction, records a memory operation, or faults. MEMORY waits for exactly one completion and only then retires a successful load/store. HALTED issues nothing.
 
 Register and next-PC updates happen at retirement. A faulting instruction does not retire or update its destination register. Stores become visible through the memory adapter's successful completion contract; an error response must have no write side effect. The testbench separately compares committed writes and retirement events to a sequential byte-addressed model.
 
@@ -193,3 +194,4 @@ Once Zicsr arrives in C1, consider reporting the version in the implementation-d
 |---|---|---|---|---|---|
 | 0.1.0 | Designed 2026-10-23; first committed 2026-11-20 | `0483d99`, tag `cpu-v0.1.0` | C0 integer foundation: multicycle RV64I and FENCE.I core, terminal laboratory trap record, unified 64-bit memory bus, retirement trace, 16 KiB synchronous RAM wrapper. Called "revision 0" before versioning began. | Initial version | `831101d3f376` / `a38d2ca4a051` |
 | 0.1.1 | 2026-11-20 | tag `cpu-v0.1.1` | Fetch buffer: the last fetched 8-byte beat serves the next instruction when it is in the same beat, skipping FETCH. Cleared by reset, `fence.i` and stores to the beat. Dhrystone: 2,188.2 to 1,706.2 clocks per run. | No | `93117e8a6f97` / `a38d2ca4a051` |
+| 0.2.0 | 2026-11-20 | tag `cpu-v0.2.0` | Instruction cache replaces the fetch buffer: direct-mapped, `ICACHE_BEATS` 8-byte lines (default 512, 4 KiB), new parameter on `rv64_core` and `rv64_bram_soc`; same coherence rules. Dhrystone: 1,706.2 to the clocks in its run log. | No (new parameter) | `38287831f747` / `143e07b2bbef` |

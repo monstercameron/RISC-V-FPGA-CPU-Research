@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MIT
 `timescale 1ns/1ps
-module tb_core #(parameter integer MEM_BYTES=16384);
+module tb_core #(parameter integer MEM_BYTES=16384, parameter integer ICACHE_BEATS=512);
     reg clk=0,reset=1;
     always #5 clk=~clk;
     reg [7:0] memory [0:MEM_BYTES-1];
@@ -13,7 +13,7 @@ module tb_core #(parameter integer MEM_BYTES=16384);
     wire [63:0] tpc,cause,tval,rpc,rval,npc;
     wire [31:0] rinsn;
     wire [4:0] rd;
-    rv64_core dut(.clk(clk),.reset(reset),.mem_valid(valid),.mem_instr(instr),
+    rv64_core #(.ICACHE_BEATS(ICACHE_BEATS)) dut(.clk(clk),.reset(reset),.mem_valid(valid),.mem_instr(instr),
         .mem_addr(addr),.mem_wdata(wdata),.mem_wstrb(wstrb),.mem_ready(ready),
         .mem_rdata(rdata),.mem_error(error),.trap_valid(trapped),.trap_pc(tpc),
         .trap_cause(cause),.trap_tval(tval),.retire_valid(retired),.retire_pc(rpc),

@@ -159,12 +159,14 @@ def command(args):
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--image', type=Path, help='Optional raw firmware binary for an additional differential test')
+    parser.add_argument('--icache-beats', type=int, help='Override the core instruction-cache size (power of two >= 2)')
     args = parser.parse_args()
+    cache = [f'-Ptb_core.ICACHE_BEATS={args.icache_beats}'] if args.icache_beats else []
     if not shutil.which('iverilog') or not shutil.which('vvp'):
         parser.error('iverilog and vvp are required; use the documented Ubuntu/WSL launcher')
     OUT.mkdir(parents=True, exist_ok=True)
     executable = OUT / 'cpu.vvp'
-    command(['iverilog', '-g2012', '-Wall', '-s', 'tb_core', '-o', executable,
+    command(['iverilog', '-g2012', '-Wall', '-s', 'tb_core', *cache, '-o', executable,
              ROOT / 'rtl/cpu/rv64_core.sv', ROOT / 'sim/cpu/tb_core.sv'])
     command(['iverilog', '-g2012', '-Wall', '-s', 'rv64_bram_soc', '-o', OUT/'soc.vvp',
              ROOT/'rtl/cpu/rv64_core.sv', ROOT/'rtl/cpu/rv64_bram_soc.sv'])
@@ -212,6 +214,7 @@ def main():
         for outcome in ('taken','not_taken'):
             if branch_name+':'+outcome not in coverage: raise AssertionError('Missing branch outcome')
     report={'status':'PASS','cases':len(workloads),'runs':len(records),'instruction_names_covered':len(required),
+            'icache_beats':args.icache_beats or 'RTL default',
             'reset_test':reset_result,'bram_soc_tests':soc_results,
             'coverage':sorted(coverage),'validation_scope':'local directed/random differential simulation; no official ISA certification or synthesis',
             'rtl_sha256':{str(p.relative_to(ROOT)):hashlib.sha256(p.read_bytes()).hexdigest() for p in sorted((ROOT/'rtl/cpu').glob('*.sv'))},

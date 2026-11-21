@@ -95,8 +95,11 @@ Times are US Eastern (UTC-05:00). Each timestamp names its source:
 | 21:21:17 | First profiled Dhrystone run, logged to [devlog/devlog-35565c0.md](devlog/devlog-35565c0.md): unchanged 2,188.2 clocks per run, 37.1/100 | record |
 | about 21:25 | Optimization loop started (user goal: optimize from the profile, re-benchmark, repeat until clocks stop dropping, record every change and run). Commit `04b19db` (profiler and per-commit logs), local only | approx. |
 | 21:27:12 | Baseline run on `04b19db`, 0.1.0 core: 2,188.2 clocks per run; [devlog-04b19db.md](devlog/devlog-04b19db.md) | record |
-| about 21:31 | 0.1.1 fetch buffer written; main regression 96/96 pass plus reset and RAM-wrapper checks | approx. |
-| about 21:35 | Profiler switched from a fixed clock model to measured per-state clocks from the benchmark testbench. Unlogged tooling check on the uncommitted 0.1.1 tree: 1,706.2 clocks per run, per-instruction clocks equal the timed region exactly | output |
+| before 21:31 | 0.1.1 fetch buffer written; main regression 96/96 pass plus reset and RAM-wrapper checks | approx. |
+| before 21:31 | Profiler switched from a fixed clock model to measured per-state clocks from the benchmark testbench. Unlogged tooling check on the uncommitted 0.1.1 tree: 1,706.2 clocks per run, per-instruction clocks equal the timed region exactly | output |
+| 21:31:14 | Commit `df7f489`, fetch buffer (0.1.1); tagged `cpu-v0.1.1`, local only | git |
+| 21:32:24 | 0.1.1 run: 1,706.2 clocks per run, 0.3336 DMIPS/MHz, 1.28x over 0.1.0; [devlog-df7f489.md](devlog/devlog-df7f489.md). Profile: instruction-cache replay predicts 988.8 clocks per run with 512 beats (4 KiB), since Dhrystone's code is about 4 KB | record |
+| after 21:32 | 0.2.0 instruction cache written. Main regression 96/96 pass with the default 512-beat cache and 96/96 with a 2-beat cache; a 3-beat cache is rejected at elaboration | output |
 
 ### Optimization loop
 
@@ -105,6 +108,7 @@ Each step changes the core, passes the main regression, is committed and tagged 
 | Version | Change | Clocks per run | CPI | DMIPS/MHz | vs 0.1.0 | Gain over previous |
 |---|---|---:|---:|---:|---:|---:|
 | 0.1.0 | Baseline multicycle core | 2,188.2 | 3.647 | 0.2601 | 1.00x | |
+| 0.1.1 | One-entry fetch buffer | 1,706.2 | 2.843 | 0.3336 | 1.28x | 1.28x |
 
 ### Commits
 
@@ -314,3 +318,4 @@ One row per benchmark run, oldest first. Each run's full record (result, rubric 
 | 2026-11-20 21:08:12 -0500 | `3110337` | yes | 0.1.0 | clang version 23.1.5 `-O2` | 2,188.2 | 0.2601 | 37.1 | [devlog-3110337.md](devlog/devlog-3110337.md) |
 | 2026-11-20 21:21:17 -0500 | `35565c0` | yes | 0.1.0 | clang version 23.1.5 `-O2` | 2,188.2 | 0.2601 | 37.1 | [devlog-35565c0.md](devlog/devlog-35565c0.md) |
 | 2026-11-20 21:27:12 -0500 | `04b19db` | yes | 0.1.0 | clang version 23.1.5 `-O2` | 2,188.2 | 0.2601 | 37.1 | [devlog-04b19db.md](devlog/devlog-04b19db.md) |
+| 2026-11-20 21:32:24 -0500 | `df7f489` | yes | 0.1.1 | clang version 23.1.5 `-O2` | 1,706.2 | 0.3336 | 37.1 | [devlog-df7f489.md](devlog/devlog-df7f489.md) |

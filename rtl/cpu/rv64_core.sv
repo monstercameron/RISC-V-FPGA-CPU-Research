@@ -3,7 +3,9 @@
 // Architecture version: see cpu/VERSION and cpu/architecture.md section 9.
 // No RVA23 compliance claim. See cpu/architecture.md and cpu/README.md.
 module rv64_core #(
-    parameter [63:0] RESET_PC = 64'h0
+    parameter [63:0] RESET_PC = 64'h0,
+    // Direct-mapped instruction cache size in 8-byte beats; power of two, >= 2.
+    parameter integer ICACHE_BEATS = 512
 ) (
     input  wire        clk,
     input  wire        reset,
@@ -53,12 +55,18 @@ module rv64_core #(
     reg [7:0] byte_mask;
     reg [63:0] access_mask;
 
-    // Fetch buffer (0.1.1): the last fetched 8-byte beat. A successor in the same
-    // beat skips FETCH. Cleared by reset, fence.i and any successful store to the
-    // beat, so instruction fetch stays coherent with stores exactly as before.
-    reg fbuf_valid;
-    reg [60:0] fbuf_tag;
-    reg [63:0] fbuf_data;
+    // Instruction cache (0.2.0): direct-mapped, one 8-byte beat per line, filled by
+    // every bus fetch. A successor that hits skips FETCH. Reset and fence.i clear
+    // every line; a successful store clears the line holding its beat, so fetched
+    // instructions always reflect completed stores, as without the cache.
+    localparam integer IC_INDEX = $clog2(ICACHE_BEATS);
+    localparam integer IC_TAG = 61 - IC_INDEX;
+    generate if (ICACHE_BEATS < 2 || (ICACHE_BEATS & (ICACHE_BEATS - 1)) != 0) begin : bad_icache_size
+        initial $fatal(1, "ICACHE_BEATS must be a power of two of at least 2");
+    end endgenerate
+    reg [ICACHE_BEATS-1:0] ic_valid;
+    reg [IC_TAG-1:0] ic_tag [0:ICACHE_BEATS-1];
+    reg [63:0] ic_data [0:ICACHE_BEATS-1];
 
     reg [63:0] pending_addr, pending_wdata, pending_next_pc;
     reg [7:0] pending_wstrb;
@@ -208,17 +216,23 @@ module rv64_core #(
             state<=HALTED;
         end
     endtask
-    // keep_fbuf=0 when this retirement invalidates the fetch buffer.
-    task automatic retire(input [4:0] dest, input [63:0] data, input [63:0] successor, input keep_fbuf);
+    // flush: fence.i clears the cache. stored: a store to pending_addr completed.
+    task automatic retire(input [4:0] dest, input [63:0] data, input [63:0] successor,
+                          input flush, input stored);
         begin
             retire_valid<=1; retire_pc<=pc; retire_insn<=insn;
             retire_rd<=dest; retire_data<=dest==0 ? 64'b0 : data;
             retire_next_pc<=successor;
             if (dest!=0) regs[dest]<=data;
             pc<=successor;
-            if (!keep_fbuf) fbuf_valid<=0;
-            if (keep_fbuf && fbuf_valid && successor[63:3]==fbuf_tag) begin
-                insn<=successor[2] ? fbuf_data[63:32] : fbuf_data[31:0];
+            if (flush) ic_valid<=0;
+            else if (stored && ic_tag[pending_addr[3 +: IC_INDEX]]==pending_addr[63 -: IC_TAG])
+                ic_valid[pending_addr[3 +: IC_INDEX]]<=1'b0;
+            if (!flush && ic_valid[successor[3 +: IC_INDEX]] &&
+                ic_tag[successor[3 +: IC_INDEX]]==successor[63 -: IC_TAG] &&
+                !(stored && pending_addr[63:3]==successor[63:3])) begin
+                insn<=successor[2] ? ic_data[successor[3 +: IC_INDEX]][63:32]
+                                   : ic_data[successor[3 +: IC_INDEX]][31:0];
                 state<=EXECUTE;
             end else state<=FETCH;
         end
@@ -233,7 +247,7 @@ module rv64_core #(
             retire_rd<=0; retire_data<=0; retire_next_pc<=0;
             pending_addr<=0; pending_wdata<=0; pending_wstrb<=0;
             pending_f3<=0; pending_rd<=0; pending_load<=0; pending_next_pc<=0;
-            fbuf_valid<=0; fbuf_tag<=0; fbuf_data<=0;
+            ic_valid<=0;
             for (i=0;i<32;i=i+1) regs[i]<=0;
         end else begin
             retire_valid<=0;
@@ -244,7 +258,9 @@ module rv64_core #(
                         if (mem_error) report_trap(1,pc);
                         else begin
                             insn<=pc[2] ? mem_rdata[63:32] : mem_rdata[31:0];
-                            fbuf_valid<=1; fbuf_tag<=pc[63:3]; fbuf_data<=mem_rdata;
+                            ic_valid[pc[3 +: IC_INDEX]]<=1'b1;
+                            ic_tag[pc[3 +: IC_INDEX]]<=pc[63 -: IC_TAG];
+                            ic_data[pc[3 +: IC_INDEX]]<=mem_rdata;
                             state<=EXECUTE;
                         end
                     end
@@ -257,12 +273,12 @@ module rv64_core #(
                         pending_wstrb<=store_op ? byte_mask<<effective_addr[2:0] : 8'b0;
                         pending_load<=load_op; pending_f3<=f3; pending_rd<=rd;
                         pending_next_pc<=next_pc; state<=MEMORY;
-                    end else retire(write_rd ? rd : 5'b0,result,next_pc,!(op==7'h0f && f3==1));
+                    end else retire(write_rd ? rd : 5'b0,result,next_pc,op==7'h0f && f3==1,1'b0);
                 end
                 MEMORY: if (mem_ready) begin
                     if (mem_error) report_trap(pending_load ? 5 : 7,pending_addr);
                     else retire(pending_load ? pending_rd : 5'b0,load_result,pending_next_pc,
-                                pending_load || pending_addr[63:3]!=fbuf_tag);
+                                1'b0,!pending_load);
                 end
                 HALTED: begin end
                 default: report_trap(2,0);

@@ -2,18 +2,18 @@
   "rubric": "cpu/review-rubric.md",
   "rubric_revision": 1,
   "assessed": "2026-11-20",
-  "assessed_at_commit": "cpu-v0.1.1",
+  "assessed_at_commit": "cpu-v0.2.0",
   "assessed_by": "Author self-assessment, not an independent review (rubric HG8 and R9.4).",
-  "architecture_version": "0.1.1",
+  "architecture_version": "0.2.0",
   "rtl_sha256": {
-    "rtl/cpu/rv64_bram_soc.sv": "a38d2ca4a05142f1982635fb9824a29b80abc94e31635415d3b341df0c06ae57",
-    "rtl/cpu/rv64_core.sv": "93117e8a6f97f11a4882d3bc3a909bb929c0a51d9471d6725c8e84c13f7dce98"
+    "rtl/cpu/rv64_bram_soc.sv": "143e07b2bbef43e50f630b3b93efbefccb047f0ca93ef47256ca54d88c78effe",
+    "rtl/cpu/rv64_core.sv": "38287831f747a0e66967f99c3b071ea939f8829f87df64536dda63db649f1b62"
   },
   "scope": {
     "isa": "rv64i_zifencei",
     "environment": "machine-level laboratory terminal trap; no privilege modes",
     "class": "multicycle",
-    "configuration": "RESET_PC 0; retirement trace ports always present",
+    "configuration": "RESET_PC 0; ICACHE_BEATS 512; retirement trace ports always present",
     "platform": "rv64_bram_soc synchronous RAM, one-clock response; 64 KiB for benchmarks, 16 KiB for the regression",
     "hardware": "none (simulation only)",
     "target": null
@@ -228,7 +228,7 @@
     },
     "R6.5": {
       "score": 2,
-      "evidence": "RAM_WORDS tested at 2048 and 8192; RESET_PC only at its default."
+      "evidence": "RAM_WORDS tested at 2048 and 8192; ICACHE_BEATS at 2 and 512 with illegal sizes rejected at elaboration; RESET_PC only at its default."
     },
     "R6.6": {
       "score": 2,
