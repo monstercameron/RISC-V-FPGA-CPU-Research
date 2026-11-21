@@ -45,6 +45,14 @@ module rv64_bram_soc #(
     wire [INDEX_BITS-1:0] index2=addr2[INDEX_BITS+2:3];
     wire outside2=addr2>=RAM_WORDS*64'd8;
     wire error2=wstrb2!=0 && outside2;
+    // Stores three and four of a write (memory 4): each applies only if every earlier one did.
+    wire [127:0] xaddr,xwdata;
+    wire [15:0] xwstrb;
+    wire [INDEX_BITS-1:0] xindex0=xaddr[INDEX_BITS+2:3], xindex1=xaddr[64+INDEX_BITS+2:67];
+    wire xout0=xaddr[63:0]>=RAM_WORDS*64'd8, xout1=xaddr[127:64]>=RAM_WORDS*64'd8;
+    wire [1:0] xerror={xwstrb[15:8]!=0 && xout1, xwstrb[7:0]!=0 && xout0};
+    wire xok0=write_request && !outside_ram && wstrb2!=0 && !outside2 && xwstrb[7:0]!=0 && !xout0;
+    wire xok1=xok0 && xwstrb[15:8]!=0 && !xout1;
 `endif
     integer lane;
     always @(posedge clk) begin
@@ -63,12 +71,14 @@ module rv64_bram_soc #(
             if (write_request && !outside_ram && wstrb2!=0 && !outside2)
                 for (lane=0;lane<8;lane=lane+1)
                     if (wstrb2[lane]) ram[index2][8*lane+:8]<=wdata2[8*lane+:8];
+            if (xok0) for (lane=0;lane<8;lane=lane+1) if (xwstrb[lane]) ram[xindex0][8*lane+:8]<=xwdata[8*lane+:8];
+            if (xok1) for (lane=0;lane<8;lane=lane+1) if (xwstrb[8+lane]) ram[xindex1][8*lane+:8]<=xwdata[64+8*lane+:8];
 `endif
         end
     end
     rv64_core #(.RESET_PC(RESET_PC),.ICACHE_BEATS(ICACHE_BEATS),.DCACHE_BEATS(DCACHE_BEATS)
 `ifdef WIDE_TRACE
-        ,.PAIR_WRITES(1)
+        ,.PAIR_WRITES(1),.EXTRA_WRITES(2)
 `endif
         ) cpu (
         .clk(clk),.reset(reset),.mem_valid(valid),.mem_instr(instr),
@@ -83,7 +93,8 @@ module rv64_bram_soc #(
         .retire3_data(),.retire3_next_pc()
 `ifdef WIDE_TRACE
         ,.rt_valid(),.rt_pc(),.rt_insn(),.rt_rd(),.rt_data(),.rt_next(),
-        .mem_addr2(addr2),.mem_wdata2(wdata2),.mem_wstrb2(wstrb2),.mem_error2(error2)
+        .mem_addr2(addr2),.mem_wdata2(wdata2),.mem_wstrb2(wstrb2),.mem_error2(error2),
+        .mem_xaddr(xaddr),.mem_xwdata(xwdata),.mem_xwstrb(xwstrb),.mem_xerror(xerror)
 `endif
     );
 endmodule

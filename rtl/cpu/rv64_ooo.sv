@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Original CPU foundation, wide out-of-order implementation (architecture 0.12.3).
+// Original CPU foundation, wide out-of-order implementation (architecture 0.12.0).
 // RV64IM + B execution, serialized FENCE.I, terminal EEI. Same module name and
 // contract as rv64_core.sv and rv64_pipe.sv, plus a wider retirement trace (rt_*);
 // build with one of the three files. Architecture version: cpu/VERSION,
@@ -13,7 +13,9 @@ module rv64_core #(
     // Retirement (and fetch and rename) width (8 until 0.11.2).
     parameter integer RW = 16,
     // Paired store writes (0.11.0): 1 when the memory implements mem_*2.
-    parameter integer PAIR_WRITES = 0
+    parameter integer PAIR_WRITES = 0,
+    // Extra store writes: 1 or 2 more stores per write on mem_x*, with PAIR_WRITES.
+    parameter integer EXTRA_WRITES = 0
 ) (
     input  wire        clk,
     input  wire        reset,
@@ -68,7 +70,14 @@ module rv64_core #(
     output wire [63:0]     mem_addr2,
     output wire [63:0]     mem_wdata2,
     output wire [7:0]      mem_wstrb2,
-    input  wire            mem_error2
+    input  wire            mem_error2,
+    // Extra store writes (with EXTRA_WRITES): stores three and four of a write request in
+    // 64-bit lanes 0 and 1 (mem_xwstrb lane 0 = bits 7:0); memory applies each only if every
+    // earlier store of the request succeeded; mem_xerror reports each. All complete with mem_ready.
+    output wire [127:0]    mem_xaddr,
+    output wire [127:0]    mem_xwdata,
+    output wire [15:0]     mem_xwstrb,
+    input  wire [1:0]      mem_xerror
 );
     // Wide out-of-order core (0.10.0), first configured after measurements of the Apple M5
     // performance core (useless-husband/m5-uarch); since 0.12.0 16 instructions per clock
@@ -597,6 +606,9 @@ module rv64_core #(
     reg [ROB_B-1:0] st_idx;
     reg st2_cand;               // a second store that can share the write
     reg [ROB_B-1:0] st2_idx;
+    reg [1:0] sx_n;              // extra stores (third, fourth) that share the write
+    reg [ROB_B-1:0] sx0_idx, sx1_idx;
+    reg [1:0] hold_nx;           // extra stores of a held write
     reg [ROB_N-1:0] rb_viol;    // a finished load read bytes an older store then wrote
     reg [255:0] mdp_wait;       // load-wait table, by PC bits 9:2
     // Instructions that retire and then end the retirement group with a refetch (fence.i,
@@ -607,7 +619,7 @@ module rv64_core #(
     integer vc_k;
     reg h_exc;
     always @* begin
-        st_cand = 0; st_idx = 0; st2_cand = 0; st2_idx = 0;
+        st_cand = 0; st_idx = 0; st2_cand = 0; st2_idx = 0; sx_n = 0; sx0_idx = 0; sx1_idx = 0;
         h_exc = rb_count != 0 && rb_done[rb_head] && rb_exc[rb_head];
         begin : scan
             reg stop;
@@ -621,10 +633,17 @@ module rv64_core #(
                     // between them (or the second store) in the first store's beat ends it,
                     // since the first write would make it stale.
                     else if (rb_viol[e]) stop = 1;
-                    else if (st_cand && rb_pc[e][63:3] == rb_addr[st_idx][63:3]) stop = 1;
+                    else if (st_cand && (rb_pc[e][63:3] == rb_addr[st_idx][63:3] ||
+                             (st2_cand && rb_pc[e][63:3] == rb_addr[st2_idx][63:3]) ||
+                             (sx_n != 0 && rb_pc[e][63:3] == rb_addr[sx0_idx][63:3]))) stop = 1;
                     else if (rb_store[e]) begin
                         if (!st_cand) begin st_cand = 1; st_idx = e; if (!PAIR_WRITES) stop = 1; end
-                        else begin st2_cand = 1; st2_idx = e; stop = 1; end
+                        else if (!st2_cand) begin st2_cand = 1; st2_idx = e; if (EXTRA_WRITES == 0) stop = 1; end
+                        else begin
+                            if (sx_n == 0) sx0_idx = e; else sx1_idx = e;
+                            sx_n = sx_n + 2'd1;
+                            if (sx_n >= EXTRA_WRITES) stop = 1;
+                        end
                     end
                     else if (rb_ends[e]) stop = 1;   // retirement refetches after these
                 end
@@ -635,6 +654,8 @@ module rv64_core #(
     wire [63:0] st_wdata = (prf[rb_sps2[st_idx]] + rb_soff[st_idx]) << {st_addr[2:0],3'b000};
     wire [63:0] st2_addr = rb_addr[st2_idx];
     wire pair_now = bus_hold == 3 ? hold_pair : st2_cand;
+    // Extra stores carried by this write (held unchanged while the bus waits).
+    wire [1:0] nx_now = bus_hold == 3 ? hold_nx : st2_cand ? sx_n : 2'd0;
     wire f_beat_hit = ic_valid[f_pc[3 +: IC_INDEX]] && ic_tag[f_pc[3 +: IC_INDEX]] == f_pc[63 -: IC_TAG];
     wire want_store = st_cand;
     wire want_miss = mu_valid && !h_exc;
@@ -650,6 +671,11 @@ module rv64_core #(
     assign mem_addr2 = bus_kind == 3 && pair_now ? {st2_addr[63:3],3'b000} : 64'b0;
     assign mem_wdata2 = bus_kind == 3 && pair_now ? (prf[rb_sps2[st2_idx]] + rb_soff[st2_idx]) << {st2_addr[2:0],3'b000} : 64'b0;
     assign mem_wstrb2 = bus_kind == 3 && pair_now ? rb_wstrb[st2_idx] : 8'b0;
+    wire x0v = bus_kind == 3 && pair_now && nx_now != 0, x1v = bus_kind == 3 && pair_now && nx_now == 2;
+    assign mem_xaddr = {x1v ? {rb_addr[sx1_idx][63:3],3'b000} : 64'b0, x0v ? {rb_addr[sx0_idx][63:3],3'b000} : 64'b0};
+    assign mem_xwdata = {x1v ? (prf[rb_sps2[sx1_idx]] + rb_soff[sx1_idx]) << {rb_addr[sx1_idx][2:0],3'b000} : 64'b0,
+                         x0v ? (prf[rb_sps2[sx0_idx]] + rb_soff[sx0_idx]) << {rb_addr[sx0_idx][2:0],3'b000} : 64'b0};
+    assign mem_xwstrb = {x1v ? rb_wstrb[sx1_idx] : 8'b0, x0v ? rb_wstrb[sx0_idx] : 8'b0};
     wire [2:0] state = halted ? HALTED : (bus_kind >= 2) ? MEMORY : (bus_kind == 1) ? FETCH : EXECUTE;
 
     // ---------------- the clock -------------------------------------------------
@@ -660,6 +686,8 @@ module rv64_core #(
     reg st1_seen, smc;
     reg st_last, wb2v;          // this clock's write is used up; a second beat written
     reg [60:0] wb1, wb2;        // beats written this clock
+    reg [60:0] wb3, wb4;
+    reg [2:0] st_n;             // stores retired with this clock's write
     reg [63:0] r_wd;
     reg ou_valid, mp_any, rflush, trap_now, stop, fired, fdone, ok, hit, full, dok;
     reg [7:0] fwd_mask, fwd_byte_w;
@@ -776,7 +804,7 @@ module rv64_core #(
     always @(posedge clk) begin
         if (reset) begin
             halted = 0; started = 0; f_pc = RESET_PC; f_err = 0; f_hold = 0; f_stale = 0;
-            bus_hold = 0; hold_addr = 0; hold_pair = 0; mu_valid = 0; mu_beat = 0; mu_errv = 0; mu_err_beat = 0;
+            bus_hold = 0; hold_addr = 0; hold_pair = 0; hold_nx = 0; mu_valid = 0; mu_beat = 0; mu_errv = 0; mu_err_beat = 0;
             fb_valid = 0; fb_beat = 0; fb_data = 0; mu_owner = 0; fb_owner = 0; fb_lock = 0; mu_owner_v = 0;
             for (i = 0; i < PRF_N; i = i + 1) prf[i] = 0;
             prf_ready = {PRF_N{1'b1}}; prf_written = {PRF_N{1'b1}};
@@ -824,7 +852,7 @@ module rv64_core #(
                         end
                     end
                 end else begin
-                    bus_hold = bus_kind; hold_addr = mem_addr; hold_pair = bus_kind == 3 && pair_now;
+                    bus_hold = bus_kind; hold_addr = mem_addr; hold_pair = bus_kind == 3 && pair_now; hold_nx = bus_kind == 3 ? nx_now : 2'd0;
                 end
             end
             // ================= phase 1: decisions from the state at the clock start =====
@@ -871,7 +899,7 @@ module rv64_core #(
             end
 
             // ---- retirement window
-            n_ret = 0; rflush = 0; trap_now = 0; stop = 0; rflush_pc = 0; st1_seen = 0; smc = 0; st_last = 0; wb2v = 0; wb1 = 0; wb2 = 0;
+            n_ret = 0; rflush = 0; trap_now = 0; stop = 0; rflush_pc = 0; st1_seen = 0; smc = 0; st_last = 0; wb2v = 0; wb1 = 0; wb2 = 0; st_n = 0; wb3 = 0; wb4 = 0;
             for (s = 0; s < RW; s = s + 1) begin
                 e = rb_head + s[ROB_B-1:0];
                 if (!stop) begin
@@ -883,23 +911,26 @@ module rv64_core #(
                         end
                         stop = 1;
                     end else if (rb_store[e]) begin
-                        // The first store retires with its write; a paired second store
-                        // retires with the same write unless its half failed. A store after
-                        // those waits for next clock's write.
-                        if (st_last) stop = 1;
-                        else if (!st1_seen) begin
-                            st1_seen = 1;
-                            if (bus_kind == 3 && mem_ready) begin
-                                if (mem_error) begin
-                                    trap_now = 1; trap_pc <= rb_pc[e]; trap_cause <= 7; trap_tval <= rb_addr[e]; stop = 1;
-                                end else begin n_ret = s + 1; st_last = !pair_now; wb1 = rb_addr[e][63:3]; end
-                            end else stop = 1;
+                        // Stores retire with this clock's write in program order: the first
+                        // with mem_error, the second with mem_error2, up to two more with
+                        // mem_xerror; one whose part failed traps; a store after those waits
+                        // for next clock's write.
+                        if (st_n == 0 && !(bus_kind == 3 && mem_ready)) stop = 1;
+                        else if (st_n == 3'd1 + {2'b0, pair_now} + (pair_now ? {1'b0, nx_now} : 3'd0)) stop = 1;
+                        else if (st_n == 0 ? mem_error : st_n == 1 ? mem_error2 : mem_xerror[st_n[0]]) begin
+                            trap_now = 1; trap_pc <= rb_pc[e]; trap_cause <= 7; trap_tval <= rb_addr[e]; stop = 1;
                         end else begin
-                            if (mem_error2) begin
-                                trap_now = 1; trap_pc <= rb_pc[e]; trap_cause <= 7; trap_tval <= rb_addr[e]; stop = 1;
-                            end else begin n_ret = s + 1; st_last = 1; wb2 = rb_addr[e][63:3]; wb2v = 1; end
+                            n_ret = s + 1;
+                            case (st_n)
+                                3'd0: wb1 = rb_addr[e][63:3];
+                                3'd1: wb2 = rb_addr[e][63:3];
+                                3'd2: wb3 = rb_addr[e][63:3];
+                                default: wb4 = rb_addr[e][63:3];
+                            endcase
+                            st_n = st_n + 3'd1;
                         end
-                    end else if (st1_seen && (rb_pc[e][63:3] == wb1 || (wb2v && rb_pc[e][63:3] == wb2))) begin
+                    end else if (st_n != 0 && (rb_pc[e][63:3] == wb1 || (st_n > 1 && rb_pc[e][63:3] == wb2) ||
+                                 (st_n > 2 && rb_pc[e][63:3] == wb3) || (st_n > 3 && rb_pc[e][63:3] == wb4))) begin
                         stop = 1;   // fetched from a beat written this clock: refetched after
                     end else if (rb_viol[e]) begin
                         // Read stale bytes: refetch from this load; it waits for older stores from now on.
@@ -1018,7 +1049,10 @@ module rv64_core #(
             if (rflush) mp_any = 0;
             o_age = b_rob - rb_head;
             miss_v = 0; miss_beat = 0; miss_age = 0;
-            for (p = 0; p < NP; p = p + 1) if (ex_valid[p] && !rflush && !(mp_any && (ex_rob[p] - rb_head) > o_age)) begin
+            // Store-address ports first, then ALU and load ports, so a load sees the
+            // addresses of older stores executing in the same clock.
+            for (p = N_ALU + N_LD; p < NP; p = p == NP - 1 ? 0 : p == N_ALU + N_LD - 1 ? NP : p + 1)
+                if (ex_valid[p] && !rflush && !(mp_any && (ex_rob[p] - rb_head) > o_age)) begin
                 x_rob = ex_rob[p];
                 if (p < N_ALU) begin
                     if (ex_cls[p] == C_ALU) begin
