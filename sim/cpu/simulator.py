@@ -153,8 +153,18 @@ class Verilator:
         if (folder / 'build.json').is_file() and binary.is_file():
             return [binary]
         CACHE.mkdir(parents=True, exist_ok=True)
-        if folder.exists():  # an unfinished earlier build
-            shutil.rmtree(folder)
+        # Builds are made in a private temporary folder and renamed into place only when
+        # complete, so a folder with build.json is never deleted: another run may have just
+        # published it and be about to launch its binary (Codex review 17:54, item 4).
+        if (folder / 'build.json').is_file() and binary.is_file():
+            return [binary]
+        if folder.exists():  # an incomplete folder left by an older version of this helper
+            stale = folder.with_name(f'.stale-{folder.name}-{os.getpid()}')
+            try:
+                folder.rename(stale)
+                shutil.rmtree(stale, ignore_errors=True)
+            except OSError:
+                pass
         work = Path(tempfile.mkdtemp(prefix=f'.{top}-', dir=CACHE))
         try:
             _run([self.exe, '--cc', '--exe', '--main', '--timing', *options, '-Mdir', work, *sources], timeout, self.env)

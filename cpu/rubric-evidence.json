@@ -2,11 +2,11 @@
   "rubric": "cpu/review-rubric.md",
   "rubric_revision": 1,
   "assessed": "2026-11-20",
-  "assessed_at_commit": "cpu-v0.14.7",
+  "assessed_at_commit": "cpu-v0.14.8",
   "assessed_by": "Author self-assessment, not an independent review (rubric HG8 and R9.4).",
-  "architecture_version": "0.14.7",
+  "architecture_version": "0.14.8",
   "rtl_sha256": {
-    "rtl/cpu/rv64_ooo.sv": "f088004c4b31863d56f1f467479584aa24116e2a06a019dacf3e0afad423fe24",
+    "rtl/cpu/rv64_ooo.sv": "c76e5437248a2433492c3e00e31bfd24e8ab9a046e99a5f0ea0dbcfa4604b0b7",
     "rtl/cpu/rv64_bram_soc.sv": "7fdbaec4cda68342ac51c382b1c830c03ac624c8a1661b97c0e3335e6b17874e"
   },
   "scope": {

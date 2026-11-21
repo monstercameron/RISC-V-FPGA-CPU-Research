@@ -655,6 +655,23 @@ def cases():
     # branches reach the ports instead of being decided at rename (Codex 1539-2).
     p = prefix() + [i_type(0x13, 20, 0, 1, 0)] + body + [add_(29, 13, 14), add_(29, 29, 18), 0x100073]
     yield 'branch_ports_many', p, 0, MASK
+    # Offset consumers of late-written registers (hand-off 8, Codex 1609-2): a multiply,
+    # a divide and a value-predicted load each feed a folded addi, whose result is used by
+    # an ALU op, a branch, a store (data and address), a load address and another multiply.
+    lp = [i_type(3, 14, 3, 30, 0x310),                                   # ld x14 (same value every time: predicted)
+          i_type(0x13, 15, 0, 14, 5), r_type(0x33, 16, 0, 16, 15),       # x15 = x14+5 (folded); x16 += x15
+          r_type(0x33, 17, 0, 15, 2, 1),                                 # mul x17, x15, x2
+          i_type(0x13, 18, 0, 18, -1), branch(1, 18, 0, -20)]            # 12 iterations
+    p = prefix() + [store(3, 30, 8, 0x310), i_type(0x13, 18, 0, 0, 12)] + lp + [
+         r_type(0x33, 5, 0, 7, 9, 1), i_type(0x13, 6, 0, 5, 7),          # mul x5, x7, x9; x6 = x5+7 (folded)
+         r_type(0x33, 19, 0, 6, 2), branch(0, 6, 5, 8),                  # add x19, x6, x2; beq x6,x5 (not taken)
+         r_type(0x33, 20, 0, 6, 9, 1),                                   # mul x20, x6, x9
+         store(3, 30, 6, 0x318), i_type(0x13, 21, 0, 30, 0x2f8),         # sd x6; x21 = x30+0x2f8
+         r_type(0x33, 22, 0, 5, 9, 1), i_type(0x13, 23, 0, 22, -0x2e0),  # x23 = x5*x9 - 0x2e0
+         r_type(0x33, 24, 4, 8, 2, 1), i_type(0x13, 25, 0, 24, 1),       # div x24, x8, x2; x25 = x24+1 (folded)
+         r_type(0x33, 26, 0, 25, 25), store(3, 21, 25, 0x28),            # add x26 = 2*x25; sd x25 via x21
+         i_type(3, 27, 3, 21, 0x20), r_type(0x33, 28, 0, 27, 26), 0x100073]
+    yield 'fold_offset_late_producers', p, 0, MASK
 
 def command(args, timeout=60):
     result = subprocess.run([str(x) for x in args], capture_output=True, text=True, timeout=timeout)

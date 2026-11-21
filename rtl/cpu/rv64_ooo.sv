@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Original CPU foundation, wide out-of-order implementation (architecture 0.14.7).
+// Original CPU foundation, wide out-of-order implementation (architecture 0.14.8).
 // RV64IM + B execution, serialized FENCE.I, terminal EEI. Same module name and
 // contract as rv64_core.sv and rv64_pipe.sv, plus a wider retirement trace (rt_*);
 // build with one of the three files. Architecture version: cpu/VERSION,
@@ -558,6 +558,9 @@ module rv64_core #(
     localparam integer FOLD = 1;
     localparam integer OFF_LAT = 1;      // extra clocks for a non-memory operand with an offset
     reg [63:0] rat_off [0:31];
+    // Written this clock without an earlier wakeup (multiply, divide, value prediction):
+    // an offset consumer may not be selected in the next clock (OFF_LAT, Codex 1609-2).
+    reg [PRF_N-1:0] prf_late;
     reg [63:0] rrat_off [0:31];
     reg [63:0] snap_off [0:ROB_N-1][0:31];
     reg [ROB_N-1:0] rb_elim;
@@ -790,10 +793,10 @@ module rv64_core #(
     // Source readiness in the issue queue.
     function rdy1(input integer kk);
         rdy1 = (prf_ready[iq_ps1[kk]] && (OFF_LAT == 0 || iq_off1[kk] == 0 || iq_cls[kk] == C_LD ||
-                iq_cls[kk] == C_ST || prf_written[iq_ps1[kk]])) || (iq_fz1[kk] && prf_ready[iq_fza[kk]] && prf_ready[iq_fzb[kk]]);
+                iq_cls[kk] == C_ST || (prf_written[iq_ps1[kk]] && !prf_late[iq_ps1[kk]]))) || (iq_fz1[kk] && prf_ready[iq_fza[kk]] && prf_ready[iq_fzb[kk]]);
     endfunction
     function rdy2(input integer kk);
-        rdy2 = (prf_ready[iq_ps2[kk]] && (OFF_LAT == 0 || iq_off2[kk] == 0 || prf_written[iq_ps2[kk]])) || (iq_fz2[kk] && prf_ready[iq_fza[kk]] && prf_ready[iq_fzb[kk]]);
+        rdy2 = (prf_ready[iq_ps2[kk]] && (OFF_LAT == 0 || iq_off2[kk] == 0 || (prf_written[iq_ps2[kk]] && !prf_late[iq_ps2[kk]]))) || (iq_fz2[kk] && prf_ready[iq_fza[kk]] && prf_ready[iq_fzb[kk]]);
     endfunction
 
     task automatic squash_after(input [ROB_B-1:0] keep_age);  // keep entries with age <= keep_age
@@ -826,7 +829,7 @@ module rv64_core #(
             bus_hold = 0; hold_addr = 0; hold_pair = 0; hold_nx = 0; mu_valid = 0; mu_beat = 0; mu_errv = 0; mu_err_beat = 0;
             fb_valid = 0; fb_beat = 0; fb_data = 0; mu_owner = 0; fb_owner = 0; fb_lock = 0; mu_owner_v = 0;
             for (i = 0; i < PRF_N; i = i + 1) prf[i] = 0;
-            prf_ready = {PRF_N{1'b1}}; prf_written = {PRF_N{1'b1}};
+            prf_ready = {PRF_N{1'b1}}; prf_written = {PRF_N{1'b1}}; prf_late = 0;
             free_mask = {PRF_N{1'b1}}; for (i = 0; i < 32; i = i + 1) free_mask[i] = 0;
             for (i = 0; i < 32; i = i + 1) begin rat[i] = i; rrat[i] = i; rat_off[i] = 0; rrat_off[i] = 0; end
             for (i = 0; i < PRF_N; i = i + 1) refcnt[i] = i < 32 ? 1 : 0;
@@ -922,6 +925,7 @@ module rv64_core #(
                     if (iq_mdu[best] && iq_insn[best][14]) divtaken = 1;
                 end
             end
+            prf_late = 0;
 
             // ---- retirement window
             n_ret = 0; rflush = 0; trap_now = 0; stop = 0; rflush_pc = 0; rflush_ld = 0; rflush_e = 0; st1_seen = 0; smc = 0; st_last = 0; wb2v = 0; wb1 = 0; wb2 = 0; st_n = 0; wb3 = 0; wb4 = 0;
@@ -1215,7 +1219,7 @@ module rv64_core #(
                 if (rflush || (mp_any && (mq_rob[k] - rb_head) > o_age)) mq_valid[k] = 0;
                 else if (mq_cnt[k] == 0) begin
                     mq_valid[k] = 0;
-                    if (mq_writes[k]) begin prf[mq_pdst[k]] = mq_val[k]; prf_written[mq_pdst[k]] = 1; prf_ready[mq_pdst[k]] = 1; end
+                    if (mq_writes[k]) begin prf_late[mq_pdst[k]] = !prf_ready[mq_pdst[k]]; prf[mq_pdst[k]] = mq_val[k]; prf_written[mq_pdst[k]] = 1; prf_ready[mq_pdst[k]] = 1; end
                     rb_value[mq_rob[k]] = mq_val[k]; rb_done[mq_rob[k]] = 1; rb_exc[mq_rob[k]] = 0;
                     if (rb_vp[mq_rob[k]] && mq_val[k] != rb_vpv[mq_rob[k]]) rb_vpbad[mq_rob[k]] = 1;
                 end else mq_cnt[k] = mq_cnt[k] - 1;
@@ -1224,7 +1228,7 @@ module rv64_core #(
                 if (rflush || (mp_any && (dv_rob - rb_head) > o_age)) dv_busy = 0;
                 else if (dv_cnt == 0) begin
                     dv_busy = 0;
-                    if (dv_writes) begin prf[dv_pdst] = dv_val; prf_written[dv_pdst] = 1; prf_ready[dv_pdst] = 1; end
+                    if (dv_writes) begin prf_late[dv_pdst] = !prf_ready[dv_pdst]; prf[dv_pdst] = dv_val; prf_written[dv_pdst] = 1; prf_ready[dv_pdst] = 1; end
                     rb_value[dv_rob] = dv_val; rb_done[dv_rob] = 1; rb_exc[dv_rob] = 0;
                     if (rb_vp[dv_rob] && dv_val != rb_vpv[dv_rob]) rb_vpbad[dv_rob] = 1;
                 end else dv_cnt = dv_cnt - 1;
@@ -1261,7 +1265,7 @@ module rv64_core #(
                 free_mask = {PRF_N{1'b1}};
                 for (i = 0; i < PRF_N; i = i + 1) refcnt[i] = 0;
                 for (i = 0; i < 32; i = i + 1) begin free_mask[rrat[i]] = 0; refcnt[rrat[i]] = refcnt[rrat[i]] + 1; end
-                prf_ready = {PRF_N{1'b1}}; prf_written = {PRF_N{1'b1}};
+                prf_ready = {PRF_N{1'b1}}; prf_written = {PRF_N{1'b1}}; prf_late = 0;
                 ex_valid = 0; iq_valid = 0; iq_issued = 0; fb_lock = 0; mu_owner_v = 0; mu_errv = 0;
                 rb_live = 0; rb_tail = h_after; rb_count_new = 0;
                 q_head = 0; q_tail = 0; q_count = 0;
@@ -1391,7 +1395,7 @@ module rv64_core #(
                             if (writes_ && (op == 7'h03 || ((op == 7'h33 || op == 7'h3b) && wi[31:25] == 7'h01)) &&
                                 vp_valid[vpi] && vp_tag[vpi] == wpc[2+VP_BITS +: VP_TAG] && vp_conf[vpi] == VP_CONF) begin
                                 rb_vp[e] = 1; rb_vpv[e] = vp_val[vpi];
-                                prf[fp] = vp_val[vpi]; prf_written[fp] = 1; prf_ready[fp] = 1;
+                                prf[fp] = vp_val[vpi]; prf_written[fp] = 1; prf_ready[fp] = 1; prf_late[fp] = 1;
                             end
                             if (op == 7'h63 || op == 7'h67) for (i = 0; i < 32; i = i + 1) begin snap[e][i] = rat[i]; snap_off[e][i] = rat_off[i]; end
                             if (!isfault && !done_) begin
