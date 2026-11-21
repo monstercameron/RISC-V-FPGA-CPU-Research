@@ -27,6 +27,28 @@ Scope: `rv64i_zifencei`, ABI `lp64`, bare metal with the laboratory terminal tra
 - **The compiler.** The same source built with Ubuntu's clang 18.1.3 scores 0.217 DMIPS/MHz (2,622 clocks per run). Always compare results built with the same compiler and flags.
 - **Memory latency.** The RAM answers every request one clock after it is made. Each instruction fetch therefore takes 2 clocks and execution 1, so most instructions take 3 clocks and loads and stores take 5. That explains the 3.65 average.
 
+## Where the clocks go
+
+Every run profiles its instruction trace ([bench_profile.py](../sim/cpu/bench/bench_profile.py)). A per-instruction model (fetch 2 clocks, execute 1, loads and stores 2 more) reproduces the measured timed region exactly. Per run:
+
+| Finding | Value |
+|---|---:|
+| Clocks spent fetching instructions | 54.8% |
+| Instructions inside `strcpy` and `strcmp` (byte at a time) | 281 of 600 (47%) |
+| Clocks inside software divide (`__divdi3`, one call) | 4.9% |
+| Instructions in the same 8-byte fetch beat as the one before | 241 (40%) |
+
+Model estimates from the same trace, not measured RTL:
+
+| Change | Clocks per run | DMIPS/MHz | Speed-up |
+|---|---:|---:|---:|
+| Today's core | 2,188 | 0.260 | 1.00x |
+| Fetch buffer reusing the last 8-byte beat | 1,706 to 1,947 | 0.29 to 0.33 | 1.12x to 1.28x |
+| Hardware multiply and divide (best case) | 2,080 | 0.274 | 1.05x |
+| Ideal pipeline, 1 clock per instruction | 600 | 0.949 | 3.65x |
+
+Word-at-a-time `strcpy` and `strcmp` would also cut many instructions, but that changes the runtime rather than the core, so results built with a different runtime are not comparable.
+
 ## How the run is checked
 
 1. **Results.** After the timed loop, the port layer copies Dhrystone's final global values into a mailbox. The runner checks all 17 against the values Dhrystone itself says they should be, including `Arr_2_Glob[8][7]` = runs + 10. The program's local variables are not reachable and are not checked.
@@ -57,7 +79,9 @@ Dhrystone's ground rules are separate compilation, no merging of procedures and 
 | [build_bench.py](../sim/cpu/bench/build_bench.py) | Compiles, links with a generated linker script for the chosen RAM size, writes images |
 | [tb_bench.sv](../sim/cpu/bench/tb_bench.sv) | Core plus RAM wrapper; counts the marked region |
 | [run_bench.py](../sim/cpu/bench/run_bench.py) | Timing run, result checks, differential traces, report |
-| [rubric_score.py](../sim/cpu/bench/rubric_score.py) | Rubric scorecard from [rubric-evidence.json](rubric-evidence.json) plus the run; devlog entry |
+| [rubric_score.py](../sim/cpu/bench/rubric_score.py) | Rubric scorecard from [rubric-evidence.json](rubric-evidence.json) plus the run |
+| [bench_profile.py](../sim/cpu/bench/bench_profile.py) | Trace profile: clocks by class and function, hot instructions, what-if estimates |
+| [runlog.py](../sim/cpu/bench/runlog.py) | Per-commit run logs in `devlog/` and the run index in DEVLOG.md |
 | [run_dhrystone.ps1](../sim/cpu/bench/run_dhrystone.ps1) | Windows launcher: LLVM build, then the run in Ubuntu/WSL |
 
 The benchmark needs about 15.7 KB for code, data and arrays, more than the 16 KiB layout leaves after the stack, so it uses 64 KiB of RAM. The RTL is unchanged: `RAM_WORDS` in the RAM wrapper and a new `MEM_BYTES` parameter in the trace testbench set the size. The main regression keeps 16 KiB because its unmapped-address tests rely on that boundary.
@@ -72,7 +96,7 @@ From the repository root in PowerShell, with the installed LLVM and Ubuntu WSL t
 .\sim\cpu\bench\run_dhrystone.ps1
 ```
 
-Every run appends its result and a rubric scorecard to the run log at the end of [DEVLOG.md](../DEVLOG.md); add `-NoDevlog` for a throwaway run. Add `-Record` to overwrite [dhrystone-results.json](dhrystone-results.json), or `-RamKiB 128` for a larger memory. A run takes about a minute; most of it is the two traced runs.
+Every run writes its result, rubric scorecard and trace profile to `devlog/devlog-<commit>.md` and adds a row to the run index in [DEVLOG.md](../DEVLOG.md); add `-NoDevlog` for a throwaway run. The profile is also saved as `build/cpu/bench/dhrystone/profile.md`. Add `-Record` to overwrite [dhrystone-results.json](dhrystone-results.json), or `-RamKiB 128` for a larger memory. A run takes about a minute; most of it is the two traced runs.
 
 On Linux with clang, lld, LLVM tools, Icarus and Python 3.11+:
 

@@ -146,17 +146,20 @@ def main():
     run([args.objcopy, '-O', 'binary', elf, binary])
     build_seconds = time.perf_counter() - started
 
-    symbols = {}
+    symbols, kinds = {}, {}
     for line in run([args.nm, elf]).splitlines():
-        match = re.match(r'^([0-9a-fA-F]+)\s+\S\s+(\S+)$', line)
+        match = re.match(r'^([0-9a-fA-F]+)\s+(\S)\s+(\S+)$', line)
         if match:
-            symbols[match[2]] = int(match[1], 16)
+            symbols[match[3]] = int(match[1], 16)
+            kinds[match[3]] = match[2]
     for required in ('_start', 'main', '__bss_start', '__bss_end', '__bench_mailbox', 'setStats'):
         if required not in symbols:
             raise RuntimeError(f'Missing symbol {required}')
     if symbols['__bench_mailbox'] != mailbox:
         raise RuntimeError('Linked mailbox address differs from the requested layout')
-    (out / 'symbols.txt').write_text(''.join(f'{v:016x} {k}\n' for k, v in sorted(symbols.items(), key=lambda x: x[1])), encoding='ascii')
+    # Address, nm type letter (T/t = code) and name; the profiler reads this.
+    (out / 'symbols.txt').write_text(''.join(f'{v:016x} {kinds[k]} {k}\n' for k, v in
+                                             sorted(symbols.items(), key=lambda x: x[1])), encoding='ascii')
     if args.objdump:
         (out / 'bench.disasm.txt').write_text(run([args.objdump, '-d', elf]), encoding='utf-8')
         (out / 'sections.txt').write_text(run([args.objdump, '-h', elf]), encoding='utf-8')

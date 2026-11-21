@@ -52,6 +52,7 @@ REQUIRED = MAINTAINED_DOCS + (
     'sim/cpu/bench/include/stdio.h', 'sim/cpu/bench/include/string.h', 'sim/cpu/bench/include/alloca.h',
     'sim/cpu/bench/vendor/dhrystone/SOURCE.txt', 'cpu/dhrystone-results.json',
     'sim/cpu/bench/rubric_score.py', 'cpu/rubric-evidence.json', 'cpu/VERSION',
+    'sim/cpu/bench/bench_profile.py', 'sim/cpu/bench/runlog.py',
 )
 PLANNING_INPUTS = (
     'memory_model.py', 'plan_audit_checks.py', 'refinement_checks.py', 'abi_v1.py',

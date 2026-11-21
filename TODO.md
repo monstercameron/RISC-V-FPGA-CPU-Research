@@ -43,7 +43,14 @@ First result: **0.260 DMIPS/MHz**, non-compliant simulation run, November 20, 20
 - [x] **Validate.** All 17 reachable final values match Dhrystone's expected values, and the retirement trace matches the reference model with 0 and 7 wait cycles. The benchmark's local variables are not reachable and are not checked. Done November 20, 2026.
 - [x] **Runs in CI.** A CI job builds with Ubuntu's clang and runs the checks on every push.
 - [ ] **Report beside CoreMark.** DMIPS per MHz (runs x 1,000,000 / (clocks x 1,757)) is recorded in [cpu/dhrystone-results.json](cpu/dhrystone-results.json). Done when it is published next to a CoreMark result, never on its own. Rubric section 9.
-- [ ] **Hardware multiply and divide.** Rerun after the M extension (C2); today the software routines are part of the score.
+- [ ] **Hardware multiply and divide.** Rerun after the M extension (C2); today the software routines are part of the score. The profile estimates only 1.05x for Dhrystone, which divides once per run and never multiplies at run time.
+
+Optimizations the Dhrystone profile points to, measured on every run (see [cpu/dhrystone.md](cpu/dhrystone.md)):
+
+- [ ] **Fetch buffer.** Keep the last 8-byte fetch beat and serve the next instruction from it when it is the beat's second half; invalidate on any store to that beat. Estimated 1.12x to 1.28x. No contract change, so architecture 0.1.1.
+- [ ] **Overlap fetch with execute.** Request the next instruction while the current one executes; the first step toward a pipeline.
+- [ ] **Pipeline.** Up to 3.65x on today's instructions. Do it after an external model is in the regression, because pipelines are where subtle bugs come from.
+- [ ] **Runtime string routines.** Word-at-a-time `strcpy` and `strcmp` would cut nearly half the instructions, but it changes the runtime, not the core. Keep the byte-at-a-time version as the reference and label any result built with a different runtime.
 
 Then:
 

@@ -2,6 +2,8 @@
 
 A dated record of work sessions: what was done, the commits that came out of it, and what was learned. Newest day first.
 
+Detailed run records live in [devlog/](devlog/), one file per commit (`devlog-<commit>.md`), so this file stays small. The [run index](#run-logs) at the end lists every run with a link to its record.
+
 Every experiment must be recorded here, as [AGENTS.md](AGENTS.md) requires: simulations, regressions, benchmarks, synthesis or timing runs, board tests, tool installs, and failed or abandoned trials. Give the time and its source, the goal, exact commands, tool versions, the commit hash or "uncommitted", results with units, and the conclusion. Add to the log; do not rewrite earlier entries except to correct a fact, and say so when you do.
 
 Times are US Eastern (UTC-05:00). Each timestamp names its source:
@@ -41,6 +43,11 @@ Times are US Eastern (UTC-05:00). Each timestamp names its source:
 17. **Correction to the rubric's section 11 reading.** That reading listed HG1 (scope label) as met, but the scope label has no performance target, which rubric section 2 requires. The evidence file records HG1 as not met until a target is declared. Section 11 is left as written, since it is a dated reading.
 
 18. **The CPU architecture is now versioned: 0.1.0.** The unchanged C0 core, called "revision 0" until now, becomes 0.1.0. Before 1.0.0, MINOR changes for any change to the architectural contract and PATCH for any other RTL change. Proposed criteria for 1.0.0: C1 complete, an external-model check (rubric HG3) and a first exact-part synthesis. Rules and history: [cpu/architecture.md](cpu/architecture.md) section 9.
+
+19. **Profile of Dhrystone: fetching is 54.8% of all clocks.** Each instruction spends 2 clocks being fetched and 1 executing; loads and stores add 2. The per-instruction clock model reproduces the measured timed region exactly (1,094,103 clocks); the whole-program counts differ by 3 clocks, the final `ebreak`.
+20. **The byte-at-a-time string routines dominate.** `strcpy` and `strcmp` from `sim/cpu/bench/runtime.c` execute 47% of all instructions (281 of 600 per run). Software divide is only 5% of clocks (one `__divdi3` call per run); multiplication never reaches `__muldi3` because the compiler uses shifts. This corrects advice given earlier in the session that hardware multiply and divide would be the biggest gain for Dhrystone: the profile estimates only 1.05x.
+21. **40% of instructions could reuse the previous fetch.** 241 of 600 instructions per run are the second half of an 8-byte fetch beat that was just read. Model estimates: a one-entry fetch buffer gives 1.12x to 1.28x (2,188 down to 1,947 or 1,706 clocks per run); an ideal pipeline gives at most 3.65x. These are estimates from the trace, not measured RTL.
+22. **Run logs are now split by commit.** The two runs previously logged at the end of this file were moved unchanged to [devlog/devlog-3110337.md](devlog/devlog-3110337.md).
 
 ### Timeline
 
@@ -82,6 +89,10 @@ Times are US Eastern (UTC-05:00). Each timestamp names its source:
 | 21:09:20 | Commit `699ad6c`, rubric scorecards, devlog rule and architecture versioning; pushed | git |
 | about 21:09 | Annotated tag `cpu-v0.1.0` created on `0483d99`, where the 0.1.0 RTL first landed, and pushed | approx. |
 | 21:09:28 to 21:10:39 | CI for `699ad6c`: all seven jobs pass. Repository check passes with the new version check; Dhrystone in CI (clang 21.1.6) scores 0.2495 DMIPS/MHz and 37.1/100 | CI |
+| 21:11:34 | Commit `35565c0`, records the 0.1.0 release in this log; pushed | git |
+| 21:11:38 to 21:13:05 | CI for `35565c0`: all seven jobs pass | CI |
+| about 21:18 | Trace profiler written; dry run on the 21:08 trace: model matches the measured timed region exactly | approx. |
+| 21:21:17 | First profiled Dhrystone run, logged to [devlog/devlog-35565c0.md](devlog/devlog-35565c0.md): unchanged 2,188.2 clocks per run, 37.1/100 | record |
 
 ### Commits
 
@@ -272,79 +283,21 @@ Full write-up: [cpu/dhrystone.md](cpu/dhrystone.md). Record: [cpu/dhrystone-resu
 
 #### Open at the end of the day
 
-- Commit this log update.
+- Commit the profiler, the per-commit run logs and this log update.
 - Declare a performance target for the scope label (HG1).
+- Choose the first optimization; the profile points to a fetch buffer (architecture 0.1.1, no contract change).
 - Decide whether to commit or discard the two regenerated visualizer records.
 - Merge or close Dependabot PRs 1 and 2.
 - Next benchmark: CoreMark. Next correctness step: an external model (Spike or Sail) in the regression.
 
 ---
 
-## Dhrystone run log
+## Run logs
 
-Appended automatically by `sim/cpu/bench/run_bench.py --devlog`; the Windows launcher `run_dhrystone.ps1` does this on every run. Each entry records the run and a rubric scorecard computed from [cpu/rubric-evidence.json](cpu/rubric-evidence.json) plus the run's own measurements. A scorecard is an automated self-assessment, not an independent review, and grants only the claims rubric section 8 allows. Oldest run first.
+One row per benchmark run, oldest first. Each run's full record (result, rubric scorecard, profile, build commands and checks) is in its per-commit log under [devlog/](devlog/). Rows are added automatically by `sim/cpu/bench/run_bench.py --devlog`, which the Windows launcher passes on every run.
 
-### Run 2026-11-20 21:04:14 -0500
-
-- **Commit:** `3110337`, uncommitted changes: yes
-- **Build:** clang version 23.1.5, `-O2`, `rv64i_zifencei`, 64 KiB RAM
-- **RTL:** `rv64_core.sv` 831101d3f376, `rv64_bram_soc.sv` a38d2ca4a051
-- **Result:** 2,188.2 clocks per run, 600.1 instructions per run, CPI 3.647, **0.2601 DMIPS/MHz** (500 runs; non-compliant simulation run, evidence class E1)
-- **Checks:** 17/17 result values; traces match the reference model at 0 and 7 wait cycles
-- **Trend:** first run with these build settings
-
-Rubric scorecard (revision 1; evidence assessed 2026-11-20 at `3110337`; automated self-assessment, not a review):
-
-| Dimension | Points | Of | Score |
-|---|---:|---:|---:|
-| R1 Architectural correctness | 13.5 | 25 | 54% |
-| R2 Traps, interrupts, privilege and reset | 6.2 | 10 | 62% |
-| R3 Verification depth and independence | 3.8 | 15 | 25% |
-| R4 Performance | 4.4 | 20 | 22% |
-| R5 FPGA implementation quality | 0.0 | 12 | 0% |
-| R6 Interfaces and integration | 4.3 | 8 | 54% |
-| R7 Observability and debug | 1.7 | 4 | 42% |
-| R8 Design quality and maintainability | 1.3 | 3 | 44% |
-| R9 Reproducibility and claim hygiene | 1.9 | 3 | 62% |
-| **Total** | **37.1** | **100** | **foundation** |
-
-- **Gates met:** HG2, HG4, HG5, PG4. **Not met:** HG1, HG3, HG6, HG7, HG8, PG1, PG2, PG3, PG5.
-- **"Verified in simulation":** not granted: HG1; HG6; R1 54% < 60%; R3 25% < 50%.
-- **"Good":** not granted: HG1; HG3; HG6; HG7; HG8; total 37.1 < 75; R1 54% < 80%; an R1 criterion under 3; R2 62% < 70%; R3 25% < 70%; R6 54% < 70%; a dimension under 50%.
-- **"Performant for a multicycle FPGA core":** not granted: "Good" not granted; PG1; PG2; PG3; PG5; R4 22% < 75%; R4.1 = 2 < 3; R4.2 = 0 < 3; R4.3 = 0 < 3; R5 0% < 60%.
-- **Computed this run:** R4.1 = 2 (CPI 3.647 against the multicycle bars of 4.0 (meets) and 3.0 (exceeds) gives 3; capped at 2 because the benchmark set lacks CoreMark); HG2 met (Regression PASS on the current RTL: 96 runs, 53 instruction names.)
-
-<!-- dhrystone-run {"time":"2026-11-20 21:04:14 -0500","commit":"3110337","dirty":"yes","compiler":"clang version 23.1.5","optimization":"O2","isa":"rv64i_zifencei","ram_bytes":65536,"cycles_per_run":2188.206,"cpi":3.6466574897759885,"dmips_per_mhz":0.2600998094211762,"rubric_total":37.1,"rtl_sha256":{"rtl/cpu/rv64_core.sv":"831101d3f376ed35f96e4549eb0e9cf67fd59ef79bdf025b3ddbf432aebd75d1","rtl/cpu/rv64_bram_soc.sv":"a38d2ca4a05142f1982635fb9824a29b80abc94e31635415d3b341df0c06ae57"}} -->
-
-### Run 2026-11-20 21:08:12 -0500
-
-- **Architecture:** version 0.1.0
-- **Commit:** `3110337`, uncommitted changes: yes
-- **Build:** clang version 23.1.5, `-O2`, `rv64i_zifencei`, 64 KiB RAM
-- **RTL:** `rv64_core.sv` 831101d3f376, `rv64_bram_soc.sv` a38d2ca4a051
-- **Result:** 2,188.2 clocks per run, 600.1 instructions per run, CPI 3.647, **0.2601 DMIPS/MHz** (500 runs; non-compliant simulation run, evidence class E1)
-- **Checks:** 17/17 result values; traces match the reference model at 0 and 7 wait cycles
-- **Trend:** +0.00% clocks per run against the previous run with the same build settings (2026-11-20 21:04:14 -0500, `3110337`, architecture unrecorded)
-
-Rubric scorecard (revision 1; evidence assessed 2026-11-20 at `3110337`; automated self-assessment, not a review):
-
-| Dimension | Points | Of | Score |
-|---|---:|---:|---:|
-| R1 Architectural correctness | 13.5 | 25 | 54% |
-| R2 Traps, interrupts, privilege and reset | 6.2 | 10 | 62% |
-| R3 Verification depth and independence | 3.8 | 15 | 25% |
-| R4 Performance | 4.4 | 20 | 22% |
-| R5 FPGA implementation quality | 0.0 | 12 | 0% |
-| R6 Interfaces and integration | 4.3 | 8 | 54% |
-| R7 Observability and debug | 1.7 | 4 | 42% |
-| R8 Design quality and maintainability | 1.3 | 3 | 44% |
-| R9 Reproducibility and claim hygiene | 1.9 | 3 | 62% |
-| **Total** | **37.1** | **100** | **foundation** |
-
-- **Gates met:** HG2, HG4, HG5, PG4. **Not met:** HG1, HG3, HG6, HG7, HG8, PG1, PG2, PG3, PG5.
-- **"Verified in simulation":** not granted: HG1; HG6; R1 54% < 60%; R3 25% < 50%.
-- **"Good":** not granted: HG1; HG3; HG6; HG7; HG8; total 37.1 < 75; R1 54% < 80%; an R1 criterion under 3; R2 62% < 70%; R3 25% < 70%; R6 54% < 70%; a dimension under 50%.
-- **"Performant for a multicycle FPGA core":** not granted: "Good" not granted; PG1; PG2; PG3; PG5; R4 22% < 75%; R4.1 = 2 < 3; R4.2 = 0 < 3; R4.3 = 0 < 3; R5 0% < 60%.
-- **Computed this run:** R4.1 = 2 (CPI 3.647 against the multicycle bars of 4.0 (meets) and 3.0 (exceeds) gives 3; capped at 2 because the benchmark set lacks CoreMark); HG2 met (Regression PASS on the current RTL: 96 runs, 53 instruction names.)
-
-<!-- dhrystone-run {"time":"2026-11-20 21:08:12 -0500","architecture_version":"0.1.0","commit":"3110337","dirty":"yes","compiler":"clang version 23.1.5","optimization":"O2","isa":"rv64i_zifencei","ram_bytes":65536,"cycles_per_run":2188.206,"cpi":3.6466574897759885,"dmips_per_mhz":0.2600998094211762,"rubric_total":37.1,"rtl_sha256":{"rtl/cpu/rv64_core.sv":"831101d3f376ed35f96e4549eb0e9cf67fd59ef79bdf025b3ddbf432aebd75d1","rtl/cpu/rv64_bram_soc.sv":"a38d2ca4a05142f1982635fb9824a29b80abc94e31635415d3b341df0c06ae57"}} -->
+| Run time | Commit | Uncommitted changes | Architecture | Compiler | Clocks per run | DMIPS/MHz | Rubric | Log |
+|---|---|---|---|---|---:|---:|---:|---|
+| 2026-11-20 21:04:14 -0500 | `3110337` | yes | unrecorded | clang version 23.1.5 `-O2` | 2,188.2 | 0.2601 | 37.1 | [devlog-3110337.md](devlog/devlog-3110337.md) |
+| 2026-11-20 21:08:12 -0500 | `3110337` | yes | 0.1.0 | clang version 23.1.5 `-O2` | 2,188.2 | 0.2601 | 37.1 | [devlog-3110337.md](devlog/devlog-3110337.md) |
+| 2026-11-20 21:21:17 -0500 | `35565c0` | yes | 0.1.0 | clang version 23.1.5 `-O2` | 2,188.2 | 0.2601 | 37.1 | [devlog-35565c0.md](devlog/devlog-35565c0.md) |

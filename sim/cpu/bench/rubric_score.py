@@ -15,12 +15,9 @@ This is an automated self-assessment. It is not an independent review and
 grants only what rubric section 8 allows.
 SPDX-License-Identifier: MIT
 """
-from datetime import datetime
 import hashlib
 import json
 from pathlib import Path
-import re
-import subprocess
 
 DIMENSIONS = [
     ('R1', 'Architectural correctness', 25),
@@ -39,10 +36,6 @@ PERFORMANCE_GATES = [f'PG{i}' for i in range(1, 6)]
 # Clocks per instruction: (meets, exceeds), rubric section 6, R4.1.
 CPI_BARS = {'multicycle': (4.0, 3.0), 'in-order pipelined': (1.6, 1.3), 'out-of-order': (1.0, 0.7)}
 BANDS = [(90, 'excellent'), (75, 'good'), (60, 'solid'), (40, 'developing'), (0, 'foundation')]
-RUN_LOG_HEADING = '## Dhrystone run log'
-RUN_LOG_INTRO = """
-Appended automatically by `sim/cpu/bench/run_bench.py --devlog`; the Windows launcher `run_dhrystone.ps1` does this on every run. Each entry records the run and a rubric scorecard computed from [cpu/rubric-evidence.json](cpu/rubric-evidence.json) plus the run's own measurements. A scorecard is an automated self-assessment, not an independent review, and grants only the claims rubric section 8 allows. Oldest run first.
-"""
 
 
 def sha(path):
@@ -51,16 +44,6 @@ def sha(path):
 
 def current_rtl(root):
     return {p.relative_to(root).as_posix(): sha(p) for p in sorted((root / 'rtl/cpu').glob('*.sv'))}
-
-
-def git(root, *args):
-    try:
-        # WSL sees Windows files as executable; ignore mode bits when checking for changes.
-        done = subprocess.run(['git', '-c', 'safe.directory=*', '-c', 'core.fileMode=false', '-C', str(root), *args],
-                              capture_output=True, text=True, timeout=30)
-        return done.stdout.strip() if done.returncode == 0 else None
-    except (OSError, subprocess.TimeoutExpired):
-        return None
 
 
 def regression_gate(root, rtl):
@@ -161,49 +144,14 @@ def score(root, report):
     }
 
 
-def previous_runs(text):
-    return [json.loads(m) for m in re.findall(r'^<!-- dhrystone-run (\{.*\}) -->$', text, re.MULTILINE)]
-
-
-def entry(root, report, card, previous):
-    root = Path(root)
-    now = datetime.now().astimezone()
-    commit = git(root, 'rev-parse', '--short', 'HEAD') or 'unknown'
-    status = git(root, 'status', '--porcelain')
-    dirty = 'unknown' if status is None else ('yes' if status else 'no')
-    compiler = report['compiler'].split(' (')[0]
-    build = (compiler, report['optimization'], report['scope']['isa'], report['ram_bytes'])
-    same = [p for p in previous if (p['compiler'], p['optimization'], p['isa'], p['ram_bytes']) == build]
-    if same:
-        change = 100 * (report['cycles_per_run'] - same[-1]['cycles_per_run']) / same[-1]['cycles_per_run']
-        comparison = (f'{change:+.2f}% clocks per run against the previous run with the same build settings '
-                      f'({same[-1]["time"]}, `{same[-1]["commit"]}`, '
-                      f'architecture {same[-1].get("architecture_version", "unrecorded")})')
-        if abs(change) > 2:
-            comparison += '. **Change over 2%: explain it in this day\'s entry.**'
-    else:
-        comparison = 'first run with these build settings'
-    rtl = ', '.join(f'`{Path(k).name}` {v[:12]}' for k, v in report['scope']['rtl_sha256'].items())
-    waits = ' and '.join(str(d['max_wait_cycles']) for d in report['differential'])
-    passed = sum(c['pass'] for c in report['result_checks'])
-    lines = [
-        f'### Run {now.strftime("%Y-%m-%d %H:%M:%S %z")}', '',
-        f'- **Architecture:** version {card["architecture_version"]}',
-        f'- **Commit:** `{commit}`, uncommitted changes: {dirty}',
-        f'- **Build:** {compiler}, `-{report["optimization"]}`, `{report["scope"]["isa"]}`, {report["ram_bytes"] // 1024} KiB RAM',
-        f'- **RTL:** {rtl}',
-        f'- **Result:** {report["cycles_per_run"]:,.1f} clocks per run, {report["instructions_per_run"]:,.1f} instructions per run, '
-        f'CPI {report["clocks_per_instruction"]:.3f}, **{report["dmips_per_mhz"]:.4f} DMIPS/MHz** '
-        f'({report["number_of_runs"]} runs; non-compliant simulation run, evidence class E1)',
-        f'- **Checks:** {passed}/{len(report["result_checks"])} result values; traces match the reference model at {waits} wait cycles',
-        f'- **Trend:** {comparison}', '',
-        f'Rubric scorecard (revision {card["rubric_revision"]}; evidence assessed {card["evidence_assessed"]} at '
-        f'`{card["evidence_commit"]}`; automated self-assessment, not a review):', '',
-    ]
+def scorecard_markdown(card):
+    """Markdown scorecard: header line, dimension table, gates, claims and auto-scored items."""
+    lines = [f'Rubric revision {card["rubric_revision"]}; evidence assessed {card["evidence_assessed"]} at '
+             f'`{card["evidence_commit"]}` for architecture {card["evidence_architecture_version"]}. '
+             'Automated self-assessment, not a review.', '']
     if card['evidence_stale']:
-        lines += [f'**RTL or architecture version changed since the evidence was assessed (assessed at version '
-                  f'{card["evidence_architecture_version"]}): hand-scored R1-R6 criteria count as 0 until '
-                  '`cpu/rubric-evidence.json` is reassessed.**', '']
+        lines += ['**RTL or architecture version changed since the evidence was assessed: hand-scored R1-R6 criteria '
+                  'count as 0 until `cpu/rubric-evidence.json` is reassessed.**', '']
     lines += ['| Dimension | Points | Of | Score |', '|---|---:|---:|---:|']
     for d in card['dimensions']:
         points = '-' if d['points'] is None else f'{d["points"]:.1f}'
@@ -218,20 +166,7 @@ def entry(root, report, card, previous):
         lines.append(f'- **"{claim["claim"]}":** {state}.')
     lines.append(f'- **Computed this run:** R4.1 = {card["scores"]["R4.1"]} ({card["auto"]["R4.1"]}); '
                  f'HG2 {card["gates"]["HG2"]["status"]} ({card["auto"]["HG2"]})')
-    record = {'time': now.strftime('%Y-%m-%d %H:%M:%S %z'), 'architecture_version': card['architecture_version'],
-              'commit': commit, 'dirty': dirty, 'compiler': compiler,
-              'optimization': report['optimization'], 'isa': report['scope']['isa'], 'ram_bytes': report['ram_bytes'],
-              'cycles_per_run': report['cycles_per_run'], 'cpi': report['clocks_per_instruction'],
-              'dmips_per_mhz': report['dmips_per_mhz'], 'rubric_total': round(card['total'], 2),
-              'rtl_sha256': report['scope']['rtl_sha256']}
-    lines += ['', f'<!-- dhrystone-run {json.dumps(record, separators=(",", ":"))} -->', '']
+    lines += ['', '| Criterion | Score |', '|---|---:|']
+    lines += [f'| {k} | {"N/A" if v is None else v} |' for k, v in sorted(
+        card['scores'].items(), key=lambda kv: (kv[0][:2], int(kv[0].split('.')[1])))]
     return '\n'.join(lines)
-
-
-def append_devlog(root, report, card):
-    path = Path(root) / 'DEVLOG.md'
-    text = path.read_text(encoding='utf-8')
-    if RUN_LOG_HEADING not in text:
-        text = text.rstrip('\n') + '\n\n---\n\n' + RUN_LOG_HEADING + '\n' + RUN_LOG_INTRO
-    text = text.rstrip('\n') + '\n\n' + entry(root, report, card, previous_runs(text))
-    path.write_text(text, encoding='utf-8', newline='\n')

@@ -28,7 +28,9 @@ ROOT = Path(__file__).resolve().parents[3]
 sys.path.insert(0, str(ROOT / 'sim/cpu'))
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from reference import execute  # noqa: E402
+import bench_profile  # noqa: E402
 import rubric_score  # noqa: E402
+import runlog  # noqa: E402
 
 DHRYSTONE_MAGIC = 0x4e4f545359524844
 DMIPS_DIVISOR = 1757  # Dhrystones per second of the VAX 11/780 reference
@@ -77,7 +79,8 @@ def main():
     parser.add_argument('--record', action='store_true',
                         help='Also write the result to cpu/<benchmark>-results.json')
     parser.add_argument('--devlog', action='store_true',
-                        help='Append this run and its rubric scorecard to DEVLOG.md')
+                        help='Write this run, its rubric scorecard and profile to devlog/devlog-<commit>.md '
+                             'and add a row to the run index in DEVLOG.md')
     args = parser.parse_args()
     if not shutil.which('iverilog') or not shutil.which('vvp'):
         parser.error('iverilog and vvp are required; on Windows use run_dhrystone.ps1')
@@ -147,7 +150,15 @@ def main():
         if traced_region != region_retired or traced_total != total_retired:
             raise AssertionError('Timing and differential runs disagree on retired instruction counts')
         differential.append({'max_wait_cycles': stalls, 'events': len(actual_trace), 'result': 'PASS',
-                             'simulator_summary': summary.strip().splitlines()[0]})
+                             'simulator_summary': summary.strip().splitlines()[0], 'trace': trace_path})
+
+    # Every traced run retires the same instructions; the zero-wait run also gives a cycle count to check.
+    zero = next((d for d in differential if d['max_wait_cycles'] == 0), None)
+    tb_cycles = int(re.search(r'cycles=(\d+)', zero['simulator_summary'])[1]) if zero else None
+    profile = bench_profile.profile((zero or differential[0])['trace'], out / 'symbols.txt', out / 'bench.disasm.txt',
+                                    mailbox, runs, region_cycles, total_cycles, tb_cycles)
+    for d in differential:
+        del d['trace']
 
     cycles_per_run = region_cycles / runs
     report = {
@@ -176,6 +187,15 @@ def main():
         'dmips_per_mhz': runs * 1_000_000 / (region_cycles * DMIPS_DIVISOR),
         'result_checks': checks,
         'differential': differential,
+        'profile': {
+            'model_check': profile['model'],
+            'fetch_share_of_clocks': profile['instructions'] * profile['model']['fetch'] / profile['clocks'],
+            'classes_per_run': {k: {'instructions': n / runs, 'clocks': c / runs} for k, n, c in profile['classes']},
+            'functions_per_run': {name: {'instructions': n / runs, 'clocks': c / runs, 'calls': calls / runs}
+                                  for name, n, c, calls in profile['functions']},
+            'fetch_reuse_share': profile['fetch_reuse']['share'],
+            'estimates': profile['estimates'],
+        },
         'instruction_names_executed': sorted(c for c in coverage if ':' not in c),
         'simulator': command(['iverilog', '-V']).splitlines()[0],
         'host': {'platform': platform.platform(), 'machine': platform.machine(), 'python': platform.python_version()},
@@ -200,8 +220,8 @@ def main():
                         'note': 'Automated self-assessment from cpu/rubric-evidence.json; not an independent review.'}
     (out / 'rubric.json').write_bytes((json.dumps(card, indent=2) + '\n').encode())
     (out / 'results.json').write_bytes((json.dumps(report, indent=2) + '\n').encode())
-    if args.devlog:
-        rubric_score.append_devlog(ROOT, report, card)
+    (out / 'profile.md').write_text(bench_profile.markdown(profile) + '\n', encoding='utf-8')
+    log_path = runlog.write(ROOT, report, card, profile, bench_profile.markdown(profile)) if args.devlog else None
     if args.record:
         (ROOT / f'cpu/{args.benchmark}-results.json').write_bytes((json.dumps(report, indent=2) + '\n').encode())
     print(f'PASS: Dhrystone, {runs} runs; all {len(checks)} result checks match.')
@@ -212,8 +232,11 @@ def main():
     granted = report['rubric']['claims_granted']
     print(f'Rubric self-assessment: {card["total"]:.1f}/100 ({card["band"]}); claims granted: '
           f'{", ".join(granted) if granted else "none"}' + ('; evidence is stale' if card['evidence_stale'] else '') + '.')
-    if args.devlog:
-        print('Appended this run and its scorecard to DEVLOG.md.')
+    top = profile['functions'][0]
+    print(f'Profile: fetch is {100 * report["profile"]["fetch_share_of_clocks"]:.1f}% of clocks; '
+          f'busiest function `{top[0]}` takes {100 * top[2] / profile["clocks"]:.1f}% of clocks.')
+    if log_path:
+        print(f'Logged this run to {log_path} and indexed it in DEVLOG.md.')
     print(f'Results: {(out / "results.json").relative_to(ROOT).as_posix()}')
 
 
