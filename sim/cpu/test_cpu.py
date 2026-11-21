@@ -438,6 +438,30 @@ def cases():
     yield 'forwarded_load_read_fault', held + [i_type(0x13, 2, 0, 0, 0x55), store(3, 1, 2, 0),
                                                i_type(3, 4, 3, 1, 0), 0x100073], 2, 8192
 
+    # Memory hand-off 6 (paste into cases() of sim/cpu/test_cpu.py; uses its prefix/i_type/store/
+    # branch/r_type helpers). x30 = 0x2000, x2 = 1 after the prefix.
+    #
+    # A store before a load and a store behind it, in a byte loop whose load value is trained
+    # by value prediction (zero) and then changes. With small caches the store-write scan used
+    # to choose the store behind the value-mispredicted load, which retirement then discarded
+    # ("store write without its store retiring" / "unstable stalled request" with bus waits,
+    # 0.12.0 with 2-line caches; also middle's fold_byte_loop).
+    for n, chg in ((12, 10), (16, 12)):
+        loop = [store(0, 22, 23, 0x40), i_type(3, 24, 4, 21, 0), store(0, 22, 24, 0), i_type(0x13, 21, 0, 21, 1),
+                i_type(0x13, 22, 0, 22, 1), i_type(0x13, 23, 0, 23, -1), branch(1, 23, 0, -24)]
+        p = prefix() + [store(0, 30, 2, 0x100 + chg), i_type(0x13, 21, 0, 30, 0x100),
+                        i_type(0x13, 22, 0, 30, 0x200), i_type(0x13, 23, 0, 0, n)] + loop
+        p += [i_type(3, 25, 3, 30, 0x208), 0x100073]
+        yield f'vp_store_scan_{n}', p, 0, MASK
+    # An older store with a late address and a younger store with an early address write the
+    # same bytes; the load forwards from the younger one and must give its value (correctness;
+    # 0.12.0 also flushed it needlessly and set its load-wait bit).
+    late = [i_type(0x13, 27, 0, 0, 1), i_type(3, 26, 3, 30, 0x178), r_type(0x33, 21, 0, 30, 26),
+            r_type(0x33, 21, 4, 21, 27, 1), r_type(0x33, 21, 4, 21, 27, 1)]
+    p = prefix() + [i_type(3, 25, 3, 30, 0x170)] + late + [
+        store(3, 21, 7, 0x170), store(3, 30, 8, 0x170), i_type(3, 22, 3, 30, 0x170),
+        r_type(0x33, 23, 0, 22, 22), store(3, 30, 23, 0x180), 0x100073]
+    yield 'mdp_forward_from_younger', p, 0, MASK
 
 def command(args):
     result = subprocess.run([str(x) for x in args], capture_output=True, text=True, timeout=60)

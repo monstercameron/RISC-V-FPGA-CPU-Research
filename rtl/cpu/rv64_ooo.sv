@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Original CPU foundation, wide out-of-order implementation (architecture 0.12.0).
+// Original CPU foundation, wide out-of-order implementation (architecture 0.12.1).
 // RV64IM + B execution, serialized FENCE.I, terminal EEI. Same module name and
 // contract as rv64_core.sv and rv64_pipe.sv, plus a wider retirement trace (rt_*);
 // build with one of the three files. Architecture version: cpu/VERSION,
@@ -580,6 +580,12 @@ module rv64_core #(
     reg [ROB_B-1:0] st2_idx;
     reg [ROB_N-1:0] rb_viol;    // a finished load read bytes an older store then wrote
     reg [255:0] mdp_wait;       // load-wait table, by PC bits 9:2
+    // Instructions that retire and then end the retirement group with a refetch (fence.i,
+    // a wrong value prediction): retirement and the store-write scan both stop after them.
+    wire [ROB_N-1:0] rb_ends = rb_fencei | rb_vpbad;
+    reg [ROB_B-1:0] vc_e;       // memory-dependence check: a store between the two
+    reg [7:0] vc_mask;          // bytes a resolving store makes stale
+    integer vc_k;
     reg h_exc;
     always @* begin
         st_cand = 0; st_idx = 0; st2_cand = 0; st2_idx = 0;
@@ -601,7 +607,7 @@ module rv64_core #(
                         if (!st_cand) begin st_cand = 1; st_idx = e; if (!PAIR_WRITES) stop = 1; end
                         else begin st2_cand = 1; st2_idx = e; stop = 1; end
                     end
-                    else if (rb_fencei[e]) stop = 1;
+                    else if (rb_ends[e]) stop = 1;   // retirement refetches after these
                 end
             end
         end
@@ -876,7 +882,7 @@ module rv64_core #(
                         rflush = 1; rflush_pc = rb_pc[e]; stop = 1; mdp_wait[rb_pc[e][9:2]] = 1;
                     end else begin
                         n_ret = s + 1;
-                        if (rb_fencei[e] || rb_vpbad[e]) begin rflush = 1; rflush_pc = rb_next[e]; stop = 1; end
+                        if (rb_ends[e]) begin rflush = 1; rflush_pc = rb_next[e]; stop = 1; end
                     end
                 end
             end
@@ -1090,12 +1096,23 @@ module rv64_core #(
                     rb_cause[x_rob] = f3_[2] ? 64'd2 : 64'd6; rb_tval[x_rob] = f3_[2] ? {32'b0, ex_insn[p]} : ea;
                     rb_addr[x_rob] = ea; rb_wstrb[x_rob] = size_bytes(f3_[1:0]) << ea[2:0]; rb_sps2[x_rob] = ex_ps2[p];
                     // A younger load that already gave its value (finished, or forwarded to its
-                    // consumers early) and read bytes this store writes is stale.
+                    // consumers early) and read bytes this store writes is stale, except bytes a
+                    // store between the two writes that already has its address (the load took
+                    // them from that store, or that store marks the load when it resolves).
                     if (ok) for (k = 0; k < ROB_N; k = k + 1) begin
                         e = k[ROB_B-1:0];
                         if (rb_live[e] && rb_load[e] && !rb_exc[e] &&
                             (rb_done[e] || (rb_writes[e] && prf_written[rb_pdst[e]])) && (e - rb_head) > (x_rob - rb_head) &&
-                            rb_addr[e][63:3] == ea[63:3] && (rb_wstrb[e] & rb_wstrb[x_rob]) != 0) rb_viol[e] = 1;
+                            rb_addr[e][63:3] == ea[63:3] && (rb_wstrb[e] & rb_wstrb[x_rob]) != 0) begin
+                            vc_mask = rb_wstrb[e] & rb_wstrb[x_rob];
+                            for (vc_k = 0; vc_k < ROB_N; vc_k = vc_k + 1) begin
+                                vc_e = vc_k[ROB_B-1:0];
+                                if (rb_live[vc_e] && rb_store[vc_e] && rb_sta[vc_e] && (vc_e - rb_head) > (x_rob - rb_head) &&
+                                    (vc_e - rb_head) < (e - rb_head) && rb_addr[vc_e][63:3] == ea[63:3])
+                                    vc_mask = vc_mask & ~rb_wstrb[vc_e];
+                            end
+                            if (vc_mask != 0) rb_viol[e] = 1;
+                        end
                     end
                 end
             end
