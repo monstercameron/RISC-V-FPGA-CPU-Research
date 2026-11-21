@@ -1,4 +1,4 @@
-# CPU architecture, version 0.2.1
+# CPU architecture, version 0.2.2
 
 Versioned with [semantic versioning](https://semver.org/); rules and history are in section 9. "Revision 0" in this document is version 0.1.0.
 
@@ -70,7 +70,7 @@ The current wrapper has one readable/writable/executable region 0x0000..0x3fff. 
 
 Reset is synchronous and must reset/quiesce the core and its memory adapter together. The dedicated reset test cancels a store **before acknowledgement** in that shared-reset environment. It does not establish rollback of completed stores, safe cancellation of AXI/PCIe writes, or permission to reset a live external fabric independently. Later system-reset logic must drain or isolate outstanding external accesses.
 
-The sample SoC uses byte write enables and a synchronous read. `RAM_WORDS` must be a power of two >=2; default 2048. Hex initialization has 2048 lines of 16 hexadecimal digits, each a little-endian 64-bit memory word. The RAM wrapper is simulation-tested, but actual BRAM inference and read/write behavior must be checked in the selected FPGA tool.
+The sample SoC uses byte write enables and a synchronous read. Since 0.2.2 it acknowledges a write in the clock the request is presented, writing on that clock edge, with the out-of-range error decided combinationally; reads still answer one clock later. `RAM_WORDS` must be a power of two >=2; default 2048. Hex initialization has 2048 lines of 16 hexadecimal digits, each a little-endian 64-bit memory word. The RAM wrapper is simulation-tested, but actual BRAM inference and read/write behavior must be checked in the selected FPGA tool.
 
 ## 4. Trap and retirement contract
 
@@ -196,3 +196,4 @@ Once Zicsr arrives in C1, consider reporting the version in the implementation-d
 | 0.1.1 | 2026-11-20 | tag `cpu-v0.1.1` | Fetch buffer: the last fetched 8-byte beat serves the next instruction when it is in the same beat, skipping FETCH. Cleared by reset, `fence.i` and stores to the beat. Dhrystone: 2,188.2 to 1,706.2 clocks per run. | No | `93117e8a6f97` / `a38d2ca4a051` |
 | 0.2.0 | 2026-11-20 | tag `cpu-v0.2.0` | Instruction cache replaces the fetch buffer: direct-mapped, `ICACHE_BEATS` 8-byte lines (default 512, 4 KiB), new parameter on `rv64_core` and `rv64_bram_soc`; same coherence rules. Dhrystone: 1,706.2 to the clocks in its run log. | No (new parameter) | `38287831f747` / `143e07b2bbef` |
 | 0.2.1 | 2026-11-20 | tag `cpu-v0.2.1` | Loads and stores issue their bus request from EXECUTE; MEMORY holds the same request if needed. One clock less per data access with the synchronous RAM. Bus protocol unchanged. | No | `019ba2dc2dc5` / `143e07b2bbef` |
+| 0.2.2 | 2026-11-20 | tag `cpu-v0.2.2` | RAM wrapper acknowledges writes in the clock they are presented; reads unchanged. Stores now retire from EXECUTE. | No | `019ba2dc2dc5` / `5d0323d3916c` |

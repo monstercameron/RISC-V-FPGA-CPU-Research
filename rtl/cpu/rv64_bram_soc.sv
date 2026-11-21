@@ -24,25 +24,29 @@ module rv64_bram_soc #(
     wire valid, instr;
     wire [63:0] addr,wdata;
     wire [7:0] wstrb;
-    reg ready,error;
+    reg read_ready,read_error;
     reg [63:0] rdata;
     wire [INDEX_BITS-1:0] index=addr[INDEX_BITS+2:3];
     wire outside_ram=addr>=RAM_WORDS*64'd8;
+    // Writes (0.2.2) complete in the clock they are presented: the RAM writes on
+    // that clock's edge, and the range check that decides the error is
+    // combinational. Reads answer one clock later from the synchronous RAM.
+    wire write_request=valid && wstrb!=0;
+    wire ready=write_request || read_ready;
+    wire error=write_request ? outside_ram : read_error;
     integer lane;
     always @(posedge clk) begin
-        if (reset) begin ready<=0; error<=0; rdata<=0; end
+        if (reset) begin read_ready<=0; read_error<=0; rdata<=0; end
         else begin
-            ready<=0;
-            if (valid && !ready) begin
-                ready<=1;
-                error<=outside_ram;
-                if (outside_ram) rdata<=0;
-                else begin
-                    rdata<=ram[index];
-                    for (lane=0;lane<8;lane=lane+1)
-                        if (wstrb[lane]) ram[index][8*lane+:8]<=wdata[8*lane+:8];
-                end
+            read_ready<=0;
+            if (valid && !write_request && !read_ready) begin
+                read_ready<=1;
+                read_error<=outside_ram;
+                rdata<=outside_ram ? 64'b0 : ram[index];
             end
+            if (write_request && !outside_ram)
+                for (lane=0;lane<8;lane=lane+1)
+                    if (wstrb[lane]) ram[index][8*lane+:8]<=wdata[8*lane+:8];
         end
     end
     rv64_core #(.RESET_PC(RESET_PC),.ICACHE_BEATS(ICACHE_BEATS)) cpu (

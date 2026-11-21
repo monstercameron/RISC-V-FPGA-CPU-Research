@@ -2,11 +2,11 @@
   "rubric": "cpu/review-rubric.md",
   "rubric_revision": 1,
   "assessed": "2026-11-20",
-  "assessed_at_commit": "cpu-v0.2.1",
+  "assessed_at_commit": "cpu-v0.2.2",
   "assessed_by": "Author self-assessment, not an independent review (rubric HG8 and R9.4).",
-  "architecture_version": "0.2.1",
+  "architecture_version": "0.2.2",
   "rtl_sha256": {
-    "rtl/cpu/rv64_bram_soc.sv": "143e07b2bbef43e50f630b3b93efbefccb047f0ca93ef47256ca54d88c78effe",
+    "rtl/cpu/rv64_bram_soc.sv": "5d0323d3916c64fd81ab80dc217f731dbaf3198bc22ad8840de7dcd73c270bec",
     "rtl/cpu/rv64_core.sv": "019ba2dc2dc53ed301be89d225290af16769d6d5f065dd6253fb89119c806e41"
   },
   "scope": {
@@ -14,7 +14,7 @@
     "environment": "machine-level laboratory terminal trap; no privilege modes",
     "class": "multicycle",
     "configuration": "RESET_PC 0; ICACHE_BEATS 512; retirement trace ports always present",
-    "platform": "rv64_bram_soc synchronous RAM, one-clock response; 64 KiB for benchmarks, 16 KiB for the regression",
+    "platform": "rv64_bram_soc synchronous RAM: reads answer the next clock, writes in the same clock; 64 KiB for benchmarks, 16 KiB for the regression",
     "hardware": "none (simulation only)",
     "target": null
   },
