@@ -400,7 +400,8 @@ def main():
     OUT.mkdir(parents=True, exist_ok=True)
     executable = OUT / 'cpu.vvp'
     core_src = ROOT / CORES[args.core]
-    command(['iverilog', '-g2012', '-Wall', '-s', 'tb_core', *cache, '-o', executable,
+    wide = ['-DWIDE_TRACE'] if args.core == 'ooo' else []  # 0.10.0: up to 8 retirements per clock
+    command(['iverilog', '-g2012', '-Wall', *wide, '-s', 'tb_core', *cache, '-o', executable,
              core_src, ROOT / 'sim/cpu/tb_core.sv'])
     command(['iverilog', '-g2012', '-Wall', '-s', 'rv64_bram_soc', '-o', OUT/'soc.vvp',
              core_src, ROOT/'rtl/cpu/rv64_bram_soc.sv'])

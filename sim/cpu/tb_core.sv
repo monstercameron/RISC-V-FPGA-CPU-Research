@@ -14,6 +14,14 @@ module tb_core #(parameter integer MEM_BYTES=16384, parameter integer ICACHE_BEA
     wire [63:0] tpc,cause,tval,rpc,rval,npc,rpc2,rval2,npc2,rpc3,rval3,npc3;
     wire [31:0] rinsn,rinsn2,rinsn3;
     wire [4:0] rd,rd2,rd3;
+`ifdef WIDE_TRACE
+    // Wide retirement trace (out-of-order core, 0.10.0): up to 8 per clock, slot 0 oldest.
+    wire [7:0] rtv;
+    wire [511:0] rtpc,rtdata,rtnext;
+    wire [255:0] rtinsn;
+    wire [39:0] rtrd;
+    integer q;
+`endif
     rv64_core #(.ICACHE_BEATS(ICACHE_BEATS),.DCACHE_BEATS(DCACHE_BEATS)) dut(.clk(clk),.reset(reset),.mem_valid(valid),.mem_instr(instr),
         .mem_addr(addr),.mem_wdata(wdata),.mem_wstrb(wstrb),.mem_ready(ready),
         .mem_rdata(rdata),.mem_error(error),.trap_valid(trapped),.trap_pc(tpc),
@@ -22,7 +30,11 @@ module tb_core #(parameter integer MEM_BYTES=16384, parameter integer ICACHE_BEA
         .retire2_valid(retired2),.retire2_pc(rpc2),.retire2_insn(rinsn2),.retire2_rd(rd2),
         .retire2_data(rval2),.retire2_next_pc(npc2),
         .retire3_valid(retired3),.retire3_pc(rpc3),.retire3_insn(rinsn3),.retire3_rd(rd3),
-        .retire3_data(rval3),.retire3_next_pc(npc3));
+        .retire3_data(rval3),.retire3_next_pc(npc3)
+`ifdef WIDE_TRACE
+        ,.rt_valid(rtv),.rt_pc(rtpc),.rt_insn(rtinsn),.rt_rd(rtrd),.rt_data(rtdata),.rt_next(rtnext)
+`endif
+        );
 
     string image_path,trace_path,pending_write="";
     integer fd,i,lane,cycles=0,retire_count=0,slot2_count=0,slot3_count=0,slot3_branches=0;
@@ -53,6 +65,22 @@ module tb_core #(parameter integer MEM_BYTES=16384, parameter integer ICACHE_BEA
     always @(negedge clk) begin
         if (reset) begin ready=0; active=0; end
         else begin
+`ifdef WIDE_TRACE
+            // Writes completed at the last edge belong to the store retiring now: its
+            // write is logged just before its own retirement, whatever its slot.
+            for (q=0;q<8;q=q+1) if (rtv[q]) begin
+                if (q>0 && !rtv[q-1]) $fatal(1,"retirement slots not contiguous");
+                if (pending_write!="" && rtinsn[32*q +: 7]==7'h23) begin
+                    $fdisplay(fd,"%s",pending_write); pending_write="";
+                end
+                $fdisplay(fd,"R %016h %08h %02h %016h %016h",rtpc[64*q +: 64],rtinsn[32*q +: 32],
+                          rtrd[5*q +: 5],rtdata[64*q +: 64],rtnext[64*q +: 64]);
+                retire_count=retire_count+1;
+                if (q==1) slot2_count=slot2_count+1;
+                if (q==2) slot3_count=slot3_count+1;
+            end
+            if (pending_write!="" && !trapped) begin $fdisplay(fd,"%s",pending_write); pending_write=""; end
+`else
             // Writes completed at the last edge belong to a store retiring now. A store
             // on the first slot (or alone) logs its write before its retirement; a
             // second-slot store (0.5.4) logs it after the first slot's retirement.
@@ -75,6 +103,7 @@ module tb_core #(parameter integer MEM_BYTES=16384, parameter integer ICACHE_BEA
                 retire_count=retire_count+1; slot3_count=slot3_count+1;
                 if (rinsn3[6:0]==7'h63) slot3_branches=slot3_branches+1;
             end
+`endif
             if (trapped) begin
                 if (valid) $fatal(1,"request after terminal trap");
                 if (pending_write!="") $fdisplay(fd,"%s",pending_write);

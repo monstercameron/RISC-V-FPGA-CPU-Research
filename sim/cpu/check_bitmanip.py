@@ -29,7 +29,7 @@ B_MNEMONICS = re.compile(r'\t(sh[123]add(\.uw)?|add\.uw|slli\.uw|andn|orn|xnor|c
 
 
 def run(args):
-    done = subprocess.run([str(a) for a in args], capture_output=True, text=True, timeout=600)
+    done = subprocess.run([str(a) for a in args], capture_output=True, text=True, timeout=300)
     if done.returncode:
         raise SystemExit(f'Failed: {" ".join(map(str, args))}\n{done.stdout}{done.stderr}')
     return done.stdout
@@ -65,7 +65,8 @@ def main():
             raise SystemExit(f'{tool} is required')
     OUT.mkdir(parents=True, exist_ok=True)
     vvp = OUT / 'tb_core.vvp'
-    run(['iverilog', '-g2012', '-Wall', '-s', 'tb_core', f'-Ptb_core.MEM_BYTES={RAM}', '-o', vvp,
+    run(['iverilog', '-g2012', '-Wall', *(['-DWIDE_TRACE'] if args.core == 'ooo' else []), '-s', 'tb_core',
+         f'-Ptb_core.MEM_BYTES={RAM}', '-o', vvp,
          ROOT / {'multicycle': 'rtl/cpu/rv64_core.sv', 'pipe': 'rtl/cpu/rv64_pipe.sv', 'ooo': 'rtl/cpu/rv64_ooo.sv'}[args.core],
          ROOT / 'sim/cpu/tb_core.sv'])
     results = {}

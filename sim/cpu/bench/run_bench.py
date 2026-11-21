@@ -62,7 +62,9 @@ def sha(path):
     return hashlib.sha256(Path(path).read_bytes()).hexdigest()
 
 
-def command(args, timeout=1800):
+# Every step (a compile or one simulation) is stopped after 5 minutes, so a hung core
+# fails quickly instead of holding the machine.
+def command(args, timeout=300):
     completed = subprocess.run([str(x) for x in args], capture_output=True, text=True, timeout=timeout)
     if completed.returncode:
         raise RuntimeError(f'Command failed: {" ".join(map(str, args))}\n{completed.stdout}{completed.stderr}')
@@ -100,7 +102,8 @@ def main():
 
     # 1. Timing on the core plus synchronous RAM wrapper.
     timing_vvp = out / 'tb_bench.vvp'
-    command(['iverilog', '-g2012', '-Wall', '-s', 'tb_bench', f'-Ptb_bench.RAM_WORDS={ram_bytes // 8}',
+    command(['iverilog', '-g2012', '-Wall', *(['-DWIDE_TRACE'] if args.core == 'ooo' else []), '-s', 'tb_bench',
+             f'-Ptb_bench.RAM_WORDS={ram_bytes // 8}',
              '-o', timing_vvp, *rtl, ROOT / 'sim/cpu/bench/tb_bench.sv'])
     started = time.perf_counter()
     output = command(['vvp', timing_vvp, f'+image={out / "bench-words.hex"}', f'+mailbox={mailbox:x}',
@@ -133,7 +136,8 @@ def main():
     expected_trace, coverage = execute(image, max_steps=20_000_000)
     reference_seconds = time.perf_counter() - started
     trace_vvp = out / 'tb_core.vvp'
-    command(['iverilog', '-g2012', '-Wall', '-s', 'tb_core', f'-Ptb_core.MEM_BYTES={ram_bytes}',
+    command(['iverilog', '-g2012', '-Wall', *(['-DWIDE_TRACE'] if args.core == 'ooo' else []), '-s', 'tb_core',
+             f'-Ptb_core.MEM_BYTES={ram_bytes}',
              '-o', trace_vvp, rtl[0], ROOT / 'sim/cpu/tb_core.sv'])
     start_write = f'W {mailbox:016x} {1:016x} ff'
     stop_write = f'W {mailbox:016x} {2:016x} ff'
