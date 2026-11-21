@@ -38,7 +38,7 @@ module tb_bench #(parameter integer RAM_WORDS = 8192);
         cycles=cycles+1;
         if (retired) retirements=retirements+1;
         // +profile: one line per instruction retired inside the timed region with
-        // the clocks it spent in FETCH, EXECUTE and MEMORY (states 0, 1, 2).
+        // the clocks it spent in FETCH, EXECUTE (with DIVIDE) and MEMORY.
         if (retired) begin
             if (profile_fd!=0 && start_cycle>=0 && stop_cycle<0)
                 $fdisplay(profile_fd,"R %016h %08h %02h %016h %0d %0d %0d",dut.cpu.retire_pc,
@@ -47,7 +47,7 @@ module tb_bench #(parameter integer RAM_WORDS = 8192);
         end
         case (dut.cpu.state)
             0: in_fetch=in_fetch+1;
-            1: in_execute=in_execute+1;
+            1,4: in_execute=in_execute+1; // EXECUTE, and DIVIDE steps since 0.4.0
             2: in_memory=in_memory+1;
             default: begin end
         endcase

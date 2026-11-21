@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Original CPU foundation. RV64I execution + serialized FENCE.I, terminal EEI.
+// Original CPU foundation. RV64IM execution + serialized FENCE.I, terminal EEI.
 // Architecture version: see cpu/VERSION and cpu/architecture.md section 9.
 // No RVA23 compliance claim. See cpu/architecture.md and cpu/README.md.
 module rv64_core #(
@@ -34,8 +34,8 @@ module rv64_core #(
     output reg [63:0]  retire_data,
     output reg [63:0]  retire_next_pc
 );
-    localparam [1:0] FETCH=0, EXECUTE=1, MEMORY=2, HALTED=3;
-    reg [1:0] state;
+    localparam [2:0] FETCH=0, EXECUTE=1, MEMORY=2, HALTED=3, DIVIDE=4;
+    reg [2:0] state;
     reg [63:0] pc;
     reg [31:0] insn;
     reg [63:0] regs [0:31];
@@ -56,6 +56,66 @@ module rv64_core #(
     reg [31:0] word_result;
     reg [7:0] byte_mask;
     reg [63:0] access_mask;
+
+    // M extension (0.4.0). Multiplies complete in EXECUTE. Divides and remainders
+    // complete in EXECUTE for divide-by-zero, signed overflow and a dividend smaller
+    // than the divisor; otherwise DIVIDE runs one shift-subtract step per clock,
+    // starting at the quotient's highest possible bit (clz difference + 1 steps).
+    wire m_op = (op == 7'h33 || op == 7'h3b) && f7 == 7'h01;
+    wire m_word = op == 7'h3b;
+    wire is_div = m_op && f3[2];
+    wire div_signed = !f3[0];
+    wire want_rem = f3[1];
+    wire [63:0] sext_a32 = {{32{a[31]}},a[31:0]};
+    wire [63:0] da = m_word ? (div_signed ? sext_a32 : {32'b0,a[31:0]}) : a;
+    wire [63:0] db = m_word ? (div_signed ? {{32{b[31]}},b[31:0]} : {32'b0,b[31:0]}) : b;
+    wire neg_a = div_signed && da[63];
+    wire neg_b = div_signed && db[63];
+    wire [63:0] mag_a = neg_a ? 64'd0 - da : da;
+    wire [63:0] mag_b = neg_b ? 64'd0 - db : db;
+    wire div_by_zero = db == 0;
+    wire div_overflow = div_signed && da == (m_word ? 64'hffffffff80000000 : 64'h8000000000000000) && db == {64{1'b1}};
+    wire div_start = is_div && !div_by_zero && !div_overflow && mag_a >= mag_b;
+    wire [127:0] p_uu = {64'b0,a} * {64'b0,b};
+    wire [127:0] p_ss = {{64{a[63]}},a} * {{64{b[63]}},b};
+    wire [127:0] p_su = {{64{a[63]}},a} * {64'b0,b};
+    wire [31:0] p_w = a[31:0] * b[31:0];
+    reg [63:0] m_result;
+    reg [63:0] div_rem, div_den, div_quot, div_bit;
+    reg div_neg_q, div_neg_r, div_want_rem, div_is_word;
+
+    function automatic [6:0] clz64(input [63:0] value);
+        integer k;
+        begin
+            clz64 = 64;
+            for (k = 0; k < 64; k = k + 1) if (value[k]) clz64 = 63 - k;
+        end
+    endfunction
+    function automatic [63:0] div_finish(input [63:0] q, input [63:0] r, input nq, input nr,
+                                         input rem_wanted, input word);
+        reg [63:0] v;
+        begin
+            v = rem_wanted ? (nr ? 64'd0 - r : r) : (nq ? 64'd0 - q : q);
+            div_finish = word ? {{32{v[31]}},v[31:0]} : v;
+        end
+    endfunction
+
+    always @* begin
+        case (f3)
+            0: m_result = m_word ? {{32{p_w[31]}},p_w} : p_uu[63:0];
+            1: m_result = p_ss[127:64];
+            2: m_result = p_su[127:64];
+            3: m_result = p_uu[127:64];
+            default:
+                if (div_by_zero) m_result = want_rem ? (m_word ? sext_a32 : a) : {64{1'b1}};
+                else if (div_overflow) m_result = want_rem ? 64'b0 : da;
+                else m_result = div_finish(64'b0, mag_a, neg_a ^ neg_b, neg_a, want_rem, m_word);
+        endcase
+    end
+    // One DIVIDE step, and whether it is the last.
+    wire div_take = div_rem >= div_den;
+    wire [63:0] div_rem_next = div_take ? div_rem - div_den : div_rem;
+    wire [63:0] div_quot_next = div_take ? div_quot | div_bit : div_quot;
 
     // Instruction cache (0.2.0): direct-mapped, one 8-byte beat per line, filled by
     // every bus fetch. A successor that hits skips FETCH. Reset and fence.i clear
@@ -166,7 +226,7 @@ module rv64_core #(
             end
             7'h33: begin
                 write_rd=1;
-                legal=f7==0 || (f7==7'h20 && (f3==0 || f3==5));
+                legal=f7==0 || (f7==7'h20 && (f3==0 || f3==5)) || f7==7'h01;
                 case (f3)
                     0: result=insn[30] ? a-b : a+b;
                     1: result=a<<b[5:0];
@@ -177,6 +237,7 @@ module rv64_core #(
                     6: result=a|b;
                     7: result=a&b;
                 endcase
+                if (f7==7'h01) result=m_result;
             end
             7'h1b: begin
                 write_rd=1;
@@ -194,14 +255,17 @@ module rv64_core #(
             end
             7'h3b: begin
                 write_rd=1;
-                legal=f7==0 || (f7==7'h20 && (f3==0 || f3==5));
                 case (f3)
                     0: word_result=insn[30] ? a[31:0]-b[31:0] : a[31:0]+b[31:0];
                     1: word_result=a[31:0]<<b[4:0];
                     5: if (insn[30]) word_result=$signed(a[31:0])>>>b[4:0]; else word_result=a[31:0]>>b[4:0];
-                    default: legal=0;
+                    default: word_result=0;
                 endcase
                 result={{32{word_result[31]}},word_result};
+                // RV64I word ops, plus mulw/divw/divuw/remw/remuw (M, 0.4.0).
+                legal=(f7==0 && (f3==0 || f3==1 || f3==5)) || (f7==7'h20 && (f3==0 || f3==5)) ||
+                      (f7==7'h01 && (f3==0 || f3[2]));
+                if (f7==7'h01) result=m_result;
             end
             7'h03,7'h23: begin
                 load_op=op==7'h03; store_op=op==7'h23;
@@ -291,6 +355,8 @@ module rv64_core #(
             pending_addr<=0; pending_wdata<=0; pending_wstrb<=0;
             pending_f3<=0; pending_rd<=0; pending_load<=0; pending_next_pc<=0;
             ic_valid<=0; dc_valid<=0;
+            div_rem<=0; div_den<=0; div_quot<=0; div_bit<=0;
+            div_neg_q<=0; div_neg_r<=0; div_want_rem<=0; div_is_word<=0;
             for (i=0;i<32;i=i+1) regs[i]<=0;
         end else begin
             retire_valid<=0;
@@ -310,6 +376,14 @@ module rv64_core #(
                 end
                 EXECUTE: begin
                     if (exception) report_trap(exception_cause,exception_tval);
+                    else if (div_start) begin
+                        div_rem<=mag_a; div_quot<=0;
+                        div_den<=mag_b << (clz64(mag_b) - clz64(mag_a));
+                        div_bit<=64'd1 << (clz64(mag_b) - clz64(mag_a));
+                        div_neg_q<=neg_a ^ neg_b; div_neg_r<=neg_a;
+                        div_want_rem<=want_rem; div_is_word<=m_word;
+                        state<=DIVIDE;
+                    end
                     else if (load_hit) retire(rd,load_result,next_pc,1'b0,1'b0,64'b0);
                     else if (load_op || store_op) begin
                         if (mem_ready) begin // completed in the same clock it was issued
@@ -332,6 +406,15 @@ module rv64_core #(
                         dcache_update(pending_load,pending_addr,mem_rdata,pending_wdata,pending_wstrb);
                         retire(pending_load ? pending_rd : 5'b0,load_result,pending_next_pc,
                                1'b0,!pending_load,pending_addr);
+                    end
+                end
+                DIVIDE: begin
+                    if (div_bit == 64'd1)
+                        retire(rd,div_finish(div_quot_next,div_rem_next,div_neg_q,div_neg_r,div_want_rem,div_is_word),
+                               next_pc,1'b0,1'b0,64'b0);
+                    else begin
+                        div_rem<=div_rem_next; div_quot<=div_quot_next;
+                        div_den<=div_den >> 1; div_bit<=div_bit >> 1;
                     end
                 end
                 HALTED: begin end

@@ -1,4 +1,4 @@
-# CPU architecture, version 0.3.0
+# CPU architecture, version 0.4.0
 
 Versioned with [semantic versioning](https://semver.org/); rules and history are in section 9. "Revision 0" in this document is version 0.1.0.
 
@@ -8,7 +8,7 @@ Decision date: October 23, 2026. User priority: **CPU core first**. This design 
 
 Long-term target: little-endian **RVA23U64**, including its mandatory scalar, vector and execution-environment behavior. Full RVA23S64 is a separate later project scope: it adds supervisor, virtual-memory and hypervisor requirements. A CPU with RV64I plus a vector MAC is insufficient to claim either profile. [RVA23 specification](https://github.com/riscv/riscv-profiles/blob/main/src/rva23-profile.adoc).
 
-The implemented foundation is an RV64I instruction execution engine, plus local FENCE.I semantics, with a terminal laboratory execution environment. Its supported operations are tested but not ISA-certified. No M/A/C/B/F/D/V, CSR instructions, contained privilege traps, interrupts, MMU or caches are implemented. Unsupported operations trap; hardware capabilities are not falsely advertised through a fabricated `misa` CSR.
+The implemented foundation is an RV64I instruction execution engine, plus local FENCE.I semantics and, since 0.4.0, the M extension (ISA string `rv64im_zifencei`), with a terminal laboratory execution environment. Its supported operations are tested but not ISA-certified. No A/C/B/F/D/V, CSR instructions, contained privilege traps, interrupts or MMU are implemented; instruction and data caches were added in 0.2.0 and 0.3.0. Unsupported operations trap; hardware capabilities are not falsely advertised through a fabricated `misa` CSR.
 
 | Choice | Revision 0 decision | Reason |
 |---|---|---|
@@ -19,6 +19,7 @@ The implemented foundation is an RV64I instruction execution engine, plus local 
 | ALU | Add/subtract, shifts, comparisons, bitwise, RV64 word operations | A complete useful base arithmetic path |
 | Memory port | Unified 64-bit, byte strobes, one outstanding transaction | Compatible with simple synchronous RAM and later adapters |
 | Instruction cache (0.2.0) | Direct-mapped, 8-byte lines, `ICACHE_BEATS` lines, store-coherent | Fetch was more than half of all clocks |
+| Multiply and divide (0.4.0) | Multiply in one clock; divide and remainder by shift-subtract from the quotient's highest bit, one step per clock in a DIVIDE state | Dhrystone's one software divide per run cost about 36 instructions |
 | Data cache (0.3.0) | Direct-mapped, write-through, no store allocation, 8-byte lines, `DCACHE_BEATS` lines | Loads waited a clock for the synchronous RAM |
 | Instruction alignment | 32 bits until C arrives | Explicitly trap taken misaligned branches/jumps |
 | Data alignment | Naturally aligned accesses; misalignment traps | Keeps first LSU bounded; must change for RVA23's specified main-memory behavior |
@@ -100,7 +101,7 @@ The following covers every mandatory entry named in RVA23U64. Entries group rela
 | RV64I | Base execution with terminal EEI; local tests pass | C0/C1 plus architectural testing |
 | Zicsr | Unsupported | C1 |
 | Zicntr, Zihpm | Unsupported | C1/C6; counters and access controls |
-| M | Unsupported | C2 |
+| M | Implemented in 0.4.0: single-clock multiply, early-terminating iterative divide; local tests pass | C2 external-model comparison |
 | A, Ziccrse, Ziccamoa, Za64rs, Zawrs | Unsupported | C3; atomicity/reservation/fabric together |
 | C, B, Zcb, Zcmop | Unsupported | C2 |
 | Zicond, Zimop, Zihintpause, Zihintntl | Not qualified as extensions | C2 |
@@ -199,3 +200,4 @@ Once Zicsr arrives in C1, consider reporting the version in the implementation-d
 | 0.2.1 | 2026-11-20 | tag `cpu-v0.2.1` | Loads and stores issue their bus request from EXECUTE; MEMORY holds the same request if needed. One clock less per data access with the synchronous RAM. Bus protocol unchanged. | No | `019ba2dc2dc5` / `143e07b2bbef` |
 | 0.2.2 | 2026-11-20 | tag `cpu-v0.2.2` | RAM wrapper acknowledges writes in the clock they are presented; reads unchanged. Stores now retire from EXECUTE. | No | `019ba2dc2dc5` / `5d0323d3916c` |
 | 0.3.0 | 2026-11-20 | tag `cpu-v0.3.0` | Data cache for loads: direct-mapped, write-through, `DCACHE_BEATS` 8-byte lines (default 512, 4 KiB), new parameter on `rv64_core` and `rv64_bram_soc`. Loads that hit complete in EXECUTE with no bus request; all memory treated as cacheable. | No (new parameter; loads that hit no longer reach the bus) | `d8359ad08ebe` / `385b91fe9a8a` |
+| 0.4.0 | 2026-11-20 | tag `cpu-v0.4.0` | M extension: `mul`, `mulh`, `mulhsu`, `mulhu`, `div`, `divu`, `rem`, `remu` and the `w` forms. Multiply completes in EXECUTE; divide-by-zero, signed overflow and small dividends complete in EXECUTE; other divides use a DIVIDE state, one step per clock from the quotient's highest possible bit. ISA string `rv64im_zifencei`. | No (instructions added) | `e7bf693e3b31` / `385b91fe9a8a` |

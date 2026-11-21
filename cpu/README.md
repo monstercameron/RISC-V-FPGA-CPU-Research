@@ -1,6 +1,6 @@
 # CPU first: an FPGA RISC-V core
 
-The active project priority is now a custom CPU. The long-term application ISA target is **RVA23U64**; the first implemented milestone is a small **RV64I execution core with FENCE.I and a terminal laboratory trap interface**. It is not yet an RVA23 implementation, a privileged-architecture implementation, or a Linux CPU.
+The active project priority is now a custom CPU. The long-term application ISA target is **RVA23U64**; the implemented core is a small **RV64IM execution core (M since architecture 0.4.0) with FENCE.I, instruction and data caches and a terminal laboratory trap interface**. It is not yet an RVA23 implementation, a privileged-architecture implementation, or a Linux CPU.
 
 Start with the [interactive core infographic](core-explainer.html), then read the [architecture and stages](architecture.md). The previous LLM accelerator work remains available as research and a future workload. Its earlier review score and LUT estimates do not qualify this CPU.
 
@@ -53,7 +53,7 @@ Then in Ubuntu, from the same repository:
 python3 -B sim/cpu/test_cpu.py --image build/cpu/firmware/firmware.bin
 ```
 
-The compiler target is `rv64i_zifencei`, ABI `lp64`. Do not compile software for `rva23u64` and expect this first core to run it. Existing FP/vector examples in `isa/` target later milestones.
+The compiler target for the firmware here is `rv64i_zifencei`, ABI `lp64`; since architecture 0.4.0 the core also runs `rv64im_zifencei` code. Do not compile software for `rva23u64` and expect this first core to run it. Existing FP/vector examples in `isa/` target later milestones.
 
 ## Immediate next milestone
 

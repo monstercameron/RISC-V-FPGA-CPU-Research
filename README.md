@@ -1,6 +1,6 @@
 # FPGA CPU Research
 
-**CPU core first.** Architecture version: [cpu/VERSION](cpu/VERSION) ([semantic versioning and history](cpu/architecture.md#9-versioning)). We are building an original 64-bit RISC-V processor for an FPGA, with RVA23U64 as the long-term ISA target. The first implemented milestone is a small multicycle RV64I core with serialized FENCE.I and a terminal laboratory trap interface.
+**CPU core first.** Architecture version: [cpu/VERSION](cpu/VERSION) ([semantic versioning and history](cpu/architecture.md#9-versioning)). We are building an original 64-bit RISC-V processor for an FPGA, with RVA23U64 as the long-term ISA target. The implemented core is a small multicycle RV64IM core (`rv64im_zifencei` since architecture 0.4.0) with instruction and data caches, serialized FENCE.I and a terminal laboratory trap interface.
 
 Start with the [interactive CPU infographic](cpu/core-explainer.html), the [CPU quick start](cpu/README.md), and the [architecture and staged RVA23 checklist](cpu/architecture.md).
 

@@ -76,6 +76,20 @@ def cases():
     p += [0x80000ab7, 0xfffffb17, i_type(0x13, 0, 0, 0, 77), r_type(0x33, 22, 0, 0, 2), 0x0ff0000f, 0x0000100f, 0x100073]
     yield 'integer', p, 0, MASK
 
+    # M extension (architecture 0.4.0): every operation over operand pairs that
+    # include zero divisors, signed overflow, -1, extremes, small dividends and
+    # long quotients. Registers x1..x12 hold CONSTANTS.
+    p = prefix()
+    operands = (2, 3, 4, 5, 6, 7, 8, 12)
+    divisors = (1, 2, 3, 4, 5, 6, 7, 8, 12)
+    for op, functions in ((0x33, range(8)), (0x3b, (0, 4, 5, 6, 7))):
+        for f3 in functions:
+            for a in operands:
+                for b in divisors:
+                    p.append(r_type(op, 20, f3, a, b, 1))
+    p += [r_type(0x33, 0, 4, 5, 2, 1), 0x100073]  # divide into x0: no write
+    yield 'm_extension', p, 0, MASK
+
     p = prefix() + [(3 << 12) | (31 << 7) | 0x37]
     for f3 in range(4):
         size = 1 << f3
@@ -104,6 +118,21 @@ def cases():
     p += [0] * (129 - len(p)) + [0x100073]
     yield 'self_modifying_fence_i', p, 0, MASK
 
+    for seed in (404, 505):
+        rng = random.Random(seed)
+        p = prefix()
+        for _ in range(600):
+            rd, a, b = rng.randrange(1, 29), rng.randrange(29), rng.randrange(29)
+            if rng.randrange(3) == 0:
+                op = rng.choice((0x33, 0x3b))
+                f3 = rng.choice(tuple(range(8)) if op == 0x33 else (0, 4, 5, 6, 7))
+                p.append(r_type(op, rd, f3, a, b, 1))
+            else:
+                op = rng.choice((0x33, 0x3b))
+                f3 = rng.choice((0, 1, 5) if op == 0x3b else tuple(range(8)))
+                p.append(r_type(op, rd, f3, a, b, 32 if f3 in (0, 5) and rng.randrange(2) else 0))
+        yield f'random_m_{seed}', p + [0x100073], 0, MASK
+
     for seed in (101, 202, 303):
         rng = random.Random(seed)
         p = prefix()
@@ -123,7 +152,8 @@ def cases():
         yield f'random_{seed}', p + [0x100073], 0, MASK
 
     for name, words in (
-        ('illegal_zero', [0]), ('illegal_mul', [r_type(0x33, 1, 0, 2, 3, 1)]),
+        ('illegal_zero', [0]), ('illegal_funct7', [r_type(0x33, 1, 0, 2, 3, 2)]),
+        ('illegal_mulhw', [r_type(0x3b, 1, 1, 2, 3, 1)]),
         ('illegal_shift', [i_type(0x13, 1, 1, 0, 0x800)]),
         ('illegal_word_shift', [i_type(0x1b, 1, 1, 0, 32)]),
         ('illegal_load', [i_type(3, 1, 7, 0, 0)]),
@@ -209,7 +239,7 @@ def main():
                     e=expected[index] if index<len(expected) else '<missing>'
                     if a!=e: raise AssertionError(f'{name} stall={stalls} event {index}:\nactual {a}\nexpect {e}')
             records.append({'case':name,'max_wait_cycles':stalls,'events':len(actual),'result':'PASS','simulator_summary':output.strip()})
-    required=set('lui auipc jal jalr beq bne blt bge bltu bgeu lb lh lw ld lbu lhu lwu sb sh sw sd addi slti sltiu xori ori andi slli srli srai add sub sll slt sltu xor srl sra or and addiw slliw srliw sraiw addw subw sllw srlw sraw fence fence.i ecall ebreak'.split())
+    required=set('lui auipc jal jalr beq bne blt bge bltu bgeu lb lh lw ld lbu lhu lwu sb sh sw sd addi slti sltiu xori ori andi slli srli srai add sub sll slt sltu xor srl sra or and addiw slliw srliw sraiw addw subw sllw srlw sraw fence fence.i ecall ebreak mul mulh mulhsu mulhu div divu rem remu mulw divw divuw remw remuw'.split())
     missing=required-coverage
     if missing: raise AssertionError('Missing instruction coverage: '+str(sorted(missing)))
     for branch_name in ('beq','bne','blt','bge','bltu','bgeu'):

@@ -18,7 +18,8 @@ import time
 ROOT = Path(__file__).resolve().parents[3]
 BENCH = ROOT / 'sim/cpu/bench'
 VENDOR = BENCH / 'vendor/dhrystone'
-ISA, ABI = 'rv64i_zifencei', 'lp64'
+ISAS = ('rv64i_zifencei', 'rv64im_zifencei')  # rv64im needs architecture 0.4.0 or later
+ABI = 'lp64'
 MAILBOX_BYTES = 256
 STACK_RESERVE = 8192
 
@@ -97,13 +98,15 @@ def main():
     parser.add_argument('--benchmark', choices=sorted(BENCHMARKS), default='dhrystone')
     parser.add_argument('--ram-kib', type=int, default=64, help='RAM size in KiB, a power of two from 32 to 1024')
     parser.add_argument('--opt', choices=['O1', 'O2', 'O3', 'Os'], default='O2')
+    parser.add_argument('--isa', choices=ISAS, default=ISAS[0])
     for name in ('clang', 'objcopy', 'objdump', 'nm'):
         parser.add_argument('--' + name, default=tool('clang' if name == 'clang' else 'llvm-' + name))
-    parser.add_argument('--out-dir', help='Default: build/cpu/bench/<benchmark>')
+    parser.add_argument('--out-dir', help='Default: build/cpu/bench/<benchmark>, plus -rv64im for that ISA')
     args = parser.parse_args()
     if args.ram_kib not in (32, 64, 128, 256, 512, 1024):
         parser.error('--ram-kib must be a power of two from 32 to 1024')
-    out = (ROOT / (args.out_dir or f'build/cpu/bench/{args.benchmark}')).resolve()
+    suffix = '' if args.isa == ISAS[0] else '-' + args.isa.split('_')[0]
+    out = (ROOT / (args.out_dir or f'build/cpu/bench/{args.benchmark}{suffix}')).resolve()
     if not out.is_relative_to((ROOT / 'build').resolve()):
         parser.error('--out-dir must be inside the repository build/ directory')
     for name, digest in VENDOR_SHA256.items():
@@ -119,7 +122,7 @@ def main():
     linker.write_text(LINKER_SCRIPT.format(ram_bytes=ram_bytes, mailbox=mailbox,
                                            program_limit=program_limit), encoding='ascii', newline='\n')
 
-    common = [args.clang, '--target=riscv64-unknown-elf', f'-march={ISA}', f'-mabi={ABI}',
+    common = [args.clang, '--target=riscv64-unknown-elf', f'-march={args.isa}', f'-mabi={ABI}',
               '-mcmodel=medany', '-msmall-data-limit=0', '-mno-relax', f'-{args.opt}',
               '-ffreestanding', '-fno-builtin', '-fno-stack-protector', '-fno-common',
               '-nostdlibinc', '-I', BENCH / 'include', '-I', VENDOR]
@@ -138,7 +141,7 @@ def main():
         commands.append([shown(x) for x in command])
         objects.append(obj)
     elf, binary = out / 'bench.elf', out / 'bench.bin'
-    command = [args.clang, '--target=riscv64-unknown-elf', f'-march={ISA}', f'-mabi={ABI}',
+    command = [args.clang, '--target=riscv64-unknown-elf', f'-march={args.isa}', f'-mabi={ABI}',
                '-nostdlib', '-fuse-ld=lld', '-Wl,--no-relax', f'-Wl,-T,{linker}',
                start_object, *objects, '-o', elf]
     run(command, out / 'link.log')
@@ -177,7 +180,7 @@ def main():
     report = {
         'benchmark': args.benchmark,
         'compiler': run([args.clang, '--version']).splitlines()[0],
-        'isa': ISA, 'abi': ABI, 'optimization': args.opt,
+        'isa': args.isa, 'abi': ABI, 'optimization': args.opt,
         'ram_bytes': ram_bytes, 'ram_words': ram_bytes // 8,
         'mailbox_address': mailbox, 'stack_top': mailbox, 'stack_reserve_bytes': STACK_RESERVE,
         'payload_bytes': len(payload),

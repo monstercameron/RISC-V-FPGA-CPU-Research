@@ -2,15 +2,15 @@
   "rubric": "cpu/review-rubric.md",
   "rubric_revision": 1,
   "assessed": "2026-11-20",
-  "assessed_at_commit": "cpu-v0.3.0",
+  "assessed_at_commit": "cpu-v0.4.0",
   "assessed_by": "Author self-assessment, not an independent review (rubric HG8 and R9.4).",
-  "architecture_version": "0.3.0",
+  "architecture_version": "0.4.0",
   "rtl_sha256": {
     "rtl/cpu/rv64_bram_soc.sv": "385b91fe9a8a9d768e7deadd976b718d1668c389da4cb74fed3634758769ae72",
-    "rtl/cpu/rv64_core.sv": "d8359ad08ebe12c2cf00dbec6dcd60ab4a716e7e0a8709e2f913e9522d8d0ca4"
+    "rtl/cpu/rv64_core.sv": "e7bf693e3b3145465437778d1a693ee8c07c5b249af6411eff8613e30bb27df7"
   },
   "scope": {
-    "isa": "rv64i_zifencei",
+    "isa": "rv64im_zifencei",
     "environment": "machine-level laboratory terminal trap; no privilege modes",
     "class": "multicycle",
     "configuration": "RESET_PC 0; ICACHE_BEATS 512; DCACHE_BEATS 512; retirement trace ports always present",
@@ -38,7 +38,7 @@
     },
     "HG5": {
       "status": "met",
-      "evidence": "No capability CSR; multiply and CSR encodings are tested to trap."
+      "evidence": "No capability CSR; unimplemented encodings (for example funct7 2, mulhw and CSR instructions) are tested to trap."
     },
     "HG6": {
       "status": "not met",
@@ -76,7 +76,7 @@
   "criteria": {
     "R1.1": {
       "score": 2,
-      "evidence": "All 53 instructions pass local differential tests (E1); no architectural tests or external lockstep (needs E2)."
+      "evidence": "All 66 instructions of rv64im_zifencei pass local differential tests (E1); no architectural tests or external lockstep (needs E2)."
     },
     "R1.2": {
       "score": 2,
@@ -84,7 +84,7 @@
     },
     "R1.3": {
       "score": 2,
-      "evidence": "Extreme constants, shift limits and word sign extension are tested; no written corner table."
+      "evidence": "Extreme constants, shift limits, word sign extension, divide by zero, signed overflow and -1 operands are tested; no written corner table."
     },
     "R1.4": {
       "score": 3,
@@ -96,7 +96,7 @@
     },
     "R1.6": {
       "score": 2,
-      "evidence": "Suite enforces coverage of all 53 instruction names; no per-item ledger mapping RTL to tests for the claimed ISA."
+      "evidence": "Suite enforces coverage of all 66 instruction names; no per-item ledger mapping RTL to tests for the claimed ISA."
     },
     "R2.1": {
       "score": 3,
@@ -136,7 +136,7 @@
     },
     "R3.4": {
       "score": 1,
-      "evidence": "1,800 random instructions, register and immediate arithmetic only."
+      "evidence": "3,000 random instructions: register and immediate arithmetic plus M operations; no random loads, stores or control flow."
     },
     "R3.5": {
       "score": 0,

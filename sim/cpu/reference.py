@@ -55,6 +55,40 @@ def execute(image, fault_kind=0, fault_addr=MASK, max_steps=20000):
             coverage.add(name + (':taken' if taken else ':not_taken'))
             if taken:
                 nxt = (pc + signed(displacement, 13)) & MASK
+        elif op in (0x33, 0x3b) and f7 == 1:
+            # M extension (architecture 0.4.0), from the RISC-V unprivileged specification.
+            word = op == 0x3b
+            if not word or f3 in (0, 4, 5, 6, 7):
+                if f3 < 4:
+                    if word:
+                        value = signed((a * b) & 0xffffffff, 32)
+                    elif f3 == 0:
+                        value = a * b
+                    elif f3 == 1:
+                        value = (signed(a) * signed(b)) >> 64
+                    elif f3 == 2:
+                        value = (signed(a) * b) >> 64
+                    else:
+                        value = (a * b) >> 64
+                else:
+                    sign = f3 in (4, 6)
+                    width = 32 if word else 64
+                    x = signed(a, width) if sign else a & ((1 << width) - 1)
+                    y = signed(b, width) if sign else b & ((1 << width) - 1)
+                    if y == 0:
+                        quotient, remainder = -1, x
+                    elif sign and x == -(1 << (width - 1)) and y == -1:
+                        quotient, remainder = x, 0
+                    else:
+                        quotient = abs(x) // abs(y)
+                        if (x < 0) != (y < 0):
+                            quotient = -quotient
+                        remainder = x - quotient * y
+                    value = remainder if f3 in (6, 7) else quotient
+                    if word:
+                        value = signed(value, 32)
+                name = ('mul', 'mulh', 'mulhsu', 'mulhu', 'div', 'divu', 'rem', 'remu')[f3] + ('w' if word else '')
+                destination = rd
         elif op in (0x13, 0x1b, 0x33, 0x3b):
             immediate = op in (0x13, 0x1b)
             word = op in (0x1b, 0x3b)
