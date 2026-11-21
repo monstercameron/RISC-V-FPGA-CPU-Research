@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Original CPU foundation, wide out-of-order implementation (architecture 0.12.1).
+// Original CPU foundation, wide out-of-order implementation (architecture 0.12.2).
 // RV64IM + B execution, serialized FENCE.I, terminal EEI. Same module name and
 // contract as rv64_core.sv and rv64_pipe.sv, plus a wider retirement trace (rt_*);
 // build with one of the three files. Architecture version: cpu/VERSION,
@@ -118,7 +118,8 @@ module rv64_core #(
     localparam integer LP_BITS = 10;     // loop predictor: 1024 entries (256 in 0.11.0)
     localparam integer LP_N = 1 << LP_BITS;
     localparam integer LP_TAG = 10;
-    localparam integer TAKEN_MAX = 2;    // predicted-taken transfers followed per fetch group (0.10.1)
+    localparam integer TAKEN_MAX = 4;    // predicted-taken transfers followed per fetch group (2 from 0.10.1)
+    localparam integer CR_MAX = 4;       // calls and returns per fetch group (1 until 0.12.0)
     localparam [1:0] C_ALU = 0, C_FULL = 1, C_LD = 2, C_ST = 3;
     integer i, j, k, s, p;
 
@@ -677,11 +678,11 @@ module rv64_core #(
     reg [1:0] g_bc [0:FW-1];
     reg [4:0] g_n;
     reg [63:0] g_next;
-    reg g_ras_push, g_ras_pop;
     reg [3:0] g_sp [0:FW-1];
-    reg [2:0] g_taken;
+    reg [4:0] g_taken;
+    reg [4:0] g_cr;
+    reg [63:0] gras [0:RAS_N-1];      // the fetch group's copy of the return stack
     reg [3:0] cur_sp;
-    reg [63:0] g_ras_val;
     reg [BTB_BITS-1:0] bi;
     reg [IC_INDEX-1:0] fi;
     reg [4:0] n_ren;
@@ -1270,8 +1271,9 @@ module rv64_core #(
             // ---- fetch: up to FW instructions from the cache, following up to TAKEN_MAX
             // predicted-taken transfers (since 0.10.1) and at most one call or return
             if (!rflush && !mp_any && !d_redirect && !f_hold) begin
-                g_n = 0; g_next = f_pc; stop = 0; g_ras_push = 0; g_ras_pop = 0; g_ras_val = 0;
+                g_n = 0; g_next = f_pc; stop = 0; g_cr = 0;
                 g_taken = 0; cur_sp = ras_sp;
+                for (k = 0; k < RAS_N; k = k + 1) gras[k] = ras[k];
                 if (f_pc[1:0] != 0 || f_err) begin
                     // A fetch fault becomes one instruction that traps if it retires.
                     g_pc[0] = f_pc; g_insn[0] = 0; g_pred[0] = f_pc + 64'd4; g_fp[0] = 0; g_bh[0] = 0; g_bc[0] = 0;
@@ -1287,12 +1289,12 @@ module rv64_core #(
                     ok = isctl && (wi[11:7] == 1 || wi[11:7] == 5);                     // a call
                     hit = op == 7'h67 && wi[14:12] == 0 && wi[11:7] == 0 && (wi[19:15] == 1 || wi[19:15] == 5);  // a return
                     if (!(ic_valid[fi] && ic_tag[fi] == npc[63 -: IC_TAG])) stop = 1;
-                    else if ((ok || hit) && (g_ras_push || g_ras_pop)) stop = 1;     // one call or return per group
+                    else if ((ok || hit) && g_cr >= CR_MAX) stop = 1;     // CR_MAX calls or returns per group
                     else begin
                         bi = npc[2 +: BTB_BITS];
                         fdone = btb_valid[bi] && btb_tag[bi] == npc[2+BTB_BITS +: BTB_TAG];
                         tkp = fdone && (btb_ret[bi] || btb_ctr[bi][1]);
-                        tgt = btb_ret[bi] ? ras[cur_sp] : {npc[63:32], btb_target[bi], 2'b00};
+                        tgt = btb_ret[bi] ? gras[cur_sp] : {npc[63:32], btb_target[bi], 2'b00};
                         g_ras_pop_sp = cur_sp;
                         g_lpu = 0; g_li[s] = 0;
                         if (op == 7'h63) begin
@@ -1335,15 +1337,15 @@ module rv64_core #(
                         if (op == 7'h6f) begin
                             tkp = 1; tgt = npc + {{43{wi[31]}},wi[31],wi[19:12],wi[20],wi[30:21],1'b0};
                         end else if (hit) begin
-                            tkp = 1; tgt = ras[g_ras_pop_sp];
+                            tkp = 1; tgt = gras[g_ras_pop_sp];
                         end else if (op == 7'h63 && !g_lpu && !fdone) begin
                             tkp = wi[31]; tgt = npc + {{51{wi[31]}},wi[31],wi[7],wi[30:25],wi[11:8],1'b0};
                         end
                         g_pc[s] = npc; g_insn[s] = wi; g_pred[s] = tkp ? tgt : npc + 64'd4;
                         g_fp[s] = tkp; g_bh[s] = fdone; g_bc[s] = btb_ctr[bi]; g_fault[s] = 0; g_fmis[s] = 0;
                         g_n = s + 1;
-                        if (ok) begin g_ras_push = 1; g_ras_val = npc + 64'd4; cur_sp = cur_sp + 1; end
-                        else if (hit) begin g_ras_pop = 1; cur_sp = cur_sp - 1; end
+                        if (ok) begin g_cr = g_cr + 1; cur_sp = cur_sp + 1; gras[cur_sp] = npc + 64'd4; end
+                        else if (hit) begin g_cr = g_cr + 1; cur_sp = cur_sp - 1; end
                         g_sp[s] = cur_sp;
                         g_next = g_pred[s];
                         if (tkp) begin
@@ -1362,8 +1364,8 @@ module rv64_core #(
                         q_lp[j] = g_lpmask[s]; q_ld[j] = g_fp[s]; q_li[j] = g_li[s]; q_lp_c[j] = g_insn[s][6:0] == 7'h63 && !g_fault[s];
                     end
                     q_tail = q_tail + g_n; q_count = q_count + g_n;
-                    if (g_ras_push) begin ras_sp = ras_sp + 1; ras[ras_sp] = g_ras_val; end
-                    else if (g_ras_pop) ras_sp = ras_sp - 1;
+                    ras_sp = cur_sp;
+                    for (k = 0; k < RAS_N; k = k + 1) ras[k] = gras[k];
                     if (g_fault[0]) begin f_hold = 1; f_err = 0; end   // wait for a redirect after a fault
                     else f_pc = g_next;
                 end

@@ -462,6 +462,65 @@ def cases():
         store(3, 21, 7, 0x170), store(3, 30, 8, 0x170), i_type(3, 22, 3, 30, 0x170),
         r_type(0x33, 23, 0, 22, 22), store(3, 30, 23, 0x180), 0x100073]
     yield 'mdp_forward_from_younger', p, 0, MASK
+    # Memory hand-off 6 (paste into cases() of sim/cpu/test_cpu.py; uses its prefix/i_type/store/
+    # branch/r_type helpers). x30 = 0x2000, x2 = 1 after the prefix.
+    #
+    # A store before a load and a store behind it, in a byte loop whose load value is trained
+    # by value prediction (zero) and then changes. With small caches the store-write scan used
+    # to choose the store behind the value-mispredicted load, which retirement then discarded
+    # ("store write without its store retiring" / "unstable stalled request" with bus waits,
+    # 0.12.0 with 2-line caches; also middle's fold_byte_loop).
+    for n, chg in ((12, 10), (16, 12)):
+        loop = [store(0, 22, 23, 0x40), i_type(3, 24, 4, 21, 0), store(0, 22, 24, 0), i_type(0x13, 21, 0, 21, 1),
+                i_type(0x13, 22, 0, 22, 1), i_type(0x13, 23, 0, 23, -1), branch(1, 23, 0, -24)]
+        p = prefix() + [store(0, 30, 2, 0x100 + chg), i_type(0x13, 21, 0, 30, 0x100),
+                        i_type(0x13, 22, 0, 30, 0x200), i_type(0x13, 23, 0, 0, n)] + loop
+        p += [i_type(3, 25, 3, 30, 0x208), 0x100073]
+        yield f'vp_store_scan_{n}', p, 0, MASK
+    # An older store with a late address and a younger store with an early address write the
+    # same bytes; the load forwards from the younger one and must give its value (correctness;
+    # 0.12.0 also flushed it needlessly and set its load-wait bit).
+    late = [i_type(0x13, 27, 0, 0, 1), i_type(3, 26, 3, 30, 0x178), r_type(0x33, 21, 0, 30, 26),
+            r_type(0x33, 21, 4, 21, 27, 1), r_type(0x33, 21, 4, 21, 27, 1)]
+    p = prefix() + [i_type(3, 25, 3, 30, 0x170)] + late + [
+        store(3, 21, 7, 0x170), store(3, 30, 8, 0x170), i_type(3, 22, 3, 30, 0x170),
+        r_type(0x33, 23, 0, 22, 22), store(3, 30, 23, 0x180), 0x100073]
+    yield 'mdp_forward_from_younger', p, 0, MASK
+    # Frontend (council, after 0.12.0): several calls and returns and up to 4 taken
+    # transfers in one fetch group, on later passes with the lines cached. Nested calls
+    # through ra and t0 (x5); a return to an address pushed earlier in the same group;
+    # a chain of jumps; a taken branch back.
+    p = [i_type(0x13, 10, 0, 0, 4),                                   # 0: x10 = 4
+         jal(1, 36),                                                  # 4: call f (40)
+         jal(1, 40),                                                  # 8: call g (48)
+         jal(1, 28),                                                  # 12: call f (40)
+         jal(5, 52),                                                  # 16: call h via t0 (68)
+         jal(0, 60),                                                  # 20: j 80
+         i_type(0x13, 10, 0, 10, -1),                                 # 24: x10 -= 1
+         branch(1, 10, 0, -24),                                       # 28: bne x10,x0 -> 4
+         0x100073, 0xffffffff,                                        # 32: ebreak; 36
+         i_type(0x13, 20, 0, 20, 1), i_type(0x67, 0, 0, 1, 0),        # 40: f: x20 += 1; 44: ret
+         i_type(0x13, 5, 0, 1, 0), jal(1, -12),                       # 48: g: x5 = ra; 52: call f
+         i_type(0x13, 21, 0, 21, 1), i_type(0x67, 0, 0, 5, 0),        # 56: x21 += 1; 60: jr t0 -> 12
+         0xffffffff,                                                  # 64
+         i_type(0x13, 22, 0, 22, 1), i_type(0x67, 0, 0, 5, 0),        # 68: h: x22 += 1; 72: jr t0 -> 20
+         0xffffffff,                                                  # 76
+         jal(0, 8), 0xffffffff, jal(0, 8), 0xffffffff,                # 80: j 88; 88: j 96
+         i_type(0x13, 23, 0, 23, 1), branch(0, 0, 0, -76)]            # 96: x23 += 1; 100: beq -> 24
+    yield 'fetch_many_calls', p, 0, MASK
+
+    # Recursion 20 deep (deeper than the 16-entry return stack, so it wraps), three
+    # times: several calls, or several returns, per fetch group.
+    p = [(3 << 12) | (2 << 7) | 0x37, i_type(0x13, 12, 0, 0, 3),     # 0: sp = 0x3000; 4: x12 = 3
+         i_type(0x13, 11, 0, 0, 20), jal(1, 20),                      # 8: x11 = 20; 12: call r (32)
+         i_type(0x13, 12, 0, 12, -1), branch(1, 12, 0, -12),          # 16: x12 -= 1; 20: bne -> 8
+         0x100073, 0xffffffff,                                        # 24: ebreak; 28
+         i_type(0x13, 11, 0, 11, -1), branch(0, 11, 0, 24),           # 32: r: x11 -= 1; 36: beq x11,x0 -> 60
+         i_type(0x13, 2, 0, 2, -8), store(3, 2, 1, 0),                # 40: sp -= 8; 44: sd ra,0(sp)
+         jal(1, -16), i_type(3, 1, 3, 2, 0),                          # 48: call r; 52: ld ra,0(sp)
+         i_type(0x13, 2, 0, 2, 8),                                    # 56: sp += 8
+         i_type(0x13, 20, 0, 20, 1), i_type(0x67, 0, 0, 1, 0)]        # 60: x20 += 1; 64: ret
+    yield 'fetch_deep_recursion', p, 0, MASK
 
 def command(args):
     result = subprocess.run([str(x) for x in args], capture_output=True, text=True, timeout=60)
