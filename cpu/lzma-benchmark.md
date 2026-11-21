@@ -45,8 +45,10 @@ simulation"**. They are not 7-Zip benchmark scores. Reference scores for real CP
 | Memory | malloc, about 25 MiB for d22 | Static arena in 1 MiB of RAM (878,400 B used; the BT4 hash alone is 528 KiB) |
 | Rating | 950 commands/B (d22) | 870 commands/B (dictionaries up to 2^18 count as 2^18); decompress formula unchanged |
 
-Because every table fits in small caches and the match finder searches a 4 KiB window, the kernel
-runs far fewer clocks per byte than `-md22`. Its per-MHz rating is therefore much higher than a
+Because the match finder searches only a 4 KiB window, the kernel runs far fewer clocks per byte than
+`-md22`, although the BT4 hash table is 528 KiB and not all of it fits a small cache (measured on the
+out-of-order core with 4 KiB caches: 17 data-cache misses per thousand instructions in compression,
+against 104 instruction-cache misses). Its per-MHz rating is therefore much higher than a
 real 7-Zip rating, and is comparable to one only through a calibration on real hardware (below).
 
 ### Phases (markers in `include-lzma/lzma_bench.h`; laps are mailbox values 16 and above)

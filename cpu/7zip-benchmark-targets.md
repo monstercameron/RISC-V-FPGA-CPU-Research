@@ -13,7 +13,7 @@ instruction rate of the CPU under test and is comparable across ISAs only as a s
 Compression depends heavily on memory latency and cache size (it searches a large dictionary);
 decompression depends more on branch prediction and short dependency chains. Use `-mmt1` (one thread)
 and the **Rating** column (not Usage or R/U), state the dictionary (`-md22` = 4 MB, `-md25` = 32 MB),
-the 7-Zip version, and divide by the measured clock for a per-GHz figure.
+the 7-Zip version, and divide by the measured clock in MHz for a per-MHz figure (corrected 18:05: earlier text said per GHz, a factor-of-1,000 unit error found by the Codex review).
 
 Source code used here: 7-Zip 26.06, `https://github.com/ip7z/7zip`, commit
 `d3296e39e1f1f92c7b41c0c3848e65640428d42d` (copy in the ignored `build/third-party/7zip/`).
@@ -23,17 +23,17 @@ Source code used here: 7-Zip 26.06, `https://github.com/ip7z/7zip`, commit
 NVIDIA RTX Spark N1X, Arm Cortex-X925 performance core (pinned), `7zz` 26.06 built with clang 18.1.3
 for aarch64 Linux (WSL), `7zz b -mmt1`; 7-Zip measured the single-thread clock at 3.7-4.3 GHz.
 
-| Dictionary | Compressing rating | Decompressing rating | Per GHz (at ~4.2 GHz) |
+| Dictionary | Compressing rating | Decompressing rating | Per MHz (at ~4.2 GHz) |
 |---|---:|---:|---|
 | 22 (4 MB) | 8,003 MIPS | 8,087 MIPS | about 1.9 / 1.9 |
 | 22-25 average | 7,085 MIPS | 8,042 MIPS | about 1.7 / 1.9 |
 
-## Published single-thread ratings (per GHz derived from the listed clock)
+## Published single-thread ratings (per MHz, derived from the listed clock)
 
 Collected by a research agent from 7-cpu.com and sbc-bench; 7-Zip versions and dictionaries vary
 between sources, which can change results by up to 1.7x. "Combined" is a single overall score.
 
-| Core | Compress / GHz | Decompress / GHz | Source |
+| Core | Compress / MHz | Decompress / MHz | Source |
 |---|---:|---:|---|
 | SpacemiT K1 (X60, RISC-V) | about 0.61 combined | | sbc-bench |
 | SiFive U74 (RISC-V) | 0.79 | 0.90 | 7-cpu.com (7-Zip 21.07) |
@@ -50,7 +50,7 @@ Not found: single-thread figures for Zen 4/5, Golden/Lion Cove, Apple M2-M4, Arm
 
 ## Where our core needs to be
 
-Per GHz (= per MHz x 1000), single thread: best published RISC-V about 0.8; A76 / Skylake class
+Per MHz (rating MIPS divided by clock MHz), single thread: best published RISC-V about 0.8; A76 / Skylake class
 about 1.2; Zen 3 about 1.5 / 2.1; X925 about 1.9; M1 about 2.2 / 2.5.
 
 Our simulated core runs a **scaled-down** version of 7-Zip's LZMA kernel (small data and dictionary,
@@ -89,7 +89,8 @@ finish: 4 KiB dictionary (the LZMA minimum), 4,160 bytes of data, 2,220 bytes pa
 per data byte) divided by clocks, so they are per MHz and independent of clock rate. Because the small
 dictionary fits in cache, the kernel rates a real CPU far higher than `7z b` does: on the X925 the same
 kernel gives 8.34 / 2.59 MIPS/MHz against 1.91 / 1.93 from `7z b -md22` (compression 4.4x, decompression
-1.34x). Compare our cores with the native figure for the same kernel, not with the `7z b` tables above.
+1.34x). The second `-md22` row of the native run (8,267 / 8,290) would move the kernel goal to about
+10.59 / 3.28, so the goal carries a few percent of calibration uncertainty. Compare our cores with the native figure for the same kernel, not with the `7z b` tables above.
 
 | Core (architecture 0.14.6 RTL, rv64imb, clang -O2) | Compress MIPS/MHz | Decompress MIPS/MHz | Compress / decompress IPC |
 |---|---:|---:|---|
