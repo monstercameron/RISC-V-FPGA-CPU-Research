@@ -535,6 +535,12 @@ WORKS = [
      "A repair in the memory system, not a new room: the sample SoC's DRAM and L2 delays are 64 bits end to end. Before, a backlog of 2^31 clocks or more "
      "wrapped and answered early. Below 2^31 clocks the results are bit-exact with 0.19.1; no speed, hardware cost or timing is claimed.",
      dict()),
+    # Figures from the 0.19.3 history row. A new room: the ways of the instruction cache are a different subject from the predictor of 0.19.1.
+    # Off by default (one way), so the drawing adds marks only.
+    ("0.19.3", "Les Voies",
+     "Ways for the instruction cache, as an option: each set of 8-byte lines may hold two or four beats, and the least recently used one gives way. "
+     "The default of one way is the same as 0.19.2; with the option on, every fetch and every invalidation looks in all the ways, and no speed, hardware cost or timing is claimed.",
+     dict(marks=["instruction-cache ways, option off by default", "true LRU within each set"])),
 ]
 
 ERAS = [
@@ -550,7 +556,8 @@ ERAS = [
     ("X", "Salle X", "La Virgule Flottante", "Numbers that float: single and double precision arrive in the out-of-order core, built in only on request, then add, multiply, divide and root at the latencies of Lion Cove and Zen 5.", "0.17.0", "0.17.4"),
     ("XI", "Salle XI", "Les Vecteurs", "Vectors as an option: a first subset of the RISC-V vector extension, executed in order at the head of the reorder buffer, with the rest of the instructions still to come.", "0.18.0", "0.18.0"),
     ("XII", "Salle XII", "Les Lignes", "Wider lines for the data cache, as an option: a miss fills a longer line, answered one beat at a time, the critical beat first.", "0.19.0", "0.19.0"),
-    ("XIII", "Salle XIII", "Le Présage", "A guess for every indirect jump, as an option: the target of a jump that is not a return is predicted at fetch from tagged tables that remember the path taken.", "0.19.1", "0.19.1"),
+    ("XIII", "Salle XIII", "Le Présage", "A guess for every indirect jump, as an option: the target of a jump that is not a return is predicted at fetch from tagged tables that remember the path taken, and a repair to the memory system's delays.", "0.19.1", "0.19.2"),
+    ("XIV", "Salle XIV", "Les Voies", "Ways for the instruction cache, as an option: a set of lines may hold more than one beat, and the least recently used gives way.", "0.19.3", "0.19.3"),
 ]
 
 
