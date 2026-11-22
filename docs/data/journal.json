@@ -2559,6 +2559,341 @@
      "time": "05:02",
      "text": "**riscv-tests suite committed** (coordinator; patch `build/cpu/ooo-debug/coord/riscv-tests.diff` sha256 7fc4912b applied to main at 1b46831). Coordinator spot check on main (05:01:30 to 05:02:41): `sim/cpu/fetch_riscv_tests.sh` rc 0 (lock verified), then `python -B sim/cpu/suite.py riscv-tests --only rvt-selftest,rvt-golden,rvt-golden-fp,rvt-ooo,rvt-ooo-fpu --jobs 2`, 5/5 PASS: self-test 12 checks, golden 106 integer + 23 F/D, rv64_ooo (Verilator) 106 + 23, each matching its traces, with ma_data an expected cause-4 trap. The engineer's full 11-step run covered pipe, multicycle and both cache sizes. We may claim only 'passes riscv-tests 3df703c (our lab environment) in simulation'. Correction from the engineer: rv64ui has 54 tests, not 55 as reported at 04:35; the totals were right.",
      "kind": ""
+    },
+    {
+     "time": "05:03",
+     "text": "**Decompress tail is the output CRC pass; possible benchmark-fidelity issue** (backend; instrumented SoC/tb copy in mirror l2c/inst, cpu-v0.16.0, same d22 plan; counters only, piece 113 at 6 MiB gives the same 107,432 clocks). In piece 113, 150,003 of 150,001 window retirements are in lzma_crc_update (0xbd2c-0xc214); the counter includes the window-edge instruction. Pieces 116 and 119 also resume there. Its 2,083 L2 line reads all hit in output_buf, with 0 DRAM fills. So the tail is `lzma_crc_update(output_buf, 4 MiB + 64 KiB)` after LzmaDec_DecodeToDic, one byte per step: at 4 MiB the 4.06 MiB output plus 1.70 MiB packed data don't fit, so a sequential LRU scan misses on every line. **Flag, not verified:** 7-Zip's Bench.cpp may CRC the output incrementally as it is written, with multi-table or hardware CRC (7zCrc.c). If so, our tail overweights decompress toward L2 capacity. Backend assigned to check the official 7-Zip source and our harness and the laptop reference, then quantify; any change to the deciding benchmark goes to the user.",
+     "kind": ""
+    },
+    {
+     "time": "05:06",
+     "text": "**Repository root reorganised** (Sonnet agent, worktree wtreorg; patch `build/cpu/ooo-debug/coord/reorg.diff` against 4f5414b, applied by the coordinator; plan and record in build/research/reorg-plan.md). The 27 preserved LLM-accelerator plans, contracts, checkers and locks moved byte-identical to `llm-accelerator/plan/`. It is flat, because nine locked files link each other by bare name; all 11 hashes in critic-round3-reviewed-hashes.json still match, and no lock path key changed. `llm-rva23-mapping.md` moved with its isa/ links re-based. TODO.md moved to cpu/TODO.md and START-HERE.md was removed (README covers it). Nine cited research reports were copied from the ignored build/research/ to the tracked cpu/research/. check_repo gains PLANNING_DIR and lays the planning inputs out flat for the unmodified checkers. README rewritten as a project front page (MIT and 'simulation only' badges, V called a subset, no RVA23 claim, 7-Zip goal with its M6-estimate caveat). Coordinator edits: cpu/architecture.md section 7's link now points to llm-accelerator/plan/ (wording only, no version), and the temporary root pointer file and its check_repo entry were removed. check_repo PASS; suite.py unit PASS. Note: older DEVLOG entries that name root paths (for example TODO.md) refer to the pre-move layout. Open for the user: the AGENTS.md line 'Root plans/helpers are maintained' and the LICENSE holder ('FPGA Inference Research contributors', the old project name).",
+     "kind": ""
+    },
+    {
+     "time": "05:08",
+     "text": "**AGENTS.md path line and LICENSE holder updated** (user approved in chat: \"Yes, both\"). AGENTS.md: 'Root plans/helpers are maintained' now names llm-accelerator/plan/ (moved 2026-11-22, byte-locked files not edited, run through scripts/check_repo.py) and cpu/research/. LICENSE: the copyright holder changes from 'FPGA Inference Research contributors' (the old project name) to 'RISC-V FPGA CPU Research contributors'; MIT terms unchanged. check_repo PASS.",
+     "kind": ""
+    },
+    {
+     "time": "04:37 to 05:07:58",
+     "text": "**Approved build cleanup done** (coordinator, in the background; user approved 04:37). The high-confidence janitor items were deleted only if untouched for 2 hours: the old /mnt/c Verilator cache (build/sim-cache/verilator), build/verilator/obj-*, old build/cpu check-*/ic-test-*/vl-test-* output, build/cpu/area/crashed, loose *.trace/*.hex/*.vvp in build/cpu/ooo-debug, and __pycache__ plus sim/starter/build. 545 items removed; build/ went from 52,098 MiB to 43,897 MiB (about 8.2 GiB freed, under the 10.3 GiB estimate because of the 2-hour guard and new engineer output). The pre-check's one process using sim-cache was the cleanup job itself.",
+     "kind": ""
+    },
+    {
+     "time": "05:11 to 05:12",
+     "text": "**STREAM probe committed** (coordinator; bandwidth engineer's bench-only package `bw/stream-bench-on-1b46831.diff` applied to main bf6abd0). Smoke run on main, default SoC (flat memory): `build_bench.py --benchmark stream` (Windows LLVM 23.1.5; 428,480 bytes), then `run_bench.py --benchmark stream --core ooo --sim verilator`. PASS: check words equal their closed forms on rv_iss and the RTL (3,346,616 instructions, 81.1 s). Flat-memory B/clk: dram_read 2.13, write 24.7, copy 4.26, scale 3.78, add 3.21, triad 3.20; l2 rows similar. The deciding-config characterisation is in the bandwidth rows above. The probe uses varied array data because value prediction inflated streams of constant data.",
+     "kind": ""
+    },
+    {
+     "time": "05:17",
+     "text": "**Official RISC-V specifications added** (user request; a Sonnet agent fetched them byte-exact from official GitHub releases on 2026-11-22 and the coordinator committed them). In references/riscv/: the combined ISA manual (Volumes I and II, including V; rolling release riscv-isa-release-3142f66-2026-11-21; PDF 8,921,903 B, HTML 14,570,712 B) and the RISC-V SBI v3.0 PDF (737,972 B). The RVA23 profile already in references/ (rva23-profile-v1.0.pdf) matches the ratified release asset, so it was not duplicated. All three are CC-BY-4.0 (licenses/RISCV-CC-BY-4.0.txt already present); attribution and an index are in references/riscv/README.md; provenance.json has four hash entries, verified by check_repo. Coordinator addition: `references/** -text` in .gitattributes, so the HTML keeps its exact bytes and hash. check_repo PASS.",
+     "kind": ""
+    },
+    {
+     "time": "05:17",
+     "text": "**tb_bench L2_PRELOAD fix committed** (bandwidth engineer's step (b), test-only, no version; `bw/b-preload-on-1b46831.diff`). The preload loop is now bounded with a done flag and fails if the file has more entries than the L2. Engineer's evidence (rows above): the unfixed bench fails on Icarus 12.0 with -DL2_PRELOAD (syntax error, unsupported break); d12 deciding with --warm-l2 gives identical clocks before and after. Coordinator check on main: iverilog -g2012 elaborates tb_bench with rv64_ooo and rv64_bram_soc in all three variants (plain, -DL2_PRELOAD, -DL2_PRELOAD -DL2_PRELOAD_READY), 0 errors; check_repo PASS. Steps (a) 64-bit DRAM delays (PATCH) and (c) the D1 L2 prefetcher (MINOR) wait for cpu-v0.19.0.",
+     "kind": ""
+    },
+    {
+     "time": "05:22",
+     "text": "**RISC-V extension specs added** (user request; a Sonnet agent fetched them byte-exact from official releases, and the coordinator committed). references/riscv/extensions/, 7 PDFs, about 12.4 MB: ELF psABI v1.0 (ratified 2022) plus a 2026-11-16 draft build; PLIC 1.0.0 (ratified); ACLINT 1.0-rc4 (release candidate, not ratified, repository archived); Debug 1.0 (ratified 2025-02-21); RVV C intrinsics v1.0 (ratified 2025-04-25); the Zvqdotq dot-product draft v0.0.1 (2024-12-06, marked DRAFT). All CC BY 4.0, with provenance hashes checked by check_repo. The index in references/riscv/README.md maps every extension we use or plan to its location: most are chapters of the combined ISA manual, among them B, Zicond, Zfa, Zfh, BF16, Zvfh, Zvbb, vector crypto, CMO, Zimop, privilege, Sv39/Svade and Sstc. Not found officially: no release of the matrix extensions (IME/VME/AME; manual chapter 12 is a placeholder), and no official CLINT spec (ACLINT is the nearest). **Conflict to resolve:** this agent found no official use of the name 'Zvdot4a8i', while the matrix research (01:52) cited it at v0.7 in internal review (PR #2576); Zvqdotq v0.0.1 is the newest official release asset. check_repo PASS after the agent fixed a CRLF line it had appended to provenance.json.",
+     "kind": ""
+    },
+    {
+     "time": "05:22",
+     "text": "**7-Zip decompress fidelity: our harness departs from 7-Zip** (backend; official 7-Zip 26.06 source at d3296e39, the commit the targets doc cites, read-only in build/third-party/7zip). **7-Zip:** Bench.cpp CEncoderInfo::Decode (line 1567) writes into a CCrcOutStream (1589, 1697) whose Write (382-390) runs CrcUpdate on each block; CRC is on in every LZMA pass (CheckCrcMode_Always, 1128 and 1919); the timing brackets the decode loop (SetStartTime 2105, Decode 2130, SetFinishTime 2159); LzmaDecoder.cpp writes every 1 MiB _outStep (32, 139-141, 178); 7zCrc.c uses Arm hardware __crc32d where available (this laptop has crc32) and slicing-by-12 otherwise, with no RISC-V hardware path. **Ours (lzma_bench.c):** decompress_kernel runs one DecodeToDic of the whole output, then a separate byte-table CRC pass at 9 instructions per byte; cpu/lzma-benchmark.md:43 mentions the byte CRC but not that it is a post-pass. The laptop kernel reference runs the same lzma_bench.c, so the kernel-to-kernel comparison is same-algorithm, but the bridge to `7z b` absorbs the X925's hardware-CRC cost. **CRC share of decompress clocks** (cpu-v0.16.0, deciding config): d22 24.4% at 4 MiB L2 and 18.8% at 6 MiB; d12 10.8%; native X925 13.2% (d22) and 16.8% (d12). Pieces 113-119 are 100% CRC. **Variant v3** (1 MiB decode steps, slicing-by-12 CRC per step inside the timed region, tables built before timing; backend/crc/mkvar.py): CRCs equal, compare_ok PASS; RTL d12 decompress -7.0% (231,764 to 215,455); native X925 -11.2% (d22) and -13.6% (d12). Estimated if adopted (d22 RTL not yet run): d22 decompress goal about 2.18 to 2.45, ours about 2.32 to 2.8 MIPS/MHz (106% to about 113-116% of goal); d12 goal 3.35 to about 3.88. Most of L2c's decompress gain would vanish. Nothing changed; the benchmark change is the user's decision.",
+     "kind": ""
+    },
+    {
+     "time": "05:25",
+     "text": "**User approved matching 7-Zip's decompress CRC** (in chat: \"Yes, match 7-Zip\"). Assigned to backend as a bench-only package, with no CPU version: 1 MiB decode steps with a slicing-by-12 CRC per step inside decompress_kernel (our own MIT code mirroring 7zCrc.c/7zCrcOpt.c, no LGPL copied); laptop native kernel re-measured and the bridge and goals re-derived in cpu/7zip-benchmark-targets.md, keeping the M6 reference; RTL d12 and d22 re-runs on 0.16.0 and 0.18.0 to re-establish whether the goal is met; a new suite identity baseline file (the old one stays). It lands after the in-flight 0.19.0, 0.18.1 and D1 releases, which use the current bench.",
+     "kind": ""
+    },
+    {
+     "time": "05:38",
+     "text": "**7-Zip CRC fix: code done, laptop re-measured under load** (backend; mirror backend/pkg/root = git archive of 0796790, rtl cpu-v0.18.0). lzma_bench.c decodes in 1 MiB steps (as LzmaDecoder.cpp) and CRCs each step inside decompress_kernel with our own slicing-by-12, tables built in lzma_crc_init; it cites 7zCrc.c, 7zCrcOpt.c, LzmaDecoder.cpp and Bench.cpp lines. Compress is unchanged. Native output CRCs are unchanged (d12 3,040,655,250; d22 316,959,354) and compare_ok PASS. Native X925 (vCPU 19, 05:29-05:34) had **no quiet window**: load 12.5-13.9 on 20 vCPUs, clock 3.49-3.77 GHz. With 5 interleaved old/new runs, d12 decompress is 2.504 to 2.955 MIPS/MHz (paired ratio 1.176 [1.101-1.208]); d22 ratio 1.171 [1.139-1.192] on min of passes; compress moved 1.02-1.03x, the noise floor. 7zz b under load (1.50-1.52 / 1.85-1.88 per MHz) is not comparable with the quiet 1.91 / 1.93, so the bridge scales the quiet reference by the paired ratios: d22 kernel decompress per clock 1.68 to 1.97 (kernel/7z b 0.87 to 1.02), so the M6 goal is **2.18 to 2.56** for decompress, and d12 3.35 to 3.94. These are **provisional** until a quiet-machine re-measure. Next: d12 deciding old and new on 0.18.0, a new suite baseline, then d22 sampled runs (60 decompress + 6 compress pairing pieces per core) on 0.16.0 and 0.18.0.",
+     "kind": ""
+    },
+    {
+     "time": "05:43",
+     "text": "**0.19.0 candidate (D-side 64 B lines) passes the release suite; /mnt/c trace corruption seen again** (middle; core 70bb884518c7, diff hdl/dline-0.19.0-on-c60e1a9.diff sha 2784bdcb0468, on c60e1a9 with the cpu-v0.18.0 core). `suite.py release-minor fpu vector --core-source <cand> --expect sim/cpu/baselines/0.17.2-release-patch.json` with DLINE off: 38/39 PASS on the first run, every compared number equal to the baseline (Dhrystone 15,706 / 10,127 with and without the FPU, LZMA 384,788 / 133,243, isa/fpu/vector at both sizes, the Icarus ooo 1- and 2-line shards, bitmanip, multicycle, pipe). **The one failure was file corruption, not the core:** a sampled lzma-64k trace line had characters missing ('R 000000000000b11   4b8663' against 'R 000000000000b11c 034b8663'), the same /mnt/c 9p write problem under load seen on 2026-11-21. A rerun alone PASSed with the same clocks. Codex re-review of the rebased diff: no functional defect in the vector paths, the critical-beat fix or the default build (4,290 run summaries compared); fixed: line cases now shard correctly with dline in the shard identity, the mem_len port exists only with the define, and fault-once requires the error beat answered and two or more reads. Directed SoC wrapped-order and vector partial-store-merge tests are stated as limits. Line regressions, fault-once with its mutant, and the DLINE 8 vs 64 benches are running. **Follow-up:** suite outputs on /mnt/c can corrupt under load; route trace files through WSL-native storage.",
+     "kind": ""
+    },
+    {
+     "time": "05:44 to 05:51",
+     "text": "**suite.py: Linux steps write traces in WSL-native storage** (coordinator, user approved 'fix it here'). Cause: under load, files written by Linux processes through /mnt/c lost characters (2026-11-21 NUL bytes; 05:4x today a trace line with characters missing, which failed one 0.19.0 suite step). With the repository on a Windows drive, every Linux step's output folder (and bench folders, copied in first when their build.json changes) now lives under ~/.cache/rv64-suite/<same relative path>; after the step, small result files (*.json, *.log, *.txt, *.md under 8 MiB) are copied back, so evaluation, --expect and results.json are unchanged. `--no-native-scratch` turns it off. The bench runners' 'Results:/Saved' print lines used Path.relative_to(ROOT) and raised outside the repo; they now use os.path.relpath (lzma_run, js_run, rt_run, mm_run, stream_run, ternary_run, run_bench). Tests on main: suite.py unit + isa-ooo 4/4 PASS (05:47; the out-of-order suite 393 runs, verification.json copied back, 15 MB of traces kept native); bench-smoke lzma-64k + dhry-ref with --expect 0.17.2 baseline 4/4 PASS, 'same as baseline' (05:49:44 to 05:50:56; the first attempt failed on the relative_to bug). **DEVLOG correction:** 12 rows from 05:03 to 05:43 had been appended to the 2026-11-20 'Optimization loop' table by a coordinator script picking the last time-stamped row in the file; they were moved unchanged into the current Timeline, where the site reads them.",
+     "kind": ""
+    },
+    {
+     "time": "05:58",
+     "text": "**7-Zip CRC fix: a design fix found by the compress pairing check** (backend). The first d22 compress pieces on 0.18.0 (pieces 10-11) differed from the goal run by +1.50% and -0.84%. Cause: building the 11 extra slicing tables in lzma_crc_init, before compression, shifted every compress window by +31,858 instructions, so the pieces no longer covered the same windows. It was not code layout. Fix: the tables live in the arena and are built after compression, just before LZMA_MARK_DEC_CALL, untimed in both phases (7-Zip builds them at start-up, also untimed). rv_iss on the rebuilt d22 image: compress kernel 3,535,891,073 instructions, identical to the goal run, starting +12 instructions later (116,225,239 against 116,225,227), so the pairing holds; decompress kernel 310,047,012 instructions against 327,085,245 (-5.2%). Earlier-variant numbers (d12 deciding decompress 229,974 to 220,307, and the first suite run) are superseded; the d22 runs were stopped and their pieces deleted, then everything is re-run on the final code: native re-measure, suite baseline, d12, and d22 interleaved on 0.18.0 and 0.16.0.",
+     "kind": ""
+    },
+    {
+     "time": "04:53:21",
+     "text": "**FPGA sizing:** FPGA sizing: first multicycle `synth_xilinx -family xcup` attempt failed in 1 s (runner path bug, no RTL read). Fixed — output",
+     "kind": ""
+    },
+    {
+     "time": "04:53:42 to 04:58:42",
+     "text": "**FPGA sizing:** Multicycle 0.18.0 `synth_xilinx -family xcup -flatten -noiopad`, 512-beat caches, `timeout 300`: **timed out** in the SAT `share` pass. Flow changed to skip `share` — output",
+     "kind": ""
+    },
+    {
+     "time": "05:09:39 to 05:14:39",
+     "text": "**FPGA sizing:** Same without `share`: **timed out** in ABC (`abc -luts 2:2,3,6:5,10,20`, 124,811 gates). Flow split at a checkpoint — output",
+     "kind": ""
+    },
+    {
+     "time": "05:15:12 to 05:18:44",
+     "text": "**FPGA sizing:** Multicycle stage A (to FF mapping, `write_rtlil`): 212 s, 1.12 GB. Caches mapped to LUTRAM (async reads) — output",
+     "kind": ""
+    },
+    {
+     "time": "05:18:59 to 05:23:59",
+     "text": "**FPGA sizing:** Multicycle stage B (`synth_xilinx -run map_luts:`): **timed out** in ABC — output",
+     "kind": ""
+    },
+    {
+     "time": "05:24:14 to 05:24:29",
+     "text": "**FPGA sizing:** Multicycle stage B2 (`abc -fast -lut 6`): 15 s. **47,001 LUT6, 2,792 RAM64M8, 1,336 CARRY4, 16 DSP48E2, 4,645 FF, 91 cell levels** — output",
+     "kind": ""
+    },
+    {
+     "time": "05:24:46 to 05:25:46",
+     "text": "**FPGA sizing:** Pipelined core (RTL identical to p081d) stage A 53 s, 0.64 GB; B2 7 s: **19,983 LUT6, 176 RAM64M8, 18 RAM32M16, 3 RAMB36E2, 16 DSP48E2, 701 CARRY4, 4,990 FF, 52 cell levels** — output",
+     "kind": ""
+    },
+    {
+     "time": "about 05:10",
+     "text": "**FPGA sizing:** Icarus elaboration of a reduced OoO copy (RW 3, FW 4, ROB 16) passed — output",
+     "kind": ""
+    },
+    {
+     "time": "05:25:52, 05:26:34, about 05:28",
+     "text": "**FPGA sizing:** Reduced OoO copy rejected by Yosys: non-constant loop initialiser (line 758), non-constant bound (2125), nested function const-evaluation (1221, 1229), `$fatal` in procedural code (2197). Equivalent rewrites added to the area-study generator only — output",
+     "kind": ""
+    },
+    {
+     "time": "05:29 to 05:33:25",
+     "text": "**FPGA sizing:** Yosys `read_verilog` only, reduced OoO: completed in **250 s, 4.8 GB RSS**. No OoO configuration can be synthesised within 300 s; switched to a state inventory plus calibrated model — output",
+     "kind": ""
+    },
+    {
+     "time": "05:35:37",
+     "text": "**FPGA sizing:** ALU microbenchmark (`simple_alu` + `exec_full`): 19 s, **5,708 LUT6, 313 CARRY4, 34 levels** — output",
+     "kind": ""
+    },
+    {
+     "time": "05:36:02 to 05:41:02",
+     "text": "**FPGA sizing:** FP microbenchmark (`fp_exec`): **timed out** in `proc_mux` — output",
+     "kind": ""
+    },
+    {
+     "time": "05:41:35 to 05:57:10",
+     "text": "**FPGA sizing:** 18 structure microbenchmarks (`sweep.sh`): register file, snapshot, IQ, ROB results as in section 4; `snap_64_fw4` timed out (300 s); `snap_32_fw16` stopped by me to save time (not measured) — output",
+     "kind": ""
+    },
+    {
+     "time": "05:57:34",
+     "text": "**FPGA sizing:** `model.py` scaling model: default as-written OoO 30-89 M LUT6, 1.9 M FF; 4-wide ROB 128 1.4-3.6 M LUT6. Conclusion: no FPGA holds the default; buy ECP5 (ULX3S) for the pipeline now — output",
+     "kind": ""
+    },
+    {
+     "time": "05:59",
+     "text": "**FPGA sizing decisions** (coordinator, on `build/research/fpga-sizing.md`; synthesis estimates and a model, not hardware). Tools: Yosys 0.33 and nextpnr-ecp5 0.6 in WSL; no Vivado, Quartus or nextpnr-xilinx, and the workstation is aarch64 while Vivado needs x86-64. Measured with Yosys synth_xilinx (UltraScale+, 512-beat caches): multicycle 47,001 LUT6 (about 22.3k of them LUTRAM, from the asynchronous caches), 4,645 FF, 16 DSP; pipelined 19,983 LUT6, 4,990 FF, 3 RAMB36, 16 DSP; its RTL equals p081d, so the earlier ECP5 route applies: 41,178 LUT4 at 28.29 MHz on an LFE5U-85F. The out-of-order core cannot be synthesised in 300 s at any size. Yosys rejects constructs at lines 758/763/769 (non-constant loop starts), 2125/3028 (non-constant loop bound), 1221/1229 (nested functions) and 573/2197 ($fatal), and the smallest rewritten copy needed 250 s and 4.8 GB just to parse. A state-count model with coefficients from 18 microbenchmarks gives: default 32-wide / ROB 512 at 30-69-89M LUT6 (snapshots 57%, ROB 33%), 8-wide / ROB 256 at 4.5-12.7M, 4-wide / ROB 128 at 1.4-3.6M; issue select is a sequential chain of 1,084 levels at 64 entries with 4 picks. **The 32-wide model as written fits no FPGA** (4-20x a VP1902). Recommendation: an ECP5 ULX3S 85F (about $235, price from a search snippet) for the pipelined core now (49%, open flow on this machine); an FPGA-oriented 4-wide out-of-order core estimated at 70-150k LUT6 plus 20-40k for the FPU (Genesys 2 K325T $1,183 or KCU116 $6,495); 8-wide at 250-500k LUT6 (VCU118 VU9P $14,995). Decisions for the user: Vivado (needs an x86 host), no full-size run (hours to days, over 100 GB), whether to commission an FPGA-oriented out-of-order configuration, and whether to turn localparams into parameters and fix the Yosys-incompatible constructs.",
+     "kind": ""
+    },
+    {
+     "time": "04:23:41",
+     "text": "**M1:** Admission check for M1: `df -h / /mnt/c` in WSL: `/` 1007 GB, 890 GB free; `/mnt/c` 953 GB, 48 GB free (both above the 15 GB floor); `free -g`: 14 GB total, 11 GB available; `nproc` 20. WSL lacks make, bison, flex, gcc/g++ and dtc; clang/clang++/lld 18 and llvm-objcopy present. Reported to the coordinator — output",
+     "kind": ""
+    },
+    {
+     "time": "04:26:59 to 04:27:05",
+     "text": "**M1:** **Tool install (user chose option A):** `timeout 300 sudo apt-get install -y make bison flex device-tree-compiler` from the official Ubuntu ports archive (noble, noble-updates). `dpkg -l`: make 4.3-4.1build2, bison 2:3.8.2+dfsg-1ubuntu0.24.04.1, flex 2.6.4-8.2build1, device-tree-compiler 1.7.0-2build1, and as dependencies libfl2 and libfl-dev 2.6.4-8.2build1 (m4 1.4.19-4build1 was already installed). No other packages or repositories — apt",
+     "kind": ""
+    },
+    {
+     "time": "04:27:31 to 04:31:49",
+     "text": "**M1:** **Sources fetched** into the ignored `build/third-party/linux-lab/` (script `fetch1.sh`, log `fetch1.log`): Spike `git clone https://github.com/riscv-software-src/riscv-isa-sim`, checkout `982f078e65ab52d5d9a91248c2178f5399df7783` (2026-11-20, master HEAD at 04:24); OpenSBI `git clone --depth 1 --branch v1.9 https://github.com/riscv-software-src/opensbi`, tag v1.9 = commit `cbf9f6734dd85a982c63e3cb5db7ffe09da839ca`; busybox 1.37.0 from https://busybox.net/downloads/ sha256 `3311dff32e746499f4df0d5df04d7eb396382d7e108bb9250e7b519b837043a4` (equals the published `.sha256`; `.sig` downloaded, not yet verified); musl 1.2.5 from https://musl.libc.org/releases/ sha256 `a9a118bbe84d8764da0ea0d28b3ab3fae8477fc7e4085d90102b8596fc7c75e4` (`.asc` downloaded, not yet verified; musl is needed because busybox needs a C library); Linux 6.18.64 (longterm) from https://cdn.kernel.org/pub/linux/kernel/v6.x/ sha256 `020d45510c539972e6f14c5c71566878d3b7ef56fb082b3e09134f2ebaade562` (equals the entry in kernel.org's `sha256sums.asc`; `.tar.sign` downloaded, not yet verified). 155 MB in total — output",
+     "kind": ""
+    },
+    {
+     "time": "04:41",
+     "text": "**M1:** rv_iss.c `--sys` mode written (worktree): RV64GC (`rv64imafdc_zicsr_zifencei_zicntr`) with M/S/U, Sv39 + Svade, traps and delegation, CLINT, ns16550a, PLIC, SiFive test finisher, Spike-layout boot ROM, HTIF tohost, a Spike-format commit log, two time models (`lab`, `spike`) and RVISSST3 states. Compiles with `clang -O2 -std=c11 -Wall -Wextra -Werror`; `fp_oracle_iss.c` still builds (same 7 pre-existing unused-function warnings) — output",
+     "kind": ""
+    },
+    {
+     "time": "04:46 to 04:52",
+     "text": "**M1:** **riscv-tests on rv_iss --sys** (`python3 -B sim/cpu/sys/riscv_tests.py`, p environment, sources riscv-tests `3df703c` + riscv-test-env `6de71ed` from `build/third-party/riscv-tests-src`, built with clang 18 `--target=riscv64-unknown-elf -march=rv64g` (rv64gc for rv64uc), `-mabi=lp64`, lld; the preprocessed text drops `.weak X` for handlers the test defines globally and spells `tcontrol` as 0x7a5, because LLVM's assembler rejects both; sources unchanged): first run 131 of 134 pass. Failures: `rv64ui-ma_data` (code 1337: needs misaligned data support, which the contract leaves trapping with no M-mode emulation in the p environment), `rv64mi-pmpaddr` (code 3: needs PMP entries; the contract has 0) and `rv64mi-breakpoint` (build failure before the `tcontrol` fix) — output",
+     "kind": ""
+    },
+    {
+     "time": "04:55",
+     "text": "**M1:** **User-mode identity check:** `HEAD:sim/cpu/bench/rv_iss.c` and the worktree rv_iss.c built with the same flags; both run `build/cpu/bench/dhrystone/bench.bin` (`--ram 1048576`, `--trace`, `--final-state`, `--dump-at 1000,50000`): JSON output (minus seconds/mips), 347,135-line trace, final state and both dumped states byte-identical (md5 equal); 307,336 instructions — output",
+     "kind": ""
+    },
+    {
+     "time": "04:47:38 to 04:48:11",
+     "text": "**M1:** Spike build slice 1 (`build-spike.sh`: `CC=clang CXX=clang++ configure --prefix=...`, then `timeout 300 make -j3` in `build/third-party/linux-lab/build/spike`): configure OK; make **failed** at once: Spike `982f078` keeps SoftFloat in the `berkeley-softfloat-3` submodule. Fetched with `git submodule update --init` from https://github.com/ucb-bar/berkeley-softfloat-3 (BSD-3-Clause), commit `07ebd29db0cfb55723a79fbbffe99103ef38e305` (04:48:31 to 04:48:43). An earlier attempt (04:47) failed before running because Git Bash rewrote the `/mnt/c/...` script path; scripts are now started as `wsl -e bash -c 'bash /mnt/c/...'` — output",
+     "kind": ""
+    },
+    {
+     "time": "04:48:44 to 04:50:11",
+     "text": "**M1:** Tarballs re-hashed (`sha256sum -c`, all OK) and extracted into WSL's native filesystem `~/linux-lab/` (1.7 GB Linux tree), not into `/mnt/c`, because a kernel build over WSL's 9p mount is slow; outputs stay untracked. `bzip2` was missing, so busybox was extracted with Python's `tarfile` (`python3 -I`) — output",
+     "kind": ""
+    },
+    {
+     "time": "04:52:00 to 04:54:36",
+     "text": "**M1:** **Linux 6.18.64 kernel** (`sim/cpu/sys/build_linux.sh`, `JOBS=2`): `make ARCH=riscv LLVM=1 tinyconfig`, `merge_config.sh -m` with our fragment `sim/cpu/sys/linux-lab.config` (RV64GC: `RISCV_ISA_C`, `FPU`; one hart; 8250 console; PLIC; initramfs), `olddefconfig`, `make Image`: every fragment option took effect (checked line by line); Image 2,358,424 bytes, one 300 s slice. clang 18.1.3, ld.lld 18 — output",
+     "kind": ""
+    },
+    {
+     "time": "04:52:06 to 04:52:08",
+     "text": "**M1:** compiler-rt 18.1.3 source fetched from https://github.com/llvm/llvm-project/releases/download/llvmorg-18.1.3/ (Apache-2.0 WITH LLVM-exception; `.sig` downloaded, not yet verified): sha256 `9a7df9300413696b0c4f7ff1e2729cb82aca375f35c05d698c44f26a4edf1c27`. Needed because musl's `long double` on RISC-V is binary128 (`__addtf3` etc.) and Ubuntu's clang ships builtins only for the host — output",
+     "kind": ""
+    },
+    {
+     "time": "04:52:40 to 04:55:34",
+     "text": "**M1:** **OpenSBI v1.9** (`sim/cpu/sys/build_opensbi.sh`: `make PLATFORM=generic LLVM=1 PLATFORM_RISCV_ISA=rv64imafdc_zicsr_zifencei PLATFORM_RISCV_ABI=lp64d`, DTB from `sim/cpu/sys/lab-virt.dts` with dtc 1.7.0; two warnings about the reg-less poweroff/reboot nodes). The first build was position-independent (linked at 0, `rv_iss: ELF segment outside DRAM`); rebuilt with `FW_PIC=n FW_TEXT_START=0x80000000` — output",
+     "kind": ""
+    },
+    {
+     "time": "04:55:34",
+     "text": "**M1:** **OpenSBI boots on rv_iss --sys** (lab time): full banner (Platform lab-virt, aclint-mswi/mtimer at 10 MHz, uart8250, syscon-reboot/poweroff, SBI 3.0, priv v1.12, ISA `rv64imafdc` + zicntr, sdtrig, PMP count 0, MIDELEG 0x222, MEDELEG 0xb108), \"Test payload running\", shutdown through the finisher: 5,036,825 instructions, 0.068 s, 74.6 MIPS — output",
+     "kind": ""
+    },
+    {
+     "time": "04:57:04",
+     "text": "**M1:** **Linux boots on rv_iss --sys** (fw_payload with the kernel, no initramfs yet): earlycon, `riscv: ELF capabilities acdfim`, Sv39, 16-bit ASIDs, riscv-intc, PLIC 31 sources/2 contexts, 8250 ttyS0, \"SBI misaligned access exception delegation ok\", then the expected \"Kernel panic - not syncing: No working init found\"; budget 600M instructions in 7.67 s (78.2 MIPS) — output",
+     "kind": ""
+    },
+    {
+     "time": "04:58:43 to 04:59:53",
+     "text": "**M1:** **Userland build** (`sim/cpu/sys/build_userland.sh`, `JOBS=3`): kernel UAPI headers installed into `~/linux-lab/sysroot`; musl 1.2.5 static (`--target=riscv64 --disable-shared`, clang `--target=riscv64-unknown-linux-musl -march=rv64gc -mabi=lp64d`); compiler-rt builtins 143 objects (GENERIC_SOURCES + GENERIC_TF_SOURCES + riscv/fp_mode.c); busybox **failed**: its `scripts/mkconfigs` requires `bzip2` — output",
+     "kind": ""
+    },
+    {
+     "time": "04:59:53 to 04:59:57",
+     "text": "**M1:** **Tool install:** `timeout 300 sudo apt-get install -y bzip2` (official Ubuntu ports archive): bzip2 1.0.8-5.1ubuntu0.1. Strictly needed by busybox's build (and absent from the base image); no other package — apt",
+     "kind": ""
+    },
+    {
+     "time": "05:00 to 05:04:23",
+     "text": "**M1:** busybox 1.37.0 failures and fixes: (1) passing musl's crt1.o in LDFLAGS put `_start` into every `built-in.o` (busybox links them with `$(LD) $(LDFLAGS) -r`), duplicate-symbol link error; replaced by a generated compiler driver `~/linux-lab/bin/rv64-musl-cc` (clang, `-rtlib=compiler-rt -unwindlib=none`, musl crt1/crti/crtn only on final links); a static `long double` printf test links; (2) `build_userland.sh` written from Windows Python had CRLF line ends, fixed; (3) appending our options to allnoconfig's `.config` had no effect (kconfig keeps the first assignment), so the first initramfs had no `mount`/`echo` applets; the script now deletes allnoconfig's lines for our symbols first. Result: static busybox 277,352 bytes — output",
+     "kind": ""
+    },
+    {
+     "time": "05:02 to 05:05:01",
+     "text": "**M1:** Kernel rebuilt with `CONFIG_INITRAMFS_SOURCE=~/linux-lab/initramfs.list` (gen_init_cpio list: /dev/console, busybox, 16 applet links, `/init` = `sim/cpu/sys/init.sh`), Image 2,636,952 bytes; OpenSBI fw_payload rebuilt with it. First boot reached the ash prompt but the scripted input was lost (bytes delivered during boot were flushed when the 8250 driver opened the port, then WFI fast-forward ran to `mtime` 1.5e14 within the 2e9 budget, 31 s); fix: the lab model offers an input byte only while IER.RDI is set and the RX FIFO is empty (contract text updated) — output",
+     "kind": ""
+    },
+    {
+     "time": "05:05:01",
+     "text": "**M1:** **Linux + busybox boots to a shell on rv_iss --sys** (lab time, `--uart-in` = `echo SHELL-OK; uname -m; cat /proc/cpuinfo; free; exit`): `/init` prints `LAB-VIRT-MARKER: busybox init reached`, ash runs the five commands (`riscv64`; cpuinfo `isa: rv64imafdc_zicntr_zicsr_zifencei_zaamo_zalrsc_zca_zcd`, `mmu: sv39`; 61,596 KiB total memory), then `poweroff -f` -> SBI SRST -> OpenSBI syscon-poweroff -> finisher 0x5555: **44,049,329 instructions, 0.785 s wall (56 MIPS), mtime 507,263 (50.7 ms simulated), 66,771 idle ticks skipped, exit 0** — output",
+     "kind": ""
+    },
+    {
+     "time": "05:06",
+     "text": "**M1:** **Checkpoints (RVISSST3):** the same run with `--dump-at 20000000,40000000 --final-state`; restoring each 67,119,080-byte state and running to the end gives a final state byte-identical (`cmp`) to the uninterrupted run, with the same 44,049,329 instructions and console tail. `--dump-on-output \"busybox init reached\"` writes a state at instruction 41,331,303 (S-mode, after the marker), and its restore also ends byte-identical — output",
+     "kind": ""
+    },
+    {
+     "time": "05:06 to 05:12",
+     "text": "**M1:** Suite integration: `sim/cpu/sys/build_all.sh` (userland, kernel, OpenSBI payload; copies `fw_payload.elf`, `lab-virt.dtb`, `Image`, `busybox` with SHA-256 to `build/third-party/linux-lab/out/manifest.txt`: fw_payload.elf `326b9271...a31a`, lab-virt.dtb `188af817...15dd`, Image `5897dda5...53ce`, busybox `554174de...9698`), `sim/cpu/sys/sys_boot.py` (boot to the shell + checkpoint round trip), new suite `sys` in `sim/cpu/suite_manifest.py` (`sys-riscv-tests`, `sys-boot`). `suite.py --self-test`: PASS, 26 checks. First `suite.py sys` run **failed** both steps: suite.py creates `build/third-party` in the worktree, so the scripts' lookup of the enclosing checkout's `build/third-party` stopped there; fixed (look for the named subdirectory). Also fixed: the `tcontrol` substitution had lost its `\\b` anchors when written through a shell here-document (it never matched), so `rv64mi-breakpoint` now builds and passes. Rerun: `suite.py sys` PASS 2/2: 132 riscv-tests pass (expected failures `rv64ui-ma_data`, `rv64mi-pmpaddr`), sys-boot 42,953,739 instructions, 24 s including the 64 MiB state writes over /mnt/c — output",
+     "kind": ""
+    },
+    {
+     "time": "05:13",
+     "text": "**M1:** User-mode identity, F/D: `HEAD` and worktree rv_iss on `build/cpu/bench/rt-fd-main/bench.bin` (`--fp 1 --ram 524288 --max 30000000`, trace of the first 3M instructions with 291,241 F records, `--final-state` RVISSST2): output, trace and state md5 equal. Speed on Dhrystone, 3 runs each under load: old 184.2/70.5/184.6 MIPS, new 183.2/181.2/70.0 MIPS (no change beyond noise) — output",
+     "kind": ""
+    },
+    {
+     "time": "05:14:02 to 05:15",
+     "text": "**M1:** **Signatures** (throw-away `GNUPGHOME`): Linux `linux-6.18.64.tar.sign` over the decompressed tar: good signature by key 647F28654894E3BD457199BE38DBBDC86092693E (Greg Kroah-Hartman, fetched by WKD); busybox `.sig`: good, C9E9416F76E610DBD09D040F47B70C55ACC9965B (Denis Vlasenko); musl `.asc`: good, 836489290BB6B70F99FFDA0556BCDB593020450F; compiler-rt `.sig`: good, 474E22316ABF4785A88C6E8EA2C794A986419D8A (Tom Stellard, key expired since). keys.openpgp.org had none of the last three (`No data`); keyserver.ubuntu.com had them. Keys are not web-of-trust certified here — output",
+     "kind": ""
+    },
+    {
+     "time": "05:05 to 05:31",
+     "text": "**M1:** **Spike build** continued in 300 s slices (`build-spike.sh`, `make -j3`, clang/clang++ 18.1.3, GNU ar): slice ends at 05:10 (1,480 objects), 05:15 (1,887), 05:21:58 (timed out linking `libriscv.so`/`libriscv.a`, 146 MB / 392 MB with debug info), 05:28 (`spike` linked, 146,663,432 bytes); the 05:31 slice was cut while linking `xspike` (not needed). `spike --help`: \"Spike RISC-V ISA Simulator 1.1.1-dev\". Copied to `~/linux-lab/spike-bin/spike` for the runs — output",
+     "kind": ""
+    },
+    {
+     "time": "05:16",
+     "text": "**M1:** Counters in the Spike time model: Spike bumps minstret/mcycle only when its inner loop ends an iteration (after a CSR instruction, xRET, WFI, a trap, or at a chunk end), with mcountinhibit as read at the iteration start, and an explicit write skips that one bump; rv_iss's spike model now does the same (lab model: per instruction, write-skip flag). Retested: 132 riscv-tests pass, sys-boot 42,953,739 instructions, checkpoint round trip identical — output",
+     "kind": ""
+    },
+    {
+     "time": "05:31 to 05:33",
+     "text": "**M1:** **riscv-tests against Spike** (`riscv_tests.py --spike`, Spike `--isa=rv64imafdc_zicsr_zifencei_zicntr --priv=msu --pmpregions=0 --triggers=0 -m16 --log-commits`): first run **all 134 differed** at instruction 51: with 0 PMP regions Spike makes pmpcfg/pmpaddr illegal (the p environment's `csrw pmpaddr0` traps to its skip label), while rv_iss had them read-only zero. rv_iss and PRIV-CONTRACT.md changed to Spike's choice. Rerun: 133 of 134 equal (rv_iss's log may end first, at its tohost stop); `rv64mi-ma_fetch` differs at instruction 113 because Spike lets software clear misa.C (`0x...141129` vs `0x...14112d`): kept as a known, documented contract difference — output",
+     "kind": ""
+    },
+    {
+     "time": "05:33 to 05:35",
+     "text": "**M1:** First boot lockstep attempt **failed** at load: OpenSBI 1.9 links `fw_payload.elf` as ET_DYN even with `FW_PIC=n FW_TEXT_START=0x80000000`, and Spike loads ET_DYN at DRAM base + addresses (0x1_0000_0000: \"Memory address 0x100000000 is invalid\"). Fix: OpenSBI back to its default PIE build linked at 0, and rv_iss's ELF loader applies Spike's rule (ET_DYN at 0x8000_0000 + addresses, entry and symbols too). OpenSBI and Linux re-verified on rv_iss — output",
+     "kind": ""
+    },
+    {
+     "time": "05:35:50 to 05:36:29",
+     "text": "**M1:** **Boot lockstep** (`spike_compare.py`: Spike `--dtb=lab-virt.dtb -m64 --triggers=0 --log-commits` into a named pipe; rv_iss `--time spike --marchid 5 --commit-log` into another; streamed comparison): 2,000,000 equal (1.1 s), 20,000,000 equal (11.8 s), then 42,053,477 equal until both reached the idle shell; rv_iss then spun in idle WFI chunks without retiring (no `--max` progress), so the spike model now skips idle chunks up to mtimecmp at once (and stops with `wfi_deadlock` when nothing can wake the hart). Spike cannot fast-forward its idle, so a boot that idles at the shell is comparable only up to that point — output",
+     "kind": ""
+    },
+    {
+     "time": "05:42 to 05:43:12",
+     "text": "**M1:** `init.sh` changed to finish by itself: markers, `sh -c` command, `read -t 1` on the console (1 s simulated), the line and an interactive shell if input arrived, then `poweroff -f`. Rebuilt (Image `c817a709...`, fw_payload.elf `9914adb2...`). Lab boot with scripted input: 43,891,559 instructions, 0.78 s, shell answered `SHELL-OK` and `riscv64`, poweroff exit 0, checkpoint at 41,275,669 restores identically. **Spike lockstep over the whole boot without input: 42,972,765 instructions equal** (OpenSBI, Linux, init, shell command, the 1 s timeout through timer interrupts while idle, the poweroff path), 21.5 s; the first difference is the expected one: OpenSBI's syscon-poweroff reads the SiFive test finisher at 0x10_0000, which Spike does not model (Spike takes an access fault, rv_iss reads 0) — output",
+     "kind": ""
+    },
+    {
+     "time": "05:43:35 to 05:44:19",
+     "text": "**M1:** `suite.py --self-test` PASS (26 checks); **`suite.py sys --jobs 2`: 4 of 4 PASS**: sys-riscv-tests (132 pass, 8 s), sys-boot (43,891,559 instructions, 19 s), sys-riscv-tests-spike (132 pass, 133 Spike-equal with 1 known difference, 28 s), sys-spike-boot (42,972,765 equal, 23 s). Results `build/suite/20261122-054335/results.json` in the worktree — output",
+     "kind": ""
+    },
+    {
+     "time": "05:45:59 to 05:50:54",
+     "text": "**M1:** **Codex review** (GPT 6.2 Astra per `~/.codex/config.toml`, `codex exec -s read-only -C wtsys -` from `%LOCALAPPDATA%\\OpenAI\\Codex\\bin\\5cb1e6583e4c030c`, each under `timeout 300`; given the diff and file list, not our conclusions). Two parallel reviews: A = rv_iss.c system mode (`sysreview/promptA.md` -> `reviewA.md`), B = scripts, contract, suite (`promptB.md` -> `reviewB.md`), all in `build/cpu/ooo-debug/coord/sysreview/`. 15 findings each. Decisions below — output",
+     "kind": ""
+    },
+    {
+     "time": "05:51 to 05:56",
+     "text": "**M1:** **Review A, fixed:** (1) ELF loader bounds (filesz > memsz, header/section/string tables outside the file, wrap) now rejected; (2) `--ram` above 16 GiB rejected in `--sys`; (3) restored UART queue indices validated; (4) **satp with an unsupported MODE now leaves satp unchanged**: verified in Spike `virtualized_satp_csr_t::unlogged_write` (\"no change to contents\") - our earlier \"Spike keeps MODE but writes ASID/PPN\" reading of `base_atp_csr_t` was wrong; contract corrected and its open question dropped; (5) mip CSRRS/CSRRC used the device SEIP as the base (phantom SEIP latch): now uses the software SEIP, as Spike's `read_for_write`; (6) **Spike serializes before every CSR instruction** (`validate_csr` returns PC_SERIALIZE_BEFORE: counters bumped, pending interrupts taken first): verified in `decode_macros.h` and added to the spike model (+ saved in RVISSST3); (7) a run of 1,000,000 traps without a retirement now stops with `trap_loop`; (8) HTIF tohost exit only for a store to the tohost word itself (a store to tohost+4 no longer passes); (10) unimplemented AMO encodings are cause 2 before any translation; (12) lab UART input is offered before that boundary's interrupt check; (13) an mtime write restarts the 100-retirement interval; (15) system-mode options without `--sys 1` are now an error instead of silently ignored. **Kept, documented:** (9) PLIC claim honours the threshold (Spike's rule; PLIC 1.0 differs) - contract now says so and lists it as an open question; (11) mtimecmp = 2^64-1 counts as \"never\" (contract text); (14) the model saves its LR reservation for an exact model restore; contract corrected (an RTL restore may drop it) — output",
+     "kind": ""
+    },
+    {
+     "time": "05:51 to 05:56",
+     "text": "**M1:** **Review B, fixed:** (1) `spike_compare.py` no longer passes on end of file; the finisher end passes only if rv_iss's record is a load of 0x10_0000 with no store, Spike's is an M-mode instruction at another pc, and rv_iss then exits through the finisher with code 0 (`--expect-finisher-end`); (2) riscv-tests vs Spike now requires every rv_iss record to be compared (compared == retired) and unparsable `core` lines are errors; (3) store records keep their width (Spike's hex digit count); (4) waivers are exact: `ma_fetch` only for its record 113 with those two x7 values, expected failures only with their exit values (1337, 3), and an expected failure that passes counts as a failure; (5) a watchdog kills both models at 280 s and releases blocked FIFO opens; (6) satp, as A4; (7) `fetch_sources.sh` extracts into a scratch directory and renames on success, and checks git trees are clean; (8) both riscv-tests steps share a suite lock, Spike results go to `summary-spike.json`, and rv_iss builds to a temporary name then renames; (12) `build_spike.sh`, `build_all.sh` and `fetch_sources.sh` search all enclosing directories for the shared `build/third-party/linux-lab`; (13) `build_linux.sh` uses an argument array and returns make's status; (14) `sys_boot.py` also checks the restored run's stop, exit code, instruction count and that its console output is the original's tail. **Kept, documented:** (9) the lab timebase is retirement-driven by design (contract section 6 now states it is a laboratory timebase, not a clock, and lists a real-time mode as an open question); (10) reservation-set text rewritten (set = the aligned word/doubleword; SC needs the same address, as the specification allows and Spike does); (11) PLIC claim, as A9; (15) measured claims: these DEVLOG rows are the record — output",
+     "kind": ""
+    },
+    {
+     "time": "05:55 to 05:56:22",
+     "text": "**M1:** Rebuilt after the fixes (DTS: poweroff/reboot nodes moved to the root, dtc now warning-free; fw_payload.elf `9fa18b9e...`, lab-virt.dtb `a26246b2...`, Image `2cb62d19...`). `suite.py sys --jobs 2`: 4/4 PASS: 132 riscv-tests; sys-boot 44,049,836 instructions, mtime 508,844, checkpoint at 41,433,188 restores identically with the same console tail; riscv-tests vs Spike 133 equal + the exact known `ma_fetch` difference; **boot lockstep 43,139,225 instructions equal, then the expected finisher read, rv_iss powering off through the finisher at 43,139,255** (24.6 s). User-mode identity rechecked (Dhrystone and rt-fd-main `--fp 1`: outputs, traces, states md5-equal with HEAD's rv_iss). Negative control: rv_iss mutated so C.SRAI decodes as C.SRLI fails `rv64uc-rvc` (exit 23) and its commit log differs from Spike's at record 142. (A mutation of AMOMAX.D to unsigned was *not* detected by `rv64ua-amomax_d`, whose operands do not separate the two orders: a coverage gap of that test.) — output",
+     "kind": ""
+    },
+    {
+     "time": "05:57 to 05:59",
+     "text": "**M1:** Main had moved to `8db4a1f` (new `riscv-tests` suite in `suite_manifest.py`), so the patch did not apply. Rebased in a fresh worktree `build/cpu/ooo-debug/coord/wtsys2` at `8db4a1f` (rv_iss.c is unchanged on main since `4d13324`): `suite.py --self-test` PASS 28 checks; `suite.py sys --jobs 2` 4/4 PASS (sys-riscv-tests 100 s including the first build of 134 tests, sys-boot, sys-riscv-tests-spike, sys-spike-boot 43,139,225 equal); `scripts/check_repo.py` PASS. Final patch `build/cpu/ooo-debug/coord/sys-m1.diff` (18 files, +2,718/-2, sha256 `32a3642d...72a5`), `git apply --check` clean on `8db4a1f`. Nothing committed or pushed; no rtl/ change; no CPU version bump (simulator and tooling only) — output",
+     "kind": ""
+    },
+    {
+     "time": "06:05",
+     "text": "**M1 committed: rv_iss system mode boots Linux, in lockstep with Spike** (coordinator; patch `build/cpu/ooo-debug/coord/sys-m1.diff` sha256 32a3642d, 18 files, applied to main at 8db4a1f; no RTL change, no version). Coordinator check on main (06:02:21 to 06:04:45): `python -B sim/cpu/suite.py sys --jobs 1` 4/4 PASS: sys-riscv-tests 132 pass; sys-boot 44,049,836 instructions (OpenSBI v1.9, Linux 6.18.64, busybox 1.37.0 shell, poweroff exit 0, RVISSST3 checkpoint round trip byte-identical); sys-riscv-tests-spike 132; sys-spike-boot 43,139,225 boot instructions equal to Spike 982f078's commit log, up to the expected finisher read. check_repo PASS. GPL code (Linux, busybox) stays in WSL-native ~/linux-lab and the ignored build/third-party/linux-lab; the tracked files only name it in comments and the lock file. Coordinator addition: an SPDX line in sim/cpu/sys/init.sh. cpu/PRIV-CONTRACT.md is a DRAFT, not a version. These are model results only: no RTL privilege support exists yet.",
+     "kind": ""
+    },
+    {
+     "time": "06:07",
+     "text": "**7-Zip CRC fix, results on the final code** (backend; tables built after compression). Native X925 (vCPU 19, 05:52-05:57; still no quiet window, load 11.3-14.0 on 20 vCPUs, add-chain clock 3.44-3.80 GHz), paired new/old decompress ratio, median of 5 [range]: d22 min-of-passes 1.129 [1.083-1.190], d12 median-of-passes 1.183 [1.162-1.216]; compress 1.01-1.05x (noise). **Provisional goals**, scaling the quiet references: d22 decompress 1.68 x 1.129 = 1.90, x 1.30 (M6) = **2.47** [2.37-2.60] (was 2.18), kernel/7z b 0.98 (was 0.87); d12 decompress **3.96** [3.89-4.07] (was 3.35); marked provisional until a quiet re-measure. suite release-patch on 0.18.0 with the new bench: 12/12 PASS (378 s); lzma-64k compress 384,845 / decompress 124,427 clocks (decompress instructions 412,564, was 429,119; compress instructions unchanged at 3,065,962); lzma-4k 976,996 / 150,876; new baseline sim/cpu/baselines/0.18.0-release-patch.json (the 0.17.2 file untouched). d12 deciding config on 0.18.0, PASS (24 traces): decompress 229,974 to 216,391 clocks (-5.9%), 1.9065 to 2.0261 MIPS/MHz, 51% of the new goal (was 57% of 3.35); compress 604,503 to 605,980 (+0.24%) with identical instructions, a layout effect. Running: d22 sampled, interleaved 0.18.0 / 0.16.0 (6 compress pairing pieces, then all 60 decompress), about 2 h.",
+     "kind": ""
+    },
+    {
+     "time": "06:12",
+     "text": "**User: no FPGA-oriented out-of-order configuration yet** (in chat: \"Not yet\", answering whether to commission a 4-wide FPGA-shaped out-of-order core). The FPGA sizing stays a planning result; no board purchase, no Vivado install, no RTL rework for synthesis.",
+     "kind": ""
+    },
+    {
+     "time": "06:19",
+     "text": "**M1 results put on the integration docket** (user: 'get the m1 spike results onto the docket for the next core'). Item 14 (test-only): Spike lockstep of the RTL cores' retirement traces, reusing M1's spike_compare/commit_compare, on riscv-tests, Dhrystone, 7-Zip d12 and rt/js pieces with an address adapter; added as suite steps and as a release check for every next core; closes the C2 external-model gate for user mode. Item 15 (MINOR): the S1 privilege foundation in RTL (M-mode CSRs, traps, mret, mstatus) behind a default-off define, multicycle core first, checked in lockstep against rv_iss --sys and Spike on rv64mi; S2-S6 follow as separate MINORs. Both assigned to the system-mode engineer, 14 first.",
+     "kind": ""
     }
    ],
    "commits": []
