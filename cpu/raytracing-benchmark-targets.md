@@ -55,6 +55,31 @@ builds tried (with it on, P drops to 6.22 rays/kclk). TinyBVH has no SVE path an
 AVX2; smallpt has no SIMD path, so its SIMD binary is byte-identical to the scalar one. Under WSL
 `taskset` pins a virtual CPU: vCPU 6 reports a Cortex-A725 but measured the same per clock within 1%.
 
+### Faster laptop kernels raise the SIMD goal (2026-11-22 00:14)
+
+The SIMD engineer wrote packet and ray-stream kernels for the same BVH4 tree and rays and ran them on
+the laptop (vCPU 19, clang 18.1.3 -O2, auto-vectorizer off, 5 runs x 5 passes, every ray checked
+against TinyBVH's `BVH4_CPU::Intersect`, 0 mismatches). They are faster than TinyBVH's own kernel, so
+the SIMD goal is now 1.5x the laptop's **best** kernel on each ray set, which keeps the comparison
+same-algorithm: a gain from a better algorithm counts only if the laptop can't run it as well.
+
+| Ray set | Laptop's best kernel | Laptop per clock | **SIMD goal (1.5x)** | Was (TinyBVH kernel) |
+|---|---|---:|---:|---:|
+| P, primary | 16-ray packets, NEON (32-ray: 13.1) | 12.1 rays/kclk | **18.2 rays/kclk** | 10.73 |
+| S, secondary | ray streams with gather and compaction, SVE2 | 5.18 rays/kclk | **7.8 rays/kclk** | 3.98 |
+
+The scalar goals (6.17 / 2.24 / 2.70 rays/kclk) and the path-tracing goal (563 paths/Mclk) are
+unchanged. TinyBVH NEON measured 7.27 / 2.65 in the same session, reproducing the table above.
+
+## Baseline on our cores (2026-11-22, soft float)
+
+The scaled workloads (1,024 triangles, 1,024 + 1,024 rays, smallpt 16x12 at 4 spp) run on the
+released cores with compiler-rt soft-float builtins (`run_bench.py --benchmark rt`), checked word for
+word against the native build. Out-of-order 0.16.2, Verilator, 64 KiB caches: P closest-hit 0.327
+rays/kclk, S closest-hit 0.200, S any-hit 0.210, RT-P 15.36 paths/Mclk, that is 3-9% and 2.7% of the
+goal. About 70% of RT-T instructions are the soft-float add and multiply routines, so this is a
+library-bound baseline; the real comparison starts with F / D (0.17.0) and then RVV.
+
 Comparisons with Apple M5, Intel Panther Lake and AMD Zen 5 on the identical workloads need those
 machines; they are not available here, and published numbers for these exact workloads do not exist.
 
