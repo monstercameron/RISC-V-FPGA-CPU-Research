@@ -155,7 +155,38 @@ hardware measurement.
   completeness, bugs and performance. Paused at this stop; restart it in the background.
 - **Reporting:** report only numbers read from output. An unmeasured figure went out once and was withdrawn.
 
-## 7. Open questions for the user
+## 7. The active ray/path-tracing goal: what is done and what is left
+
+The user's standing goal is a vectorized ray/path-tracing benchmark (TinyBVH traversal plus a smallpt-style path
+tracer, RVV 1.0 at VLEN 128/256/512) with a goal of the laptop plus 50%. In the 03:37 decision, "M6
+everywhere", the user replaced that goal with the Apple M6 reference.
+
+**Done:**
+- The benchmark: `sim/cpu/bench/rt_bench.c`, `rt_math.c`, `rt_runtime.c`, `rt_native.c` and `rt_export.cpp`,
+  run by `rt_run.py`, with the workloads in `cpu/raytracing-benchmark-targets.md`.
+- The scalar FP32 reference, with correctness checks (hit IDs, distances, image checksums, differential traces
+  against rv_iss).
+- The laptop measurement (2026-11-21 23:14 to 23:28), then the goals: laptop + 50%, now the M6 reference.
+- F/D in the out-of-order core (0.17.0 to 0.17.4, with realistic FADD 2, FMUL 3 and Lion Cove divide/sqrt
+  latencies).
+- RVV step 1, in order at the ROB head (0.18.0, `RV64_OOO_V`, VLEN 128/256/512).
+- The memory side for irregular access: 64 B lines, the L2 prefetcher and RSPW.
+
+**Not done:**
+- Out-of-order vector execution (SIMD step 2a) and the RVV coverage the vector kernels need: integer, mask,
+  permute, gather/scatter and compaction (steps 2b to 2d; plan in `build/research/rvv-complete.md`).
+- Measured scalar against 4/8/16-lane runs on our core at VLEN 128/256/512, with lane utilization and
+  divergence counters (the counter event bus is docketed).
+- The native Apple M5, Panther Lake and Zen 5 comparisons on identical workloads. None of those machines is
+  available here, so only cited or bridged figures exist (`build/research/performance-targets.md`). Do not
+  present them as measured.
+- The ray-tracing goal itself: at the deciding config the core is at roughly 60% (primary) and 25% (secondary)
+  of the M6 rays-per-clock goal.
+
+**Next for this goal:** SIMD 2a, then RVV 2b/2c with gather and compaction, then a vectorized `rt_bench` kernel
+measured at the three VLENs.
+
+## 8. Open questions for the user
 
 - Push `a718aba`, `18b2158` and `dc55aff`?
 - Which docket item comes next after RSPW?
