@@ -160,6 +160,53 @@ def rc_fetch_cases(i_type, r_type, store, branch, jal, MASK):
     yield 'rc_fetch_odd_word_target', p, 0, MASK
 
 
+# Frontend hand-off 12 (global-history predictor): correlated and PC+4 branches, a full training queue before a store.
+def gh_predictor_cases(i_type, r_type, store, branch, jal, MASK):
+    slli = lambda rd, rs, sh: i_type(0x13, rd, 1, rs, sh)
+    srli = lambda rd, rs, sh: i_type(0x13, rd, 5, rs, sh)
+    xor = lambda rd, a, b: r_type(0x33, rd, 4, a, b)
+    div = lambda rd, a, b: r_type(0x33, rd, 4, a, b, 1)
+    head = [i_type(0x13, 10, 0, 0, 200), i_type(0x13, 11, 0, 0, 0x5a5), i_type(0x13, 12, 0, 0, 1),   # 0..8
+            slli(13, 11, 13), xor(11, 11, 13), srli(13, 11, 7), xor(11, 11, 13),                     # 12: xorshift64
+            slli(13, 11, 17), xor(11, 11, 13)]
+    # C is always at 52; the loop branch at 64 goes back to 12.
+    p = head + [div(6, 11, 12), i_type(0x13, 6, 7, 6, 1),               # 36: x6 = (x11 / 1) & 1
+                branch(0, 6, 0, 8), i_type(0x13, 20, 0, 20, 1),         # 44: R: beq x6,x0 -> 52
+                branch(0, 6, 0, 8), i_type(0x13, 21, 0, 21, 1),         # 52: C: beq x6,x0 -> 60
+                i_type(0x13, 10, 0, 10, -1), branch(1, 10, 0, -52),     # 60, 64
+                0x100073, jal(0, 0)]                                    # 68: ebreak; 72: j .
+    yield 'gh_correlated', p, 0, MASK
+    p = head + [div(6, 11, 12), i_type(0x13, 6, 7, 6, 1),               # 36: x6 = (x11 / 1) & 1
+                branch(0, 6, 0, 4), i_type(0x13, 20, 0, 20, 1),         # 44: B4: beq x6,x0 -> 48 (= PC+4)
+                branch(0, 6, 0, 8), i_type(0x13, 21, 0, 21, 1),         # 52: C: beq x6,x0 -> 60
+                i_type(0x13, 10, 0, 10, -1), branch(1, 10, 0, -52),     # 60, 64
+                0x100073, jal(0, 0)]
+    yield 'gh_plus4_exec', p, 0, MASK
+    p = head + [i_type(0x13, 7, 7, 10, 1), div(6, 10, 12),             # 36: x7 = x10 & 1 (rename constant); x6 = x10 / 1
+                branch(0, 7, 0, 4), i_type(0x13, 6, 7, 6, 1),           # 44: B4: beq x7,x0 -> 48 (resolved at rename); x6 &= 1
+                branch(0, 6, 0, 8), i_type(0x13, 21, 0, 21, 1),         # 52: C: beq x6,x0 -> 60
+                i_type(0x13, 10, 0, 10, -1), branch(1, 10, 0, -52),     # 60, 64
+                0x100073, jal(0, 0)]
+    yield 'gh_plus4_rename', p, 0, MASK
+    # Training queue full (rev. 3, Codex review 2): three divides hold the ROB head while many
+    # conditional branches decided at rename (bne x0,x0: never taken) and stores pile up
+    # behind it. When the head retires, 32 instructions retire at once and fill the 32-entry
+    # queue; the next clock only 4 entries drain, so retirement stops at the fifth branch. The
+    # store-write scan must stop there too: a store written but not retired is a contract
+    # violation (tb_core: "store write without its store retiring on the same clock").
+    # Two passes: the first brings the code into the instruction cache, so in the second fetch
+    # runs far ahead of the divides at the head.
+    p = [i_type(0x13, 5, 0, 0, 7), i_type(0x13, 6, 0, 0, 1), (3 << 12) | (29 << 7) | 0x37,   # x5 = 7; x6 = 1; x29 = 0x3000
+         i_type(0x13, 10, 0, 0, 2)]                                    # 12: x10 = 2 passes
+    top = len(p)
+    p += [div(7, 5, 6)] * 6                                           # 16: six divides at the head
+    for k in range(6):
+        p += [branch(1, 0, 0, 4)] * 40 + [store(3, 29, 5, 8 * k)]     # 40 never-taken branches, then sd x5, 8k(x29)
+    p += [store(3, 29, 7, 0x100), i_type(0x13, 10, 0, 10, -1)]        # sd x7; x10 -= 1
+    p += [branch(1, 10, 0, 4 * (top - len(p))), 0x100073]             # bne x10 -> top; ebreak
+    yield 'tq_full_store', p, 0, MASK
+
+
 def cases():
     p = prefix()
     for op in (0x33, 0x3b):
@@ -801,6 +848,7 @@ def cases():
     yield 'ras_wrong_path_call', p, 0, MASK
     yield 'ret_displacement', ret_displacement_program(), 0, MASK
     yield from rc_fetch_cases(i_type, r_type, store, branch, jal, MASK)
+    yield from gh_predictor_cases(i_type, r_type, store, branch, jal, MASK)
     # Value-prediction confidence (middle hand-off 11): one load PC sees runs of 11 equal
     # values (an 8-result confidence predicts and then misses at every change); then a load
     # that returns the same value 450 times becomes predicted, its value changes under it

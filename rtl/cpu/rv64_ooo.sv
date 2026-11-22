@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Original CPU foundation, wide out-of-order implementation (architecture 0.15.1).
+// Original CPU foundation, wide out-of-order implementation (architecture 0.15.2).
 // RV64IM + B execution, serialized FENCE.I, terminal EEI. Same module name and
 // contract as rv64_core.sv and rv64_pipe.sv, plus a wider retirement trace (rt_*);
 // build with one of the three files. Architecture version: cpu/VERSION,
@@ -546,6 +546,137 @@ module rv64_core #(
     reg [7:0] lp_trip [0:LP_N-1];
     reg [7:0] lp_ret [0:LP_N-1];
     reg [1:0] lp_conf [0:LP_N-1];
+    // Global-history direction predictor (frontend hand-off 12), over the base prediction.
+    localparam integer TG_N = 4;           // tagged tables (0: off)
+    localparam integer TG_B = 10;          // index bits: 1024 entries per table
+    localparam integer TG_T = 10;          // tag bits
+    localparam integer GH_L = 128;         // global history (conditional-branch outcomes)
+    localparam integer TG_PG = 4;          // conditional branches per fetch group (2 costs decompress 2.3%)
+    localparam integer TG_RU = 4;          // trainings per clock
+    localparam integer TQ_N = 32;          // training queue
+    localparam integer TG_E = 1 << TG_B;
+    localparam integer TG_NN = TG_N == 0 ? 1 : TG_N;
+    function automatic integer tg_len(input integer t);
+        tg_len = t == 0 ? 5 : t == 1 ? 15 : t == 2 ? 44 : 128;
+    endfunction
+    reg [TG_T-1:0] tg_tag [0:TG_NN*TG_E-1];
+    reg [2:0] tg_ctr [0:TG_NN*TG_E-1];
+    reg [1:0] tg_u [0:TG_NN*TG_E-1];
+    reg [TG_NN*TG_E-1:0] tg_v;
+    reg [3:0] tg_alt;                      // use-alt-on-new-entry counter
+    reg [17:0] tg_age;
+    reg [GH_L-1:0] f_gh, r_gh, cur_gh, d_redirect_gh;
+    reg [GH_L-1:0] q_gh [0:Q_N-1];
+    reg [GH_L-1:0] rb_gh [0:ROB_N-1];
+    reg [GH_L-1:0] g_gh [0:FW-1];
+    // per conditional branch: {lc, bp, provider (7 none), provider prediction, alternate, new}
+    reg [7:0] q_tp [0:Q_N-1];
+    reg [7:0] rb_tp [0:ROB_N-1];
+    reg [7:0] g_tp [0:FW-1];
+    reg g_lpc;
+    integer g_cb, n_tq, tq_cnt, tq_h, tq_k;
+    reg [63:0] tq_pc [0:TQ_N-1];
+    reg [GH_L-1:0] tq_gh [0:TQ_N-1];
+    reg [8:0] tq_b [0:TQ_N-1];             // {taken, rb_tp}
+    function automatic [15:0] tg_fold(input [GH_L-1:0] h, input integer len, input integer w);
+        integer k;
+        begin
+            tg_fold = 0;
+            for (k = 0; k < GH_L; k = k + 1) if (k < len) tg_fold[k % w] = tg_fold[k % w] ^ h[k];
+        end
+    endfunction
+    function automatic [15:0] tg_pcf(input [63:0] pc, input integer w);   // all PC bits folded
+        integer k;
+        begin
+            tg_pcf = 0;
+            for (k = 2; k < 64; k = k + 1) tg_pcf[(k - 2) % w] = tg_pcf[(k - 2) % w] ^ pc[k];
+        end
+    endfunction
+    function automatic integer tg_idx(input [63:0] pc, input [GH_L-1:0] h, input integer t);
+        reg [TG_B-1:0] x;
+        begin
+            x = tg_pcf(pc, TG_B) ^ tg_fold(h, tg_len(t), TG_B) ^ (t * 337);
+            tg_idx = t * TG_E + x;
+        end
+    endfunction
+    function automatic [TG_T-1:0] tg_tg(input [63:0] pc, input [GH_L-1:0] h, input integer t);
+        // The PC folded to TG_T-1 bits here and to TG_B bits in the index: bit differences that
+        // cancel in one fold (distance a multiple of TG_B) do not cancel in the other.
+        tg_tg = tg_pcf(pc, TG_T - 1) ^ tg_fold(h, tg_len(t), TG_T) ^ (tg_fold(h, tg_len(t), TG_T - 1) << 1);
+    endfunction
+    // Lookup: {hit, final prediction, provider table, provider prediction, alternate prediction, provider new}.
+    function automatic [7:0] tg_look(input [63:0] pc, input [GH_L-1:0] h, input bp);
+        integer t, p, a, ix;
+        reg pp, pa, nw;
+        begin
+            p = -1; a = -1;
+            for (t = 0; t < TG_N; t = t + 1) begin
+                ix = tg_idx(pc, h, t);
+                if (tg_v[ix] && tg_tag[ix] == tg_tg(pc, h, t)) begin a = p; p = t; end
+            end
+            pp = 0; pa = bp; nw = 0;
+            if (p >= 0) begin
+                ix = tg_idx(pc, h, p); pp = tg_ctr[ix][2];
+                nw = (tg_ctr[ix] == 3 || tg_ctr[ix] == 4) && tg_u[ix] == 0;
+            end
+            if (a >= 0) begin ix = tg_idx(pc, h, a); pa = tg_ctr[ix][2]; end
+            tg_look = {p >= 0, p < 0 ? bp : (nw && tg_alt >= 8) ? pa : pp, p < 0 ? 3'd7 : p[2:0], pp, pa, nw};
+        end
+    endfunction
+    function automatic br_cond(input [2:0] f3, input [63:0] x, input [63:0] y);
+        case (f3)
+            3'd0: br_cond = x == y;
+            3'd1: br_cond = x != y;
+            3'd4: br_cond = $signed(x) < $signed(y);
+            3'd5: br_cond = $signed(x) >= $signed(y);
+            3'd6: br_cond = x < y;
+            default: br_cond = x >= y;
+        endcase
+    endfunction
+    // Training (from the queue): tp = {lc, bp, provider, pp, pa, nw} recorded at fetch.
+    task automatic tg_train(input [63:0] pc, input [GH_L-1:0] h, input [7:0] tp, input tk);
+        integer p, t, ix, done;
+        reg wrong, bp;
+        begin
+            bp = tp[6];
+            if (!tp[7]) begin
+                p = tp[5:3] == 7 ? -1 : tp[5:3];
+                if (p >= 0) begin
+                    ix = tg_idx(pc, h, p);
+                    if (tg_v[ix] && tg_tag[ix] == tg_tg(pc, h, p)) begin
+                        if (tp[0] && tp[2] != tp[1]) tg_alt = (tp[1] == tk) ? (tg_alt == 15 ? 4'd15 : tg_alt + 4'd1) : (tg_alt == 0 ? 4'd0 : tg_alt - 4'd1);
+                        if (tp[2] != tp[1]) tg_u[ix] = (tp[2] == tk) ? (tg_u[ix] == 3 ? 2'd3 : tg_u[ix] + 2'd1) : (tg_u[ix] == 0 ? 2'd0 : tg_u[ix] - 2'd1);
+                        tg_ctr[ix] = tk ? (tg_ctr[ix] == 7 ? 3'd7 : tg_ctr[ix] + 3'd1) : (tg_ctr[ix] == 0 ? 3'd0 : tg_ctr[ix] - 3'd1);
+                    end
+                end
+                wrong = (p >= 0 ? tp[2] : bp) != tk;
+                if (wrong && p < TG_N - 1) begin
+                    // An earlier queued instance may already have allocated this branch in a
+                    // longer table: then nothing is allocated (or decayed) again.
+                    done = 0;
+                    for (t = p + 1; t < TG_N; t = t + 1) begin
+                        ix = tg_idx(pc, h, t);
+                        if (tg_v[ix] && tg_tag[ix] == tg_tg(pc, h, t)) done = 1;
+                    end
+                    if (!done) begin : alloc
+                    for (t = p + 1; t < TG_N; t = t + 1) begin
+                        ix = tg_idx(pc, h, t);
+                        if (!done && (!tg_v[ix] || tg_u[ix] == 0)) begin
+                            done = 1; tg_v[ix] = 1; tg_tag[ix] = tg_tg(pc, h, t); tg_ctr[ix] = tk ? 3'd4 : 3'd3; tg_u[ix] = 0;
+                        end
+                    end
+                    if (!done) for (t = p + 1; t < TG_N; t = t + 1) begin
+                        ix = tg_idx(pc, h, t); if (tg_u[ix] != 0) tg_u[ix] = tg_u[ix] - 2'd1;
+                    end
+                    end
+                end
+                // Aging, spread out: one entry's useful bits halve every 64 trainings.
+                tg_age = tg_age + 1;
+                if (tg_age[5:0] == 0) tg_u[tg_age[17:6] % (TG_NN*TG_E)] = tg_u[tg_age[17:6] % (TG_NN*TG_E)] >> 1;
+            end
+        end
+    endtask
+    reg [7:0] tg_r;
     reg [Q_N-1:0] q_lp, q_ld;                  // loop predictor decided; predicted direction
     reg [7:0] q_li [0:Q_N-1];                  // iteration number of this instance
     reg [ROB_N-1:0] rb_lp, rb_ld;
@@ -682,7 +813,9 @@ module rv64_core #(
         begin : scan
             reg stop;
             reg [ROB_B-1:0] e;
+            integer sc_nb, sc_bud;
             stop = 0;
+            sc_nb = 0; sc_bud = TQ_N - (tq_cnt > TG_RU ? tq_cnt - TG_RU : 0);
             for (k = 0; k < RW; k = k + 1) begin
                 e = rb_head + k[ROB_B-1:0];
                 if (!stop) begin
@@ -694,6 +827,7 @@ module rv64_core #(
                     else if (st_cand && (rb_pc[e][63:3] == rb_addr[st_idx][63:3] ||
                              (st2_cand && rb_pc[e][63:3] == rb_addr[st2_idx][63:3]) ||
                              (sx_n != 0 && rb_pc[e][63:3] == rb_addr[sx0_idx][63:3]))) stop = 1;
+                    else if (TG_N != 0 && rb_ctl[e] && rb_insn[e][6:0] == 7'h63 && sc_nb >= sc_bud) stop = 1;
                     else if (rb_store[e]) begin
                         if (!st_cand) begin st_cand = 1; st_idx = e; if (!PAIR_WRITES) stop = 1; end
                         else if (!st2_cand) begin st2_cand = 1; st2_idx = e; if (EXTRA_WRITES == 0) stop = 1; end
@@ -704,6 +838,7 @@ module rv64_core #(
                         end
                     end
                     else if (rb_ends[e]) stop = 1;   // retirement refetches after these
+                    if (!stop && TG_N != 0 && rb_ctl[e] && rb_insn[e][6:0] == 7'h63) sc_nb = sc_nb + 1;
                 end
             end
         end
@@ -876,7 +1011,7 @@ module rv64_core #(
             for (i = 0; i < PRF_N; i = i + 1) refcnt[i] = i < 32 ? 1 : 0;
             rb_viol = 0; mdp_wait = 0; rb_live = 0; rb_done = 0; rb_head = 0; rb_tail = 0; rb_count = 0;
             iq_valid = 0; iq_issued = 0; ex_valid = 0; mq_valid = 0; dv_busy = 0; lw_valid = 0; rb_ans = 0;
-            ic_valid = 0; dc_valid = 0; btb_valid = 0; btb_ret = 0; ras_sp = 0; vp_valid = 0; lp_valid = 0; lp_dir = 0;
+            ic_valid = 0; dc_valid = 0; btb_valid = 0; btb_ret = 0; ras_sp = 0; vp_valid = 0; lp_valid = 0; lp_dir = 0; tg_v = 0; tg_alt = 8; tg_age = 0; f_gh = 0; r_gh = 0; tq_cnt = 0; tq_h = 0;
             for (i = 0; i < RAS_N; i = i + 1) ras[i] = 0;
             q_head = 0; q_tail = 0; q_count = 0;
             trap_valid <= 0; trap_pc <= 0; trap_cause <= 0; trap_tval <= 0;
@@ -968,8 +1103,13 @@ module rv64_core #(
             end
             prf_late = 0;
 
+            // ---- branch-predictor training queue (frontend 12): TG_RU per clock, in order
+            for (tq_k = 0; tq_k < TG_RU; tq_k = tq_k + 1) if (TG_N != 0 && tq_cnt != 0) begin
+                tg_train(tq_pc[tq_h], tq_gh[tq_h], tq_b[tq_h][7:0], tq_b[tq_h][8]);
+                tq_h = (tq_h + 1) % TQ_N; tq_cnt = tq_cnt - 1;
+            end
             // ---- retirement window
-            n_ret = 0; rflush = 0; trap_now = 0; stop = 0; rflush_pc = 0; rflush_ld = 0; rflush_e = 0; st1_seen = 0; smc = 0; st_last = 0; wb2v = 0; wb1 = 0; wb2 = 0; st_n = 0; wb3 = 0; wb4 = 0;
+            n_ret = 0; n_tq = 0; rflush = 0; trap_now = 0; stop = 0; rflush_pc = 0; rflush_ld = 0; rflush_e = 0; st1_seen = 0; smc = 0; st_last = 0; wb2v = 0; wb1 = 0; wb2 = 0; st_n = 0; wb3 = 0; wb4 = 0;
             for (s = 0; s < RW; s = s + 1) begin
                 e = rb_head + s[ROB_B-1:0];
                 if (!stop) begin
@@ -1005,8 +1145,11 @@ module rv64_core #(
                     end else if (rb_viol[e]) begin
                         // Read stale bytes: refetch from this load; it waits for older stores from now on.
                         rflush = 1; rflush_pc = rb_pc[e]; stop = 1; mdp_wait[rb_pc[e][9:2]] = 1; rflush_ld = 1; rflush_e = e;
+                    end else if (TG_N != 0 && rb_ctl[e] && rb_insn[e][6:0] == 7'h63 && tq_cnt + n_tq >= TQ_N) begin
+                        stop = 1;   // the predictor's training queue is full (frontend 12)
                     end else begin
                         n_ret = s + 1;
+                        if (TG_N != 0 && rb_ctl[e] && rb_insn[e][6:0] == 7'h63) n_tq = n_tq + 1;
                         if (rb_ends[e]) begin rflush = 1; rflush_pc = rb_next[e]; stop = 1; end
                     end
                 end
@@ -1051,6 +1194,11 @@ module rv64_core #(
                     end
                 end
                 if (rb_ctl[e] && rb_insn[e][6:0] == 7'h63) begin
+                    if (TG_N != 0) begin
+                        tq_k = (tq_h + tq_cnt) % TQ_N; tq_cnt = tq_cnt + 1;
+                        tq_pc[tq_k] = rb_pc[e]; tq_gh[tq_k] = rb_gh[e]; tq_b[tq_k] = {rb_taken[e], rb_tp[e]};
+                    end
+                    r_gh = {r_gh[GH_L-2:0], rb_taken[e]};
                     li_ = rb_pc[e][2 +: LP_BITS];
                     if (!lp_valid[li_] || lp_tag[li_] != rb_pc[e][2+LP_BITS +: LP_TAG]) begin
                         lp_valid[li_] = 1; lp_tag[li_] = rb_pc[e][2+LP_BITS +: LP_TAG]; lp_dir[li_] = rb_taken[e];
@@ -1110,7 +1258,7 @@ module rv64_core #(
             for (p = 0; p < N_BR; p = p + 1) if (ex_valid[p] && ex_cls[p] == C_FULL) begin
                 ef = exec_full(ex_insn[p], ex_pc[p], opa(p), opb(p));
                 op = ex_insn[p][6:0];
-                if (!ef[197] && !ef[0] && ((op == 7'h63 && (ef[64:1] != ex_pc[p] + 64'd4) != ex_ptaken[p]) ||
+                if (!ef[197] && !ef[0] && ((op == 7'h63 && ((TG_N != 0) ? br_cond(ex_insn[p][14:12], opa(p), opb(p)) : (ef[64:1] != ex_pc[p] + 64'd4)) != ex_ptaken[p]) ||
                                            (op == 7'h67 && ef[64:1] != ex_pred[p]))) begin
                     a_age = ex_rob[p] - rb_head;
                     if (!mp_any || a_age < (b_rob - rb_head)) begin mp_any = 1; b_rob = ex_rob[p]; mp_fix = ef[64:1]; end
@@ -1152,7 +1300,8 @@ module rv64_core #(
                             rb_value[x_rob] = ef[128:65]; rb_done[x_rob] = 1; rb_exc[x_rob] = ef[197];
                             rb_cause[x_rob] = {60'b0, ef[196:193]}; rb_tval[x_rob] = ef[192:129];
                             rb_ctl[x_rob] = !ef[197] && (op == 7'h63 || op == 7'h6f || op == 7'h67);
-                            rb_taken[x_rob] = op == 7'h6f || op == 7'h67 || ef[64:1] != ex_pc[p] + 64'd4;
+                            rb_taken[x_rob] = op == 7'h6f || op == 7'h67 ||
+                                              ((op == 7'h63 && TG_N != 0) ? br_cond(f3_, opa(p), opb(p)) : (ef[64:1] != ex_pc[p] + 64'd4));
                             rb_ret[x_rob] = op == 7'h67 && ex_insn[p][11:7] == 0 &&
                                             (ex_insn[p][19:15] == 1 || ex_insn[p][19:15] == 5);
                             rb_fencei[x_rob] = op == 7'h0f && f3_ == 1 && !ef[197];
@@ -1337,10 +1486,12 @@ module rv64_core #(
                 // A refetched load restores its own return-stack pointer (it may be the oldest).
                 ras_sp = rflush_ld ? rb_rsp[rflush_e] : rb_rsp[rb_head + n_ret[ROB_B-1:0] - 1'b1];
                 ras[ras_sp] = rflush_ld ? rb_rtos[rflush_e] : rb_rtos[rb_head + n_ret[ROB_B-1:0] - 1'b1];
+                f_gh = rflush_ld ? rb_gh[rflush_e] : r_gh;
             end else if (mp_any) begin
                 squash_after(o_age);
                 for (i = 0; i < 32; i = i + 1) begin rat[i] = snap[b_rob][i]; rat_off[i] = snap_off[b_rob][i]; end
                 ras_sp = rb_rsp[b_rob]; ras[ras_sp] = rb_rtos[b_rob];
+                f_gh = rb_insn[b_rob][6:0] == 7'h63 ? {rb_gh[b_rob][GH_L-2:0], rb_taken[b_rob]} : rb_gh[b_rob];
                 rb_tail = b_rob + 1;
                 rb_count_new = {1'b0, o_age} + 1 - n_ret;
                 q_head = 0; q_tail = 0; q_count = 0;
@@ -1433,7 +1584,7 @@ module rv64_core #(
                             rb_pc[e] = wpc; rb_insn[e] = wi; rb_next[e] = d_want; rb_rd[e] = rd_; rb_writes[e] = writes_;
                             rb_store[e] = op == 7'h23 && !isfault; rb_load[e] = op == 7'h03 && !isfault;
                             rb_fencei[e] = 0; rb_ctl[e] = 0; rb_sta[e] = 0; rb_viol[e] = 0; rb_ldv[e] = 0; rb_ans[e] = 0; rb_wstrb[e] = 0; rb_taken[e] = 0; rb_ret[e] = 0;
-                            rb_bhit[e] = q_bhit[j]; rb_bctr[e] = q_bctr[j]; rb_rsp[e] = q_rsp[j]; rb_rtos[e] = q_rtos[j];
+                            rb_bhit[e] = q_bhit[j]; rb_bctr[e] = q_bctr[j]; rb_rsp[e] = q_rsp[j]; rb_rtos[e] = q_rtos[j]; rb_gh[e] = q_gh[j]; rb_tp[e] = q_tp[j];
                             rb_li[e] = q_li[j]; rb_lp[e] = op == 7'h63 && !isfault; rb_ld[e] = tkp;
                             rb_fence[e] = op == 7'h0f && f3_ == 3'd0 && !isfault;
                             rb_opdst[e] = rat[rd_]; rb_pdst[e] = writes_ ? (elim_ ? ep_ : fp) : 0;
@@ -1480,14 +1631,17 @@ module rv64_core #(
                             rb_tail = rb_tail + 1; rb_count_new = rb_count_new + 1; n_ren = n_ren + 1;
                             if (!isfault && !done_) ui = ui + 1;
                             if (writes_ && !elim_) up = up + 1;
-                            if (d_want != q_pred[j]) begin d_redirect = 1; d_redirect_pc = d_want; d_redirect_sp = q_rsp[j]; d_redirect_tos = q_rtos[j]; stop = 1; end
+                            if (d_want != q_pred[j] || (TG_N != 0 && op == 7'h63 && !isfault && (br_now ? bt_ : tkp) != q_fpred[j])) begin
+                                d_redirect = 1; d_redirect_pc = d_want; d_redirect_sp = q_rsp[j]; d_redirect_tos = q_rtos[j];
+                                d_redirect_gh = op == 7'h63 ? {q_gh[j][GH_L-2:0], br_now ? bt_ : tkp} : q_gh[j]; stop = 1;
+                            end
                         end
                     end
                 end
                 q_head = q_head + n_ren; q_count = q_count - n_ren;
                 if (d_redirect) begin
                     q_head = 0; q_tail = 0; q_count = 0;
-                    f_pc = d_redirect_pc; f_err = 0; f_hold = 0; ras_sp = d_redirect_sp; ras[ras_sp] = d_redirect_tos; if (bus_hold == 1) f_stale = 1;
+                    f_pc = d_redirect_pc; f_err = 0; f_hold = 0; ras_sp = d_redirect_sp; ras[ras_sp] = d_redirect_tos; f_gh = d_redirect_gh; if (bus_hold == 1) f_stale = 1;
                 end
             end
             rb_count = rb_count_new;
@@ -1496,12 +1650,12 @@ module rv64_core #(
             // predicted-taken transfers (since 0.10.1) and at most one call or return
             if (!rflush && (RC_FETCH != 0 || !mp_any) && !d_redirect && !f_hold) begin
                 g_n = 0; g_next = f_pc; stop = 0; g_cr = 0;
-                g_taken = 0; cur_sp = ras_sp;
+                g_taken = 0; cur_sp = ras_sp; cur_gh = f_gh; g_cb = 0;
                 for (k = 0; k < RAS_N; k = k + 1) gras[k] = ras[k];
                 if (f_pc[1:0] != 0 || f_err) begin
                     // A fetch fault becomes one instruction that traps if it retires.
                     g_pc[0] = f_pc; g_insn[0] = 0; g_pred[0] = f_pc + 64'd4; g_fp[0] = 0; g_bh[0] = 0; g_bc[0] = 0;
-                    g_fault[0] = 1; g_fmis[0] = f_pc[1:0] != 0; g_n = 1; g_next = f_pc; stop = 1; g_sp[0] = ras_sp; g_tos[0] = ras[ras_sp];
+                    g_fault[0] = 1; g_fmis[0] = f_pc[1:0] != 0; g_n = 1; g_next = f_pc; stop = 1; g_sp[0] = ras_sp; g_tos[0] = ras[ras_sp]; g_gh[0] = f_gh; g_tp[0] = 8'h38;
                 end
                 npc = f_pc;
                 for (s = 0; s < FW; s = s + 1) if (!stop) begin
@@ -1514,6 +1668,7 @@ module rv64_core #(
                     hit = op == 7'h67 && wi[14:12] == 0 && wi[11:7] == 0 && (wi[19:15] == 1 || wi[19:15] == 5);  // a return
                     if (!(ic_valid[fi] && ic_tag[fi] == npc[63 -: IC_TAG]) || (RC_FETCH == 1 && mp_any && npc[63:3] != f_pc[63:3])) stop = 1;
                     else if ((ok || hit) && g_cr >= CR_MAX) stop = 1;     // CR_MAX calls or returns per group
+                    else if (TG_N != 0 && op == 7'h63 && g_cb >= TG_PG) stop = 1;   // TG_PG conditional branches per group
                     else begin
                         bi = npc[2 +: BTB_BITS];
                         fdone = btb_valid[bi] && btb_tag[bi] == npc[2+BTB_BITS +: BTB_TAG];
@@ -1521,7 +1676,7 @@ module rv64_core #(
                         tgt = btb_ret[bi] ? ((gras[cur_sp] + (op == 7'h67 ? {{52{wi[31]}},wi[31:20]} : 64'd0)) & ~64'd1)
                                           : {npc[63:32], btb_target[bi], 2'b00};
                         g_ras_pop_sp = cur_sp;
-                        g_lpu = 0; g_li[s] = 0;
+                        g_lpu = 0; g_li[s] = 0; g_lpc = 0;
                         if (op == 7'h63) begin
                             g_lpi = npc[2 +: LP_BITS];
                             if (lp_valid[g_lpi] && lp_tag[g_lpi] == npc[2+LP_BITS +: LP_TAG]) begin
@@ -1544,7 +1699,7 @@ module rv64_core #(
                                         lp_it = g_fp[k] == lp_dir[g_lpi] ? (g_li[k] == 255 ? 8'd255 : g_li[k] + 8'd1) : 8'd0;
                                 g_li[s] = lp_it;
                                 if (lp_conf[g_lpi] >= 2 && lp_trip[g_lpi] != 0 && lp_trip[g_lpi] != 255) begin
-                                    g_lpu = 1;
+                                    g_lpu = 1; g_lpc = 1;
                                     g_lpd = lp_it < lp_trip[g_lpi] ? lp_dir[g_lpi] : !lp_dir[g_lpi];
                                     tkp = g_lpd;
                                     tgt = npc + {{51{wi[31]}},wi[31],wi[7],wi[30:25],wi[11:8],1'b0};
@@ -1566,6 +1721,16 @@ module rv64_core #(
                         end else if (op == 7'h63 && !g_lpu && !fdone) begin
                             tkp = wi[31]; tgt = npc + {{51{wi[31]}},wi[31],wi[7],wi[30:25],wi[11:8],1'b0};
                         end
+                        // Global history (frontend 12): the tagged tables over the base prediction.
+                        g_gh[s] = cur_gh; g_tp[s] = {g_lpc, tkp, 6'b111000};
+                        if (TG_N != 0 && op == 7'h63 && !g_lpc) begin
+                            tg_r = tg_look(npc, cur_gh, tkp);
+                            g_tp[s] = {1'b0, tkp, tg_r[5:0]};
+                            if (tg_r[7]) begin
+                                tkp = tg_r[6]; tgt = npc + {{51{wi[31]}},wi[31],wi[7],wi[30:25],wi[11:8],1'b0};
+                            end
+                        end
+                        if (op == 7'h63) begin cur_gh = {cur_gh[GH_L-2:0], tkp}; g_cb = g_cb + 1; end
                         g_pc[s] = npc; g_insn[s] = wi; g_pred[s] = tkp ? tgt : npc + 64'd4;
                         g_fp[s] = tkp; g_bh[s] = fdone; g_bc[s] = btb_ctr[bi]; g_fault[s] = 0; g_fmis[s] = 0;
                         g_n = s + 1;
@@ -1585,11 +1750,11 @@ module rv64_core #(
                         j = (q_tail + s) % Q_N;
                         q_pc[j] = g_pc[s]; q_insn[j] = g_insn[s]; q_pred[j] = g_pred[s]; q_fpred[j] = g_fp[s];
                         q_bhit[j] = g_bh[s]; q_bctr[j] = g_bc[s]; q_fault[j] = g_fault[s]; q_fmis[j] = g_fmis[s];
-                        q_rsp[j] = g_sp[s]; q_rtos[j] = g_tos[s]; q_t[j] = fe_clk + FE_DEPTH;
+                        q_rsp[j] = g_sp[s]; q_rtos[j] = g_tos[s]; q_gh[j] = g_gh[s]; q_tp[j] = g_tp[s]; q_t[j] = fe_clk + FE_DEPTH;
                         q_lp[j] = g_lpmask[s]; q_ld[j] = g_fp[s]; q_li[j] = g_li[s]; q_lp_c[j] = g_insn[s][6:0] == 7'h63 && !g_fault[s];
                     end
                     q_tail = q_tail + g_n; q_count = q_count + g_n;
-                    ras_sp = cur_sp;
+                    ras_sp = cur_sp; f_gh = cur_gh;
                     for (k = 0; k < RAS_N; k = k + 1) ras[k] = gras[k];
                     if (g_fault[0]) begin f_hold = 1; f_err = 0; end   // wait for a redirect after a fault
                     else f_pc = g_next;
