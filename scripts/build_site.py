@@ -548,6 +548,13 @@ WORKS = [
      "On the scaled kernel at the deciding latencies, compression falls from 384,788 to 359,284 clocks and decompression from 133,243 to 129,587, in simulation; "
      "the contract is unchanged.",
      dict(marks=["fusion through a last-writer table"])),
+    # Figures from the 0.19.5 history row. A new room: shared line reads are a different subject from the last-writer weld of 0.19.4.
+    # A patch in the data side, so the drawing adds one mark only.
+    ("0.19.5", "La Lecture Partagée",
+     "With wider lines, the oldest load adopts a younger load's in-flight, error-free read of the same line instead of reading it again. "
+     "An error still belongs to the load that made the read. Bit-exact with 0.19.4: Dhrystone 15,703 / 10,127 clocks, "
+     "7-Zip 64 KiB 359,284 / 129,587 and 4 KiB 966,029 / 149,450, in simulation.",
+     dict(marks=["shared line read, error owner kept"])),
 ]
 
 ERAS = [
@@ -566,6 +573,7 @@ ERAS = [
     ("XIII", "Salle XIII", "Le Présage", "A guess for every indirect jump, as an option: the target of a jump that is not a return is predicted at fetch from tagged tables that remember the path taken, and a repair to the memory system's delays.", "0.19.1", "0.19.2"),
     ("XIV", "Salle XIV", "Les Voies", "Ways for the instruction cache, as an option: a set of lines may hold more than one beat, and the least recently used gives way.", "0.19.3", "0.19.3"),
     ("XV", "Salle XV", "Le Lien Lointain", "A weld that reaches back: a simple operation fuses with the last writer of its source, at any distance, through a table that recovery clears.", "0.19.4", "0.19.4"),
+    ("XVI", "Salle XVI", "La Lecture Partagée", "Wider lines once more: the oldest load adopts a younger load's in-flight, error-free read of the same line, and a fault stays with the load that made the read.", "0.19.5", "0.19.5"),
 ]
 
 
