@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Original CPU foundation, wide out-of-order implementation (architecture 0.19.3).
+// Original CPU foundation, wide out-of-order implementation (architecture 0.19.4).
 // RV64IM + B execution (RV64F and D with define RV64_OOO_FPU, default off; with RV64_OOO_V
 // also the RVV subset of the vector contract, step 1, executed in order),
 // serialized FENCE.I, terminal EEI. Same module name and
@@ -975,7 +975,12 @@ module rv64_core #(
     reg [P_B-1:0] ex_fza [0:NP-1];
     reg [P_B-1:0] ex_fzb [0:NP-1];
     reg pv_ok;
-    reg [AR_B-1:0] pv_rd;
+    reg [NAR-1:0] lw_ok;                    // fusion: the register's last renamed writer is a fusable producer
+    reg [31:0] lw_insn [0:NAR-1];
+    reg [63:0] lw_pc [0:NAR-1];
+    reg [P_B-1:0] lw_a [0:NAR-1];
+    reg [P_B-1:0] lw_b [0:NAR-1];
+    reg lwf1_, lwf2_; reg [AR_B-1:0] lwr_;
     reg [AR_B-1:0] ard_, ars1_, ars2_, ars3_;
     reg fpop_, fpld_, fpst_, uses3_, fdst_, fs1_, fs2_, fpw_;
     reg [20:0] fdc_;
@@ -988,9 +993,6 @@ module rv64_core #(
     reg [RW-1:0] rt_csrw; reg [RW*8-1:0] rt_csrv;   // PROVISIONAL trace: slot wrote fcsr, and its new value
     reg [ROB_N-1:0] rb_csrw; reg [7:0] rb_csrv [0:ROB_N-1];
     reg csr_, csr_busy; reg [63:0] csr_old, csr_src, csr_new; reg [7:0] csr_fcsr;
-    reg [31:0] pv_insn;
-    reg [63:0] pv_pc;
-    reg [P_B-1:0] pv_a, pv_b;
     reg cur_fz;                  // FENCE (not FENCE.I), 0.11.0
     // Value prediction: a load, multiply or divide whose last VP_CONF results were the
     // same gives that value to its consumers at rename; its own result is compared when
@@ -2028,7 +2030,7 @@ module rv64_core #(
             vtype = 64'h8000000000000000; vl = 0; vstart = 0; vxsat = 0; vxrm = 0; v_busy = 0; rb_vec = 0; rb_vref = 0;
             vx_st = 0; vx_wv = 0; vr_vn = 0; vr_cn = 0; rt_vec <= 0; rt_vtrap <= 0; vemax_r = VE_MAX; vlen_r = VLEN;
 `endif
-            pv_ok = 0; rb_viol = 0; mdp_wait = 0; rb_live = 0; rb_done = 0; rb_head = 0; rb_tail = 0; rb_count = 0;
+            pv_ok = 0; lw_ok = 0; rb_viol = 0; mdp_wait = 0; rb_live = 0; rb_done = 0; rb_head = 0; rb_tail = 0; rb_count = 0;
             iq_valid = 0; iq_issued = 0; ex_valid = 0; mq_valid = 0; dv_busy = 0; fq_valid = 0; fd_gap = 0; fcsr = 0; lw_valid = 0; rb_ans = 0; l0_v = 0; l0_p = 0; ld_lat_now = LD_LAT;
             ic_valid = 0; dc_valid = 0; btb_valid = 0; btb_ret = 0; ras_sp = 0; vp_valid = 0; lp_valid = 0; lp_dir = 0; tg_v = 0; tg_alt = 8; tg_age = 0; tg_ap = 0; f_gh = 0; r_gh = 0; tq_cnt = 0; tq_h = 0;
             it_v = 0; it_age = 0; it_ap = 0; f_ph = 0; r_ph = 0;
@@ -2713,7 +2715,7 @@ module rv64_core #(
             // ---- recovery
             h_after = rb_head + n_ret[ROB_B-1:0];
             rb_count_new = rb_count - n_ret;
-            if (rflush || mp_any) begin pv_ok = 0; csr_busy = 0; end
+            if (rflush || mp_any) begin pv_ok = 0; csr_busy = 0; lw_ok = 0; end
             if (rflush) begin
                 squash_after(n_ret[ROB_B-1:0] - 1);
                 for (i = 0; i < NAR; i = i + 1) begin rat[i] = rrat[i]; rat_off[i] = rrat_off[i]; end
@@ -3221,16 +3223,19 @@ module rv64_core #(
                                 iq_pdst[slot] = writes_ ? fp : 0; iq_writes[slot] = writes_;
                                 iq_mdu[slot] = (op == 7'h33 || op == 7'h3b) && wi[31:25] == 7'h01;
                                 iq_pred[slot] = d_want; iq_ptaken[slot] = tkp; iq_alt[slot] = tkp ? npc : tgt;
-                                iq_fz1[slot] = pv_ok && uses1_ && ars1_ == pv_rd && cls_ != C_FP;
-                                iq_fz2[slot] = pv_ok && uses2_ && ars2_ == pv_rd && cls_ != C_ST && cls_ != C_FP;
-                                iq_fzi[slot] = pv_insn; iq_fzpc[slot] = pv_pc; iq_fza[slot] = pv_a; iq_fzb[slot] = pv_b;
+                                lwf1_ = uses1_ && ars1_ != 0 && lw_ok[ars1_] && cls_ != C_FP;
+                                lwf2_ = uses2_ && ars2_ != 0 && lw_ok[ars2_] && cls_ != C_ST && cls_ != C_FP;
+                                lwr_ = lwf1_ ? ars1_ : ars2_;
+                                iq_fz1[slot] = lwf1_;
+                                iq_fz2[slot] = lwf2_ && (!lwf1_ || ars2_ == ars1_);
+                                iq_fzi[slot] = lw_insn[lwr_]; iq_fzpc[slot] = lw_pc[lwr_]; iq_fza[slot] = lw_a[lwr_]; iq_fzb[slot] = lw_b[lwr_];
                                 iq_off1[slot] = o1_; iq_off2[slot] = o2_;
                                 iq_ps3[slot] = ps3_;
                                 iq_fop[slot] = fdc_[7:3]; iq_fsz[slot] = fdc_[8]; iq_rm[slot] = fdc_[11:9]; iq_funit[slot] = fdc_[13:12];
                             end
-                            cur_fz = pv_ok && cls_ != C_FP && ((uses1_ && ars1_ == pv_rd) || (uses2_ && ars2_ == pv_rd && cls_ != C_ST));
+                            cur_fz = cls_ != C_FP && ((uses1_ && ars1_ != 0 && lw_ok[ars1_]) || (uses2_ && ars2_ != 0 && lw_ok[ars2_] && cls_ != C_ST));
                             pv_ok = !isfault && cls_ == C_ALU && writes_ && !cur_fz && !done_ && o1_ == 0 && o2_ == 0;
-                            pv_rd = ard_; pv_insn = wi; pv_pc = wpc; pv_a = ps1_; pv_b = ps2_;
+                            if (writes_) begin lw_ok[ard_] = pv_ok; lw_insn[ard_] = wi; lw_pc[ard_] = wpc; lw_a[ard_] = ps1_; lw_b[ard_] = ps2_; end
                             rb_tail = rb_tail + 1; rb_count_new = rb_count_new + 1; n_ren = n_ren + 1;
 `ifdef RV64_OOO_V
                             if (!isfault && !done_ && !isv_) ui = ui + 1;
