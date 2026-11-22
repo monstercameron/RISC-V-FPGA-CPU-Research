@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Original CPU foundation, wide out-of-order implementation (architecture 0.15.4).
+// Original CPU foundation, wide out-of-order implementation (architecture 0.15.5).
 // RV64IM + B execution, serialized FENCE.I, terminal EEI. Same module name and
 // contract as rv64_core.sv and rv64_pipe.sv, plus a wider retirement trace (rt_*);
 // build with one of the three files. Architecture version: cpu/VERSION,
@@ -537,7 +537,18 @@ module rv64_core #(
     // Branch target buffer and return stack.
     reg [BTB_ENTRIES-1:0] btb_valid, btb_ret;
     reg [BTB_TAG-1:0] btb_tag [0:BTB_ENTRIES-1];
-    reg [29:0] btb_target [0:BTB_ENTRIES-1];
+    reg [29:0] btb_target [0:BTB_ENTRIES-1];    // (target - PC) >> 2, signed (frontend 15)
+    function automatic btb_fits(input [63:0] pc, input [63:0] t);
+        reg [63:0] d;
+        begin d = t - pc; btb_fits = d[1:0] == 0 && (d[63:31] == {33{1'b0}} || d[63:31] == {33{1'b1}}); end
+    endfunction
+    function automatic [29:0] btb_enc(input [63:0] pc, input [63:0] t);
+        reg [63:0] d;
+        begin d = t - pc; btb_enc = d[31:2]; end
+    endfunction
+    function automatic [63:0] btb_dec(input [63:0] pc, input [29:0] f);
+        btb_dec = pc + {{32{f[29]}}, f, 2'b00};
+    endfunction
     reg [1:0] btb_ctr [0:BTB_ENTRIES-1];
     reg [63:0] ras [0:RAS_N-1];
     reg [RAS_B-1:0] ras_sp;
@@ -1239,7 +1250,8 @@ module rv64_core #(
                         btb_ctr[bi] = (btb_valid[bi] && btb_tag[bi] == rb_pc[e][2+BTB_BITS +: BTB_TAG]) ?
                                       (btb_ctr[bi] == 3 ? 2'd3 : btb_ctr[bi] + 2'd1) : 2'd2;
                         btb_valid[bi] = 1; btb_tag[bi] = rb_pc[e][2+BTB_BITS +: BTB_TAG];
-                        btb_target[bi] = rb_next[e][31:2]; btb_ret[bi] = rb_ret[e];
+                        btb_target[bi] = btb_enc(rb_pc[e], rb_next[e]); btb_ret[bi] = rb_ret[e];
+                        if (!btb_fits(rb_pc[e], rb_next[e])) btb_valid[bi] = 0;   // beyond the offset's reach
                     end else if (btb_valid[bi] && btb_tag[bi] == rb_pc[e][2+BTB_BITS +: BTB_TAG])
                         btb_ctr[bi] = btb_ctr[bi] == 0 ? 2'd0 : btb_ctr[bi] - 2'd1;
                 end
@@ -1703,7 +1715,7 @@ module rv64_core #(
                                 (op == 7'h63 || op == 7'h6f || op == 7'h67);   // predecode: control transfers only
                         tkp = fdone && (btb_ret[bi] || btb_ctr[bi][1]);
                         tgt = btb_ret[bi] ? ((gras[cur_sp] + (op == 7'h67 ? {{52{wi[31]}},wi[31:20]} : 64'd0)) & ~64'd1)
-                                          : {npc[63:32], btb_target[bi], 2'b00};
+                                          : btb_dec(npc, btb_target[bi]);
                         g_ras_pop_sp = cur_sp;
                         g_lpu = 0; g_li[s] = 0; g_lpc = 0;
                         if (op == 7'h63) begin
