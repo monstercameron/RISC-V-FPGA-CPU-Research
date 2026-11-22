@@ -3,6 +3,8 @@
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 [![Evidence: simulation only](https://img.shields.io/badge/evidence-simulation%20only-lightgrey.svg)](cpu/architecture.md)
 
+**Website:** [Atelier site](https://monstercameron.github.io/RISC-V-FPGA-CPU-Research/) · [gallery](https://monstercameron.github.io/RISC-V-FPGA-CPU-Research/gallery.html) · [journal](https://monstercameron.github.io/RISC-V-FPGA-CPU-Research/journal.html)
+
 An original 64-bit RISC-V processor for an FPGA, written in SystemVerilog and developed in simulation against a sequential golden model. Three implementations share one architecture contract, and the long-term target is the RVA23U64 profile, reached in stages. The earlier LLM-accelerator research for the same board is preserved under [llm-accelerator/](llm-accelerator/plan/README.md) as future work.
 
 **Status (simulation only).** Architecture version: see [cpu/VERSION](cpu/VERSION), currently 0.18.0 ([semantic versioning and history](cpu/architecture.md#9-versioning)). Not RVA23, not a Linux-capable CPU, not an ISA certification and not a physical FPGA result: no board run, board timing or hardware measurement is claimed.
