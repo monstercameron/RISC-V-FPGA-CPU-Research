@@ -77,10 +77,12 @@ def bitmanip_op(ins, a, b):
     return None
 
 
-def execute(image, fault_kind=0, fault_addr=MASK, max_steps=20000, bitmanip=True, fp=False, state=None):
+def execute(image, fault_kind=0, fault_addr=MASK, max_steps=20000, bitmanip=True, fp=False, state=None,
+            vector=False, vlen=256):
     """Run from PC 0 with zeroed state; returns (trace, coverage).
 
-    fp: enable RV64FD (FP-CONTRACT.md). state: optional dict that receives the final
+    fp: enable RV64FD (FP-CONTRACT.md). vector, vlen: enable the RVV subset of RVV-CONTRACT.md
+    (vector FP also needs fp). state: optional dict that receives the final
     'x', 'f', 'fcsr', 'pc' and 'memory' when the run stops (used by the cross-checks)."""
     memory = bytearray(image)
     regs = [0] * 32
@@ -88,6 +90,10 @@ def execute(image, fault_kind=0, fault_addr=MASK, max_steps=20000, bitmanip=True
         from fp_ref_core import fp_compute, BOX
     fregs = [0] * 32
     fcsr = 0
+    vst = None
+    if vector:
+        import vec_ref
+        vst = vec_ref.VState(vlen)
     pc = 0
     trace = []
     coverage = set()
@@ -95,7 +101,7 @@ def execute(image, fault_kind=0, fault_addr=MASK, max_steps=20000, bitmanip=True
     def trap(cause, tval):
         trace.append(f'T {pc:016x} {cause:016x} {tval & MASK:016x}')
         if state is not None:
-            state.update(x=list(regs), f=list(fregs), fcsr=fcsr, pc=pc, memory=bytes(memory))
+            state.update(x=list(regs), f=list(fregs), fcsr=fcsr, pc=pc, memory=bytes(memory), vector=vst)
         return trace, coverage
 
     def denied(address, kind):
@@ -230,6 +236,15 @@ def execute(image, fault_kind=0, fault_addr=MASK, max_steps=20000, bitmanip=True
                     lane = address & 7
                     trace.append(f'W {address & ~7:016x} {(b << (8 * lane)) & MASK:016x} {((1 << size) - 1) << lane:02x}')
                     name = ('sb', 'sh', 'sw', 'sd')[f3]
+        elif vector and (op == 0x57 or (op in (0x07, 0x27) and f3 in (0, 5, 6, 7))):
+            result = vec_ref.vstep(ins, vst, regs, fregs, fcsr >> 5, memory, denied, fp)
+            if result[0] == 'trap':
+                trace.extend(result[3])
+                return trap(result[1], result[2])
+            if result[0] == 'ok':
+                _, name, destination, value, flags, records = result
+                fcsr |= flags
+                trace.extend(records)
         elif fp and op in (0x07, 0x27) and f3 in (2, 3):
             # FLW/FLD/FSW/FSD: alignment and faults as the integer word/doubleword forms.
             load = op == 0x07
@@ -260,6 +275,19 @@ def execute(image, fault_kind=0, fault_addr=MASK, max_steps=20000, bitmanip=True
                 if flags:
                     fcsr |= flags
                     trace.append(f'F {flags:02x}')
+        elif vector and op == 0x73 and f3 in (1, 2, 3, 5, 6, 7) and (ins >> 20) in vec_ref.VECTOR_CSRS:
+            csr = ins >> 20
+            old = vst.csr_read(csr)
+            source = rs1 if f3 >= 5 else a
+            kind = f3 & 3
+            new = source if kind == 1 else old | source if kind == 2 else old & ~source
+            try:
+                if kind == 1 or rs1 != 0:
+                    trace.append(vst.csr_write(csr, new & MASK))
+                value, destination = old, rd
+                name = ('', 'csrrw', 'csrrs', 'csrrc', '', 'csrrwi', 'csrrsi', 'csrrci')[f3]
+            except vec_ref.Illegal:
+                name = None
         elif fp and op == 0x73 and f3 in (1, 2, 3, 5, 6, 7) and (ins >> 20) in (1, 2, 3):
             # Zicsr on the FP CSRs only (fflags 0x001, frm 0x002, fcsr 0x003).
             csr = ins >> 20

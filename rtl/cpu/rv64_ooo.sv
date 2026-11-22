@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: MIT
-// Original CPU foundation, wide out-of-order implementation (architecture 0.17.4).
-// RV64IM + B execution (RV64F and D with define RV64_OOO_FPU, default off),
+// Original CPU foundation, wide out-of-order implementation (architecture 0.18.0).
+// RV64IM + B execution (RV64F and D with define RV64_OOO_FPU, default off; with RV64_OOO_V
+// also the RVV subset of the vector contract, step 1, executed in order),
 // serialized FENCE.I, terminal EEI. Same module name and
 // contract as rv64_core.sv and rv64_pipe.sv, plus a wider retirement trace (rt_*);
 // build with one of the three files. Architecture version: cpu/VERSION,
@@ -930,6 +931,71 @@ module rv64_core #(
                                 // requests; the trap is taken, with the latched store, once they return
     reg [63:0] sf_pc, sf_addr;
 
+`ifdef RV64_OOO_V
+    // ---------------- RVV subset, step 1 (RV64_OOO_V; council simd) ----------------
+    // build/cpu/fp/RVV-CONTRACT.md, executed in order at the head of the reorder buffer: a vector
+    // instruction renames only into an empty ROB and holds rename until it retires, so it is never
+    // speculative and nothing older can flush it. Architectural register file of 32 x VLEN bits.
+    // Step 1 implements vsetvli/vsetivli/vsetvl, the vector CSRs, unit-stride and strided loads and
+    // stores (EEW 8-64, masked, whole-register, mask, fault-only-first; element-precise faults with
+    // vstart) and the FP32 vector instructions of the contract; the integer, mask-logical, permute and
+    // indexed instructions are illegal (cause 2) in this step. Functional first: one memory element per
+    // clock; other instructions take the scalar FP latency of their operation + beats - 1 (beats = DLEN-bit groups).
+`ifndef RV64_OOO_FPU
+    initial $fatal(1, "RV64_OOO_V needs RV64_OOO_FPU (vector FP uses the F state)");
+`endif
+`ifdef RV64_OOO_VLEN
+    localparam integer VLEN = `RV64_OOO_VLEN;
+`else
+    localparam integer VLEN = 256;
+`endif
+`ifdef RV64_OOO_DLEN
+    localparam integer DLEN = `RV64_OOO_DLEN;
+`else
+    localparam integer DLEN = VLEN;
+`endif
+    localparam integer VLENB = VLEN / 8;
+    localparam integer VE_MAX = 8 * VLEN / 32;     // FP32 elements of an LMUL-8 group
+    // Vector FP timing uses the scalar FP latency parameters (FMA_LAT, FMUL_LAT, FADD_LAT, FMISC_LAT, FCVT_LAT,
+    // FDIV_S/FSQRT_S with FDIV_II_S/FSQRT_II_S), plus one clock per further DLEN beat (functional step: no pipes).
+    initial if (!(VLEN == 128 || VLEN == 256 || VLEN == 512) || DLEN < 64 || DLEN > VLEN || (DLEN & (DLEN - 1)) != 0)
+        $fatal(1, "RV64_OOO_VLEN must be 128, 256 or 512 and RV64_OOO_DLEN a power of two from 64 to VLEN");
+    reg [VLEN-1:0] vreg [0:31];
+    reg [63:0] vtype, vl, vstart;
+    reg vxsat;
+    reg [1:0] vxrm;
+    reg v_busy;                              // a vector instruction is in the ROB
+    reg [ROB_N-1:0] rb_vec, rb_vref;         // vector instruction; a vector store (refetch after it)
+    // The head engine (one instruction at a time).
+    reg [1:0] vx_st;                          // 0 start, 1 memory elements, 2 finishing
+    integer vx_i, vx_evl, vx_cnt, vx_eewb, vx_regs, vx_start;
+    reg vx_load, vx_vm, vx_whole, vx_mtail, vx_ff, vx_wv;
+    reg [4:0] vx_vd;
+    reg [63:0] vx_base, vx_stride, vx_res, vx_waddr, vx_wdata;
+    reg [7:0] vx_wstrb;
+    reg [4:0] vx_fl;
+    // Trace records of the instruction in flight (RVV-CONTRACT.md 7), copied to rt_v* at retirement or
+    // trap and printed by the simd testbench: C records (in order) and the V group (base, count).
+    reg [4:0] vr_vb; reg [3:0] vr_vn; reg [1:0] vr_cn;
+    reg [11:0] vr_csr [0:2]; reg [63:0] vr_cval [0:2];
+    reg rt_vec, rt_vtrap; reg [4:0] rt_vb; reg [3:0] rt_vn; reg [1:0] rt_cn;
+    reg [35:0] rt_vcsr; reg [191:0] rt_vcval;       // three C records, record k at bits 12k / 64k
+    // scratch
+    reg vok, vill_, vmask_any;
+    integer vsew, vnum, vden, vlmax, vlm, vq, vr, vn2, vd2, vi2;
+    reg [63:0] vt_, avl_, xs1_, xs2_, fsv_, vold_, vnew_, va_;
+    reg [31:0] vfs_, vin_;
+    reg [31:0] vtmp [0:VE_MAX-1];
+    reg [VE_MAX-1:0] vtv;
+    reg [36:0] vfr_;
+    reg [5:0] vf6_;
+    integer vemax_r, vlen_r;                 // VE_MAX and VLEN as run-time values (no loop unrolling)
+    reg [2:0] vf3_;
+    reg [4:0] vrd_, vrs1_, vvs2_;
+    reg vvm_, vvf_;
+
+    reg isv_, vfd_;                          // rename: a vector instruction; vfmv.f.s (writes f[rd])
+`endif
     // ---------------- bus request (combinational) -------------------------------
     // The retiring store: the first store in the retirement window, when everything
     // before it there is finished, will retire this clock and is no fence.i.
@@ -947,7 +1013,11 @@ module rv64_core #(
     function automatic [MDP_BITS-1:0] mdp_i(input [63:0] a); mdp_i = a[2 +: MDP_BITS]; endfunction
     // Instructions that retire and then end the retirement group with a refetch (fence.i,
     // a wrong value prediction): retirement and the store-write scan both stop after them.
+`ifdef RV64_OOO_V
+    wire [ROB_N-1:0] rb_ends = rb_fencei | rb_vpbad | rb_vref;
+`else
     wire [ROB_N-1:0] rb_ends = rb_fencei | rb_vpbad;
+`endif
     reg [ROB_N-1:0] rb_ldv;     // the load gave its consumers a value it read or forwarded
     reg [ROB_N-1:0] rb_ans;     // LD_LAT >= 2: the load answered and waits only for its wakeup
     reg rflush_ld;              // this clock's flush refetches a load that read stale bytes
@@ -1029,15 +1099,31 @@ module rv64_core #(
     endfunction
     wire want_fetch = started && !halted && f_pc[1:0] == 0 && !f_beat_hit && !f_err && !f_hold && !h_exc && !sf_wait;
     // Priority: store write, the oldest load's miss, younger misses, fetch.
+`ifdef RV64_OOO_V
+    wire [1:0] bus_kind = halted ? 2'd0 : bus_hold != 0 ? bus_hold : (want_store || vx_wv) ? 2'd3 : want_miss ? 2'd2 :
+`else
     wire [1:0] bus_kind = halted ? 2'd0 : bus_hold != 0 ? bus_hold : want_store ? 2'd3 : want_miss ? 2'd2 :
+`endif
                           want_pm ? 2'd2 : want_fetch ? 2'd1 : 2'd0;
     assign mem_tag = bus_kind != 2 ? 4'd0 : bus_hold == 2 ? hold_tag : want_miss ? 4'd0 : pm_pick;
     assign mem_valid = !reset && bus_kind != 0;
     assign mem_instr = bus_kind == 1;
     assign mem_addr = bus_kind == 1 ? (bus_hold == 1 ? hold_addr : {f_pc[63:3],3'b000})
+`ifdef RV64_OOO_V
+                    : bus_kind == 2 ? (bus_hold == 2 ? hold_addr : want_miss ? mu_beat : pm_beat[pm_pick]) : (vx_wv ? vx_waddr : {st_addr[63:3],3'b000});
+`else
                     : bus_kind == 2 ? (bus_hold == 2 ? hold_addr : want_miss ? mu_beat : pm_beat[pm_pick]) : {st_addr[63:3],3'b000};
+`endif
+`ifdef RV64_OOO_V
+    assign mem_wdata = bus_kind == 3 ? (vx_wv ? vx_wdata : st_wdata) : 64'b0;
+`else
     assign mem_wdata = bus_kind == 3 ? st_wdata : 64'b0;
+`endif
+`ifdef RV64_OOO_V
+    assign mem_wstrb = bus_kind == 3 ? (vx_wv ? vx_wstrb : rb_wstrb[st_idx]) : 8'b0;
+`else
     assign mem_wstrb = bus_kind == 3 ? rb_wstrb[st_idx] : 8'b0;
+`endif
     assign mem_addr2 = bus_kind == 3 && pair_now ? {st2_addr[63:3],3'b000} : 64'b0;
     assign mem_wdata2 = bus_kind == 3 && pair_now ? ((prf[rb_sps2[st2_idx]] + rb_soff[st2_idx]) & (rb_fsw[st2_idx] ? 64'h00000000ffffffff : 64'hffffffffffffffff)) << {st2_addr[2:0],3'b000} : 64'b0;
     assign mem_wstrb2 = bus_kind == 3 && pair_now ? rb_wstrb[st2_idx] : 8'b0;
@@ -1563,6 +1649,127 @@ module rv64_core #(
         end
     endfunction
     function rdy3(input integer kk); rdy3 = prf_ready[iq_ps3[kk]]; endfunction
+`ifdef RV64_OOO_V
+    function automatic integer v_ceil_beats(input integer bits);
+        v_ceil_beats = bits <= 0 ? 1 : (bits + DLEN - 1) / DLEN;
+    endfunction
+    // Step-1 latency of a vector FP instruction: the scalar unit's latency for the operation, + beats - 1;
+    // divide/sqrt at their initiation interval per beat; reductions as a chain (ordered) or tree (unordered).
+    function automatic integer v_lat(input [5:0] f6, input [4:0] r1, input [63:0] n);
+        integer b, lg, l;
+        begin
+            b = v_ceil_beats(n * 32); lg = 0; while ((1 << lg) < n) lg = lg + 1;
+            case (f6)
+                6'h28, 6'h29, 6'h2a, 6'h2b, 6'h2c, 6'h2d, 6'h2e, 6'h2f: l = FMA_LAT + b - 1;
+                6'h24: l = FMUL_LAT + b - 1;
+                6'h00, 6'h02, 6'h27: l = FADD_LAT + b - 1;
+                6'h20, 6'h21: l = FDIV_S + (b - 1) * FDIV_II_S;
+                6'h13: l = r1 == 0 ? FSQRT_S + (b - 1) * FSQRT_II_S : FMISC_LAT + b - 1;
+                6'h12: l = FCVT_LAT + b - 1;
+                6'h03: l = FADD_LAT * (n > 0 ? n : 1);              // vfredosum: one add per element, in order
+                6'h01: l = FADD_LAT * (lg + 1);                       // vfredusum: the tree, then vs1[0]
+                6'h05, 6'h07: l = FMISC_LAT * (n > 0 ? n : 1);        // vfredmin / vfredmax
+                default: l = FMISC_LAT + b - 1;                      // compares, min/max, sign injection, moves, slides
+            endcase
+            v_lat = l < 1 ? 1 : l;
+        end
+    endfunction
+    // vtype: ok, SEW, LMUL = num/den, VLMAX (contract section 3; ELEN 64)
+    task automatic vconf(input [63:0] vt, output ok, output integer sew, output integer num, output integer den, output integer vmax);
+        integer vs, vlmul;
+        begin
+            ok = 1; vs = vt[5:3]; vlmul = vt[2:0];
+            if (vt[63] || vt[62:8] != 0 || vs > 3 || vlmul == 4) ok = 0;
+            sew = 8 << vs;
+            if (vlmul < 4) begin num = 1 << vlmul; den = 1; end else begin num = 1; den = 1 << (8 - vlmul); end
+            if (den > 1 && sew > 64 / den) ok = 0;
+            vmax = num * VLEN / (den * sew);
+            if (!ok) begin sew = 0; num = 1; den = 1; vmax = 0; end
+        end
+    endtask
+    // Element i (EEW eew bits) of the group starting at register r.
+    function automatic [63:0] vget(input integer r, input integer i, input integer eew);
+        integer b;
+        reg [VLEN-1:0] w;
+        begin
+            b = i * eew; w = vreg[(r + b / VLEN) % 32] >> (b % VLEN);
+            vget = eew == 64 ? w[63:0] : w[63:0] & ((64'd1 << eew) - 1);
+        end
+    endfunction
+    task automatic vput(input integer r, input integer i, input integer eew, input [63:0] val);
+        integer b, rr, o;
+        reg [VLEN-1:0] m, dv;
+        begin
+            b = i * eew; rr = (r + b / VLEN) % 32; o = b % VLEN;
+            m = 0; m[63:0] = eew == 64 ? ~64'd0 : (64'd1 << eew) - 1;
+            dv = 0; dv[63:0] = val & m[63:0];
+            vreg[rr] = (vreg[rr] & ~(m << o)) | (dv << o);
+        end
+    endtask
+    function automatic vbit(input integer r, input integer i);
+        vbit = vreg[r][i];
+    endfunction
+    function automatic [63:0] vbox(input [31:0] x); vbox = {32'hffffffff, x}; endfunction
+    // One FP32 vector element: {fflags, result}. f6 = funct6, r1 = the vs1 field (unary forms),
+    // a = vs2[i], b = vs1[i] or f[rs1], d = vd[i]; rm resolved. Compares return the bit in result[0].
+    function automatic [36:0] v_fe(input [5:0] f6, input [4:0] r1, input [31:0] a, input [31:0] b, input [31:0] d, input [2:0] rm);
+        /* verilator no_inline_task */
+        reg [68:0] t;
+        reg [63:0] x, y, z;
+        reg [4:0] fop;
+        reg [2:0] r;
+        reg raw, inv;
+        begin
+            // One fp_exec call site (Verilator build time): choose the operation and operands first.
+            raw = 0; inv = 0; r = rm; x = vbox(a); y = vbox(b); z = 64'b0; fop = FOP_ADD;
+            case (f6)
+                6'h00: fop = FOP_ADD;
+                6'h02: fop = FOP_SUB;
+                6'h27: begin fop = FOP_SUB; x = vbox(b); y = vbox(a); end
+                6'h24: fop = FOP_MUL;
+                6'h20: fop = FOP_DIV;
+                6'h21: begin fop = FOP_DIV; x = vbox(b); y = vbox(a); end
+                6'h04: fop = FOP_MIN;
+                6'h06: fop = FOP_MAX;
+                6'h08, 6'h09, 6'h0a: raw = 1;
+                6'h28, 6'h29, 6'h2a, 6'h2b, 6'h2c, 6'h2d, 6'h2e, 6'h2f: begin
+                    // vfmadd family: vs1 * vd + vs2; vfmacc family: vs1 * vs2 + vd. Negations (np, nc):
+                    // madd/macc (0,0), nmadd/nmacc (1,1), msub/msac (0,1), nmsub/nmsac (1,0).
+                    x = vbox(b); y = vbox(f6 < 6'h2c ? d : a); z = vbox(f6 < 6'h2c ? a : d);
+                    fop = f6[1:0] == 2'd0 ? FOP_MADD : f6[1:0] == 2'd1 ? FOP_NMADD : f6[1:0] == 2'd2 ? FOP_MSUB : FOP_NMSUB;
+                end
+                6'h18: fop = FOP_EQ;
+                6'h19: fop = FOP_LE;
+                6'h1b: fop = FOP_LT;
+                6'h1c: begin fop = FOP_EQ; inv = 1; end
+                6'h1d: begin fop = FOP_LT; x = vbox(b); y = vbox(a); end
+                6'h1f: begin fop = FOP_LE; x = vbox(b); y = vbox(a); end
+                6'h12: begin
+                    y = 64'b0;
+                    case (r1)
+                        5'd0: fop = FOP_CVT_WU;
+                        5'd1: fop = FOP_CVT_W;
+                        5'd2: begin fop = FOP_CVT_FWU; x = {32'b0, a}; end
+                        5'd3: begin fop = FOP_CVT_FW; x = {32'b0, a}; end
+                        5'd6: begin fop = FOP_CVT_WU; r = 3'd1; end
+                        default: begin fop = FOP_CVT_W; r = 3'd1; end
+                    endcase
+                end
+                6'h13: begin y = 64'b0; fop = r1 == 0 ? FOP_SQRT : FOP_CLASS; end
+                default: raw = 1;
+            endcase
+            t = raw ? 69'b0 : fp_exec(fop, 1'b0, r, x, y, z);
+            if (raw) t[31:0] = f6 == 6'h08 ? ((a & 32'h7fffffff) | (b & 32'h80000000)) :
+                               f6 == 6'h09 ? ((a & 32'h7fffffff) | (~b & 32'h80000000)) : (a ^ (b & 32'h80000000));
+            if (inv) t[63:0] = {63'b0, !t[0]};
+            v_fe = {t[68:64], t[31:0]};
+        end
+    endfunction
+    // RVV-CONTRACT.md section 7 record helpers
+    task automatic vrec_c(input [11:0] csr, input [63:0] val);
+        begin if (vr_cn < 3) begin vr_csr[vr_cn] = csr; vr_cval[vr_cn] = val; vr_cn = vr_cn + 2'd1; end end
+    endtask
+`endif
     // Source readiness in the issue queue.
     function rdy1(input integer kk);
         rdy1 = (prf_ready[iq_ps1[kk]] && (OFF_LAT == 0 || iq_off1[kk] == 0 || iq_cls[kk] == C_LD ||
@@ -1613,6 +1820,11 @@ module rv64_core #(
             for (i = 0; i < NAR; i = i + 1) begin rat[i] = i; rrat[i] = i; rat_off[i] = 0; rrat_off[i] = 0; end
             for (i = 0; i < PRF_N; i = i + 1) refcnt[i] = i < NAR ? 1 : 0;
             rt_rdfp <= 0; rt_ff <= 0; rt_csrw <= 0; csr_busy = 0;
+`ifdef RV64_OOO_V
+            for (i = 0; i < 32; i = i + 1) vreg[i] = 0;
+            vtype = 64'h8000000000000000; vl = 0; vstart = 0; vxsat = 0; vxrm = 0; v_busy = 0; rb_vec = 0; rb_vref = 0;
+            vx_st = 0; vx_wv = 0; vr_vn = 0; vr_cn = 0; rt_vec <= 0; rt_vtrap <= 0; vemax_r = VE_MAX; vlen_r = VLEN;
+`endif
             pv_ok = 0; rb_viol = 0; mdp_wait = 0; rb_live = 0; rb_done = 0; rb_head = 0; rb_tail = 0; rb_count = 0;
             iq_valid = 0; iq_issued = 0; ex_valid = 0; mq_valid = 0; dv_busy = 0; fq_valid = 0; fd_gap = 0; fcsr = 0; lw_valid = 0; rb_ans = 0; l0_v = 0; l0_p = 0; ld_lat_now = LD_LAT;
             ic_valid = 0; dc_valid = 0; btb_valid = 0; btb_ret = 0; ras_sp = 0; vp_valid = 0; lp_valid = 0; lp_dir = 0; tg_v = 0; tg_alt = 8; tg_age = 0; tg_ap = 0; f_gh = 0; r_gh = 0; tq_cnt = 0; tq_h = 0;
@@ -1625,6 +1837,9 @@ module rv64_core #(
             rt_valid <= 0; rt_pc <= 0; rt_insn <= 0; rt_rd <= 0; rt_data <= 0; rt_next <= 0;
         end else if (!halted) begin
             retire_valid <= 0; retire2_valid <= 0; retire3_valid <= 0; rt_valid <= 0; rt_rdfp <= 0; rt_csrw <= 0;
+`ifdef RV64_OOO_V
+            rt_vec <= 0;
+`endif
             if (!started) started = 1;
             fe_clk = fe_clk + 1;
             // ================= bus completion =================
@@ -1776,6 +1991,10 @@ module rv64_core #(
                         if (s == 0 && bus_kind == 0 && !split_out(1'b0)) begin
                             trap_now = 1;
                             trap_pc <= rb_pc[e]; trap_cause <= rb_cause[e]; trap_tval <= rb_tval[e];
+`ifdef RV64_OOO_V
+                            rt_vtrap <= rb_vec[e]; rt_vb <= vr_vb; rt_vn <= vr_vn; rt_cn <= vr_cn;
+                            rt_vcsr <= {vr_csr[2], vr_csr[1], vr_csr[0]}; rt_vcval <= {vr_cval[2], vr_cval[1], vr_cval[0]};
+`endif
                         end
                         stop = 1;
                     end else if (rb_store[e]) begin
@@ -1912,6 +2131,13 @@ module rv64_core #(
                 if (rb_fencei[e]) ic_valid = 0;
                 if (FPU != 0 && rb_csrw[e]) begin fcsr = rb_csrv[e]; rt_csrw[s] <= 1; rt_csrv[8*s +: 8] <= rb_csrv[e]; end
                 if (FPU != 0 && rb_live[e] && rb_insn[e][6:0] == 7'h73 && rb_insn[e][14:12] != 0) csr_busy = 0;
+`ifdef RV64_OOO_V
+                if (rb_vec[e]) begin
+                    v_busy = 0; rt_vec <= 1; rt_vb <= vr_vb; rt_vn <= vr_vn; rt_cn <= vr_cn;
+                    rt_vcsr <= {vr_csr[2], vr_csr[1], vr_csr[0]}; rt_vcval <= {vr_cval[2], vr_cval[1], vr_cval[0]};
+                    rb_vec[e] = 0; rb_vref[e] = 0;
+                end
+`endif
                 rb_live[e] = 0; rb_done[e] = 0;
             end
             // A retired store wrote the beat of a younger fetched instruction: refetch
@@ -2254,6 +2480,306 @@ module rv64_core #(
                 f_pc = mp_fix; f_err = 0; f_hold = 0; if (bus_hold == 1) f_stale = 1;
             end
             rb_head = h_after;
+`ifdef RV64_OOO_V
+            // ---- vector unit (RV64_OOO_V, council simd): the vector instruction at the ROB head.
+            // It renamed into an empty ROB and nothing younger renames before it retires, so it is
+            // never squashed: it writes the vector registers and memory as it goes (a load element
+            // as it arrives, a store element per bus write), which is what element-precise faults need.
+            if (!rflush && !mp_any && rb_count_new != 0 && rb_live[rb_head] && rb_vec[rb_head] && !rb_done[rb_head]) begin : vunit
+                reg [31:0] vins;
+                reg vbad, vfin, vflt, vkeep, vact, vhit, vdone_el;
+                reg [4:0] vcause;
+                reg [63:0] vtval, vaddr, vbeat_d, vel;
+                integer vkind, vsrcs, vk, vlo, vw, vcnt2, vsz;
+                reg vallb, vnoov;
+                e = rb_head; vins = rb_insn[e];
+                vbad = 0; vfin = 0; vflt = 0; vcause = 0; vtval = 0;
+                vf3_ = vins[14:12]; vrd_ = vins[11:7]; vrs1_ = vins[19:15]; vvs2_ = vins[24:20]; vvm_ = vins[25]; vf6_ = vins[31:26];
+                // Scalar sources: everything older has retired, so the retirement map holds them.
+                xs1_ = vrs1_ == 0 ? 64'b0 : prf[rrat[vrs1_]] + rrat_off[vrs1_];
+                xs2_ = vvs2_ == 0 ? 64'b0 : prf[rrat[vvs2_]] + rrat_off[vvs2_];
+                fsv_ = prf[rrat[{1'b1, vrs1_}]];
+                vconf(vtype, vok, vsew, vnum, vden, vlmax);
+                vlm = vnum / vden; if (vlm < 1) vlm = 1;
+                if (vx_st == 2'd0) begin
+                    vr_vn = 0; vr_cn = 0; vx_fl = 0; vx_res = 0; vx_cnt = 1;
+                    if (vins[6:0] == 7'h57 && vf3_ == 3'd7) begin
+                        // vsetvli / vsetivli / vsetvl (contract section 3)
+                        if (!vins[31]) vt_ = {53'b0, vins[30:20]};
+                        else if (vins[31:30] == 2'b11) vt_ = {54'b0, vins[29:20]};
+                        else if (vins[30:25] == 6'd0) vt_ = xs2_;
+                        else vbad = 1;
+                        if (!vbad) begin : vset_blk
+                            reg okn; integer s2, n2, d2, m2;
+                            vconf(vt_, okn, s2, n2, d2, m2);
+                            vkeep = vins[31:30] != 2'b11 && vrs1_ == 0 && vrd_ == 0;
+                            if (!okn || (vkeep && (!vok || vlmax != m2))) begin vtype = 64'h8000000000000000; vl = 0; end
+                            else begin
+                                avl_ = vins[31:30] == 2'b11 ? {59'b0, vrs1_} : vrs1_ != 0 ? xs1_ : vrd_ != 0 ? ~64'd0 : vl;
+                                vtype = vt_; vl = avl_ < m2 ? avl_ : m2;
+                            end
+                            vrec_c(12'hc20, vl); vrec_c(12'hc21, vtype); vx_res = vl; vfin = 1;
+                            // vset* ends with vstart = 0 (RVV 1.0 section 3.7); the record only when it was non-zero
+                            if (vstart != 0) begin vstart = 0; vrec_c(12'h008, 64'b0); end
+                        end
+                    end else if (vins[6:0] == 7'h73) begin
+                        // Zicsr on the vector CSRs (vstart, vxsat, vxrm, vcsr, vl, vtype, vlenb)
+                        case (vins[31:20])
+                            12'h008: vold_ = vstart; 12'h009: vold_ = {63'b0, vxsat}; 12'h00a: vold_ = {62'b0, vxrm};
+                            12'h00f: vold_ = {61'b0, vxrm, vxsat}; 12'hc20: vold_ = vl; 12'hc21: vold_ = vtype;
+                            default: vold_ = VLENB;
+                        endcase
+                        va_ = vf3_[2] ? {59'b0, vrs1_} : xs1_;
+                        vnew_ = vf3_[1:0] == 2'd1 ? va_ : vf3_[1:0] == 2'd2 ? (vold_ | va_) : (vold_ & ~va_);
+                        if (vf3_[1:0] == 2'd1 || vrs1_ != 0) begin
+                            case (vins[31:20])
+                                12'h008: begin vstart = vnew_ & (VLEN - 1); vrec_c(12'h008, vstart); end
+                                12'h009: begin vxsat = vnew_[0]; vrec_c(12'h009, {63'b0, vxsat}); end
+                                12'h00a: begin vxrm = vnew_[1:0]; vrec_c(12'h00a, {62'b0, vxrm}); end
+                                12'h00f: begin vxsat = vnew_[0]; vxrm = vnew_[2:1]; vrec_c(12'h00f, {61'b0, vxrm, vxsat}); end
+                                default: vbad = 1;    // vl, vtype, vlenb are read-only
+                            endcase
+                        end
+                        vx_res = vold_; vfin = 1;
+                    end else if (vins[6:0] == 7'h07 || vins[6:0] == 7'h27) begin
+                        // Loads and stores: set up the element loop (contract section 6).
+                        vx_load = vins[6:0] == 7'h07; vx_vd = vrd_; vx_vm = vvm_;
+                        vx_eewb = vf3_ == 3'd0 ? 1 : vf3_ == 3'd5 ? 2 : vf3_ == 3'd6 ? 4 : 8;
+                        vx_base = xs1_; vx_stride = vx_eewb; vx_whole = 0; vx_mtail = 0; vx_ff = 0; vx_regs = 1;
+                        if (vins[28]) vbad = 1;                                   // mew
+                        else if (vins[27:26] == 2'd0 && vvs2_ == 5'd8) begin      // whole registers
+                            vx_whole = 1; vx_regs = vins[31:29] + 1; vx_vm = 1;
+                            if (!(vx_regs == 1 || vx_regs == 2 || vx_regs == 4 || vx_regs == 8) || !vvm_ || (!vx_load && vf3_ != 3'd0)) vbad = 1;
+                            else if (vx_vd % vx_regs != 0) vbad = 1;
+                            vx_evl = vx_regs * VLEN / (8 * vx_eewb);
+                        end else if (vins[31:29] != 0 || !vok) vbad = 1;          // segments; vill
+                        else if (vins[27:26] == 2'd0 && vvs2_ == 5'd11) begin     // vlm.v / vsm.v
+                            if (vf3_ != 3'd0 || !vvm_) vbad = 1;
+                            vx_evl = (vl + 7) / 8; vx_mtail = 1;
+                        end else if ((vins[27:26] == 2'd0 && vvs2_ != 5'd0 && vvs2_ != 5'd16) || (vins[27:26] == 2'd0 && vvs2_ == 5'd16 && !vx_load))
+                            vbad = 1;
+                        else if (vins[27:26] == 2'd1 || vins[27:26] == 2'd3) vbad = 1;   // indexed: a later step
+                        else begin
+                            // EMUL = EEW / SEW * LMUL, from 1/8 to 8 (emul_regs)
+                            vn2 = 8 * vx_eewb * vnum; vd2 = vsew * vden;
+                            if (vn2 * 8 < vd2 || vn2 > 8 * vd2) vbad = 1;
+                            else begin vx_regs = vn2 / vd2; if (vx_regs < 1) vx_regs = 1; end
+                            if (!vbad && vx_vd % vx_regs != 0) vbad = 1;
+                            if (vins[27:26] == 2'd2) vx_stride = xs2_;
+                            vx_ff = vx_load && vins[27:26] == 2'd0 && vvs2_ == 5'd16;
+                            vx_evl = vl;
+                        end
+                        if (!vbad && vx_load && !vx_vm && vx_vd == 0) vbad = 1;
+                        if (!vbad) begin vx_st = 2'd1; vx_i = vstart; vx_start = vstart; vx_wv = 0; end
+                    end else if (vins[6:0] == 7'h57 && (vf3_ == 3'd1 || vf3_ == 3'd5)) begin
+                        // FP32 vector arithmetic (vec_ref.vfp)
+                        vvf_ = vf3_ == 3'd5;
+                        vfs_ = fsv_[63:32] == 32'hffffffff ? fsv_[31:0] : 32'h7fc00000;
+                        frm_now = fcsr[7:5];
+                        vkind = -1; vsrcs = vvf_ ? 1 : 2; vallb = 0; vnoov = 0;
+                        if (!vok || vsew != 32 || frm_now > 3'd4 || vstart != 0) vbad = 1;
+                        else case (vf6_)
+                            6'h00, 6'h02, 6'h24, 6'h20, 6'h04, 6'h06, 6'h08, 6'h09, 6'h0a,
+                            6'h28, 6'h29, 6'h2a, 6'h2b, 6'h2c, 6'h2d, 6'h2e, 6'h2f: vkind = 0;
+                            6'h27, 6'h21: if (vvf_) vkind = 0;
+                            6'h18, 6'h19, 6'h1b, 6'h1c: vkind = 1;
+                            6'h1d, 6'h1f: if (vvf_) vkind = 1;
+                            6'h17: if (vvf_) begin
+                                       if (vvm_) begin if (vvs2_ == 0) begin vkind = 0; vsrcs = 0; end end
+                                       else begin vkind = 0; vallb = 1; end
+                                   end
+                            6'h10: if (!vvf_) begin if (vrs1_ == 0 && vvm_) vkind = 3; end
+                                   else if (vvs2_ == 0 && vvm_) vkind = 4;
+                            6'h12: if (!vvf_ && (vrs1_ <= 5'd3 || vrs1_ == 5'd6 || vrs1_ == 5'd7)) begin vkind = 0; vsrcs = 1; end
+                            6'h13: if (!vvf_ && (vrs1_ == 5'd0 || vrs1_ == 5'd16)) begin vkind = 0; vsrcs = 1; end
+                            6'h0e: if (vvf_) begin vkind = 0; vnoov = 1; end
+                            6'h0f: if (vvf_) vkind = 0;
+                            6'h01, 6'h03, 6'h05, 6'h07: if (!vvf_) vkind = 2;
+                            default: vkind = -1;
+                        endcase
+                        if (!vbad && vkind < 0) vbad = 1;
+                        if (!vbad && vkind == 0) begin
+                            // vector destination: group alignment, v0 with a mask, overlap
+                            if (vrd_ % vlm != 0 || (!vvm_ && vrd_ == 0)) vbad = 1;
+                            if (vsrcs >= 1 && vvs2_ % vlm != 0) vbad = 1;
+                            if (vsrcs >= 2 && vrs1_ % vlm != 0) vbad = 1;
+                            if (vnoov && vrd_ < vvs2_ + vlm && vvs2_ < vrd_ + vlm) vbad = 1;
+                            if (!vbad && vl != 0) begin
+                                vtv = 0;
+                                for (vk = 0; vk < vemax_r; vk = vk + 1) if (vk < vl && (vallb || vvm_ || vbit(0, vk))) begin
+                                    vtv[vk] = 1;
+                                    if (vf6_ == 6'h17) vtmp[vk] = (vvm_ || vbit(0, vk)) ? vfs_ : vget(vvs2_, vk, 32);
+                                    else if (vf6_ == 6'h0e) vtmp[vk] = vk == 0 ? vfs_ : vget(vvs2_, vk - 1, 32);
+                                    else if (vf6_ == 6'h0f) vtmp[vk] = vk == vl - 1 ? vfs_ : vget(vvs2_, vk + 1, 32);
+                                    else begin
+                                        vfr_ = v_fe(vf6_, vrs1_, vget(vvs2_, vk, 32), vvf_ ? vfs_ : vget(vrs1_, vk, 32), vget(vrd_, vk, 32), frm_now);
+                                        vtmp[vk] = vfr_[31:0]; vx_fl = vx_fl | vfr_[36:32];
+                                    end
+                                end
+                                for (vk = 0; vk < vemax_r; vk = vk + 1) begin
+                                    if (vk < vl) begin
+                                        if (vtv[vk]) vput(vrd_, vk, 32, {32'b0, vtmp[vk]});
+                                        else if (vtype[7]) vput(vrd_, vk, 32, 64'hffffffff);
+                                    end else if (vk < vlm * VLEN / 32 && vtype[6]) vput(vrd_, vk, 32, 64'hffffffff);
+                                end
+                                vr_vb = vrd_; vr_vn = vlm;
+                            end
+                        end
+                        if (!vbad && vkind == 1) begin
+                            // mask destination
+                            if (vvs2_ % vlm != 0 || (vsrcs >= 2 && vrs1_ % vlm != 0)) vbad = 1;
+                            if (vlm > 1 && vrd_ != vvs2_ && vrd_ >= vvs2_ && vrd_ < vvs2_ + vlm) vbad = 1;
+                            if (vsrcs >= 2 && vlm > 1 && vrd_ != vrs1_ && vrd_ >= vrs1_ && vrd_ < vrs1_ + vlm) vbad = 1;
+                            if (!vbad && vl != 0) begin
+                                vtv = 0;
+                                for (vk = 0; vk < vemax_r; vk = vk + 1) if (vk < vl && (vvm_ || vbit(0, vk))) begin
+                                    vfr_ = v_fe(vf6_, vrs1_, vget(vvs2_, vk, 32), vvf_ ? vfs_ : vget(vrs1_, vk, 32), 32'b0, frm_now);
+                                    vtv[vk] = 1; vtmp[vk] = {31'b0, vfr_[0]}; vx_fl = vx_fl | vfr_[36:32];
+                                end
+                                for (vk = 0; vk < vlen_r; vk = vk + 1) begin
+                                    if (vk < vl) begin
+                                        if (vk < VE_MAX && vtv[vk]) vreg[vrd_][vk] = vtmp[vk][0];
+                                        else if (vtype[7]) vreg[vrd_][vk] = 1'b1;
+                                    end else vreg[vrd_][vk] = 1'b1;
+                                end
+                                vr_vb = vrd_; vr_vn = 1;
+                            end
+                        end
+                        if (!vbad && vkind == 2) begin
+                            // reductions: vd[0] = op(vs1[0], active elements of vs2) (contract section 5)
+                            if (vvs2_ % vlm != 0) vbad = 1;
+                            else if (vl != 0) begin
+                                vin_ = vget(vrs1_, 0, 32); vmask_any = 0;
+                                for (vk = 0; vk < vemax_r; vk = vk + 1) begin
+                                    vtv[vk] = vk < vl && (vvm_ || vbit(0, vk));
+                                    vtmp[vk] = vget(vvs2_, vk, 32);
+                                    if (vtv[vk]) vmask_any = 1;
+                                end
+                                if (vmask_any) begin
+                                    if (vf6_ == 6'h01) begin
+                                        // vfredusum: the fixed pairwise tree on element indices
+                                        for (vw = 1; vw < vemax_r; vw = vw * 2)
+                                            for (vlo = 0; vlo + vw < vemax_r; vlo = vlo + 2 * vw) begin
+                                                if (!vtv[vlo]) begin vtv[vlo] = vtv[vlo + vw]; vtmp[vlo] = vtmp[vlo + vw]; end
+                                                else if (vtv[vlo + vw]) begin
+                                                    vfr_ = v_fe(6'h00, 5'd0, vtmp[vlo], vtmp[vlo + vw], 32'b0, frm_now);
+                                                    vtmp[vlo] = vfr_[31:0]; vx_fl = vx_fl | vfr_[36:32];
+                                                end
+                                            end
+                                        vfr_ = v_fe(6'h00, 5'd0, vin_, vtmp[0], 32'b0, frm_now);
+                                        vin_ = vfr_[31:0]; vx_fl = vx_fl | vfr_[36:32];
+                                    end else begin
+                                        for (vk = 0; vk < vemax_r; vk = vk + 1) if (vtv[vk]) begin
+                                            vfr_ = v_fe(vf6_ == 6'h03 ? 6'h00 : vf6_ == 6'h05 ? 6'h04 : 6'h06, 5'd0, vin_, vtmp[vk], 32'b0, frm_now);
+                                            vin_ = vfr_[31:0]; vx_fl = vx_fl | vfr_[36:32];
+                                        end
+                                    end
+                                end
+                                vput(vrd_, 0, 32, {32'b0, vin_});
+                                if (vtype[6]) for (vk = 1; vk < vlen_r / 32; vk = vk + 1) vput(vrd_, vk, 32, 64'hffffffff);
+                                vr_vb = vrd_; vr_vn = 1;
+                            end
+                        end
+                        if (!vbad && vkind == 3) begin vel = vget(vvs2_, 0, 32); vx_res = {32'hffffffff, vel[31:0]}; end   // vfmv.f.s
+                        if (!vbad && vkind == 4 && vl != 0) begin                                       // vfmv.s.f
+                            vput(vrd_, 0, 32, {32'b0, vfs_});
+                            if (vtype[6]) for (vk = 1; vk < vlen_r / 32; vk = vk + 1) vput(vrd_, vk, 32, 64'hffffffff);
+                            vr_vb = vrd_; vr_vn = 1;
+                        end
+                        vfin = !vbad;
+                        vx_cnt = v_lat(vf6_, vrs1_, vl);
+                    end else vbad = 1;                    // integer, mask-logical, permute: later steps
+                    if (vbad) begin
+                        vr_vn = 0; vr_cn = 0; vx_fl = 0; vx_st = 2'd0;
+                        rb_done[e] = 1; rb_exc[e] = 1; rb_cause[e] = 2; rb_tval[e] = {32'b0, vins};
+                    end else if (vfin) vx_st = 2'd2;
+                end else if (vx_st == 2'd1) begin
+                    // One memory element per clock, in element order.
+                    vsz = vx_eewb;
+                    vdone_el = 0;
+                    // a store element's write completes this clock
+                    if (!vx_load && vx_wv && bus_kind == 3 && mem_ready) begin
+                        vx_wv = 0;
+                        if (mem_error) begin vflt = 1; vcause = 7; vtval = vx_base + vx_i * vx_stride; end
+                        else begin
+                            // write-through effects of a retiring store (copied from retirement)
+                            if (dc_line(vx_waddr) >= 0)
+                                for (vk = 0; vk < 8; vk = vk + 1)
+                                    if (vx_wstrb[vk]) dc_data[dc_line(vx_waddr)][8*vk +: 8] = vx_wdata[8*vk +: 8];
+                            fi = vx_waddr[3 +: IC_INDEX];
+                            if (ic_valid[fi] && ic_tag[fi] == vx_waddr[63 -: IC_TAG]) ic_valid[fi] = 0;
+                            if (fb_valid && fb_beat[63:3] == vx_waddr[63:3])
+                                for (vk = 0; vk < 8; vk = vk + 1) if (vx_wstrb[vk]) fb_data[8*vk +: 8] = vx_wdata[8*vk +: 8];
+                            if (SPLIT && mu_valid && mu_sent && mu_beat[63:3] == vx_waddr[63:3]) mu_stale = 1;
+                            for (vk = 1; vk < PM_N; vk = vk + 1)
+                                if (SPLIT && pm_valid[vk] && pm_sent[vk] && pm_beat[vk][63:3] == vx_waddr[63:3]) pm_stale[vk] = 1;
+                            vx_i = vx_i + 1;
+                        end
+                    end
+                    if (!vflt && !vx_wv) begin
+                        // skip inactive elements (not accessed, cannot fault)
+                        while (vx_i < vx_evl && !(vx_whole || vx_mtail || vx_vm || vbit(0, vx_i))) vx_i = vx_i + 1;
+                        if (vx_i >= vx_evl) vdone_el = 1;
+                        else begin
+                            vaddr = vx_base + vx_i * vx_stride;
+                            if ((vaddr & (vsz - 1)) != 0) begin vflt = 1; vcause = vx_load ? 4 : 6; vtval = vaddr; end
+                            else if (vx_load) begin
+                                vhit = dc_line(vaddr) >= 0 || (fb_valid && fb_beat[63:3] == vaddr[63:3]);
+                                if (vhit) begin
+                                    vbeat_d = dc_line(vaddr) >= 0 ? dc_data[dc_line(vaddr)] : fb_data;
+                                    vel = vbeat_d >> {vaddr[2:0], 3'b000};
+                                    vput(vx_vd, vx_i, 8 * vsz, vel);
+                                    if (fb_lock && fb_owner == e) fb_lock = 0;
+                                    if (mu_owner_v && mu_owner == e) mu_owner_v = 0;
+                                    vx_i = vx_i + 1;
+                                end else if (mu_errv && mu_err_owner == e && mu_err_beat[63:3] == vaddr[63:3]) begin
+                                    mu_errv = 0;
+                                    vflt = 1; vcause = 5; vtval = vaddr;
+                                end else if (!mu_valid && !fb_lock) begin
+                                    // the oldest instruction's miss: entry 0
+                                    mu_valid = 1; mu_beat = {vaddr[63:3], 3'b000}; mu_errv = 0; mu_owner = e; mu_owner_v = 1; mu_sent = 0; mu_stale = 0;
+                                end
+                            end else begin
+                                vel = vget(vx_vd, vx_i, 8 * vsz);
+                                vx_wv = 1; vx_waddr = {vaddr[63:3], 3'b000}; vx_wdata = vel << {vaddr[2:0], 3'b000};
+                                vx_wstrb = (vsz == 1 ? 8'h01 : vsz == 2 ? 8'h03 : vsz == 4 ? 8'h0f : 8'hff) << vaddr[2:0];
+                            end
+                        end
+                    end
+                    if (vflt && vx_ff && vx_i > 0) begin
+                        // fault-only-first: vl becomes the faulting index, no trap
+                        vflt = 0; vl = vx_i; vx_evl = vx_i; vrec_c(12'hc20, vl); vdone_el = 1;
+                    end
+                    if (vflt) begin
+                        // element-precise trap: completed elements stay, vstart = the faulting index
+                        if (vx_load && vx_i > vx_start) begin vr_vb = vx_vd; vr_vn = vx_regs; end
+                        if (vx_i != 0) begin vstart = vx_i; vrec_c(12'h008, vstart); end
+                        rb_done[e] = 1; rb_exc[e] = 1; rb_cause[e] = {59'b0, vcause}; rb_tval[e] = vtval; vx_st = 2'd0;
+                    end else if (vdone_el) begin
+                        if (vx_start != 0) vrec_c(12'h008, 64'b0);
+                        vstart = 0;
+                        if (vx_load && (vx_start < vx_evl || vx_whole)) begin
+                            // inactive body elements (mask agnostic) and the tail
+                            for (vk = vx_start; vk < vx_evl; vk = vk + 1)
+                                if (!(vx_whole || vx_mtail || vx_vm || vbit(0, vk)) && vtype[7]) vput(vx_vd, vk, 8 * vsz, ~64'd0);
+                            if (vx_mtail) for (vk = vx_evl; vk < vlen_r / 8; vk = vk + 1) vput(vx_vd, vk, 8, 64'hff);
+                            else if (!vx_whole && vtype[6]) for (vk = vx_evl; vk < vx_regs * VLEN / (8 * vsz); vk = vk + 1) vput(vx_vd, vk, 8 * vsz, ~64'd0);
+                            vr_vb = vx_vd; vr_vn = vx_regs;
+                        end
+                        rb_done[e] = 1; rb_exc[e] = 0; rb_fflags[e] = 0; vx_st = 2'd0;
+                    end
+                end else begin
+                    // finishing: the result latency, then the scalar destination
+                    if (vx_cnt > 1) vx_cnt = vx_cnt - 1;
+                    else begin
+                        if (rb_writes[e]) begin
+                            prf_late[rb_pdst[e]] = !prf_ready[rb_pdst[e]]; prf[rb_pdst[e]] = vx_res; prf_written[rb_pdst[e]] = 1; prf_ready[rb_pdst[e]] = 1;
+                        end
+                        rb_value[e] = vx_res; rb_done[e] = 1; rb_exc[e] = 0; rb_fflags[e] = vx_fl; vx_st = 2'd0;
+                    end
+                end
+            end
+`endif
 
             // ---- rename and dispatch (not in a clock that recovered)
             d_redirect = 0; n_ren = 0;
@@ -2263,7 +2789,11 @@ module rv64_core #(
                 for (k = 0; k < IQ_N; k = k + 1) if (!iq_valid[k] && nfi < FW) begin fiq[nfi] = k; nfi = nfi + 1; end
                 for (k = 1; k < PRF_N; k = k + 1) if (free_mask[k] && nfp < FW) begin fpl[nfp] = k; nfp = nfp + 1; end
                 for (s = 0; s < FW; s = s + 1) if (!stop) begin
+`ifdef RV64_OOO_V
+                    if (s >= q_count || (FE_DEPTH > 0 && q_t[(q_head + s) % Q_N] >= fe_clk) || (FPU != 0 && csr_busy) || v_busy) stop = 1;
+`else
                     if (s >= q_count || (FE_DEPTH > 0 && q_t[(q_head + s) % Q_N] >= fe_clk) || (FPU != 0 && csr_busy)) stop = 1;
+`endif
                     else begin
                         j = (q_head + s) % Q_N;
                         wi = q_insn[j]; wpc = q_pc[j]; isfault = q_fault[j];
@@ -2275,8 +2805,18 @@ module rv64_core #(
                         if (FPU != 0) begin ard_ = {fdst_, rd_}; ars1_ = {fs1_, rs1_}; ars2_ = {fs2_, rs2_}; ars3_ = {1'b1, wi[31:27]}; end
                         else begin ard_ = rd_; ars1_ = rs1_; ars2_ = rs2_; ars3_ = 0; end
                         csr_ = FPU != 0 && !isfault && op == 7'h73 && f3_ != 0 && f3_ != 3'd4 && wi[31:22] == 0 && wi[21:20] != 0;
+`ifdef RV64_OOO_V
+                        isv_ = !isfault && (op == 7'h57 || ((op == 7'h07 || op == 7'h27) && (f3_ == 3'd0 || f3_ >= 3'd5)) ||
+                               (op == 7'h73 && f3_ != 0 && f3_ != 3'd4 && (wi[31:20] == 12'h008 || wi[31:20] == 12'h009 ||
+                                wi[31:20] == 12'h00a || wi[31:20] == 12'h00f || wi[31:20] == 12'hc20 || wi[31:20] == 12'hc21 || wi[31:20] == 12'hc22)));
+                        vfd_ = isv_ && op == 7'h57 && f3_ == 3'd1 && wi[31:26] == 6'h10;
+                        if (isv_) ard_ = {vfd_, rd_};
+`endif
                         writes_ = !isfault && ard_ != 0 && (fpw_ || csr_ || op == 7'h37 || op == 7'h17 || op == 7'h6f || op == 7'h67 ||
                                   op == 7'h13 || op == 7'h1b || op == 7'h33 || op == 7'h3b || op == 7'h03);
+`ifdef RV64_OOO_V
+                        if (isv_) writes_ = ard_ != 0 && ((op == 7'h57 && f3_ == 3'd7) || op == 7'h73 || vfd_);
+`endif
                         uses1_ = !(op == 7'h37 || op == 7'h17 || op == 7'h6f);
                         uses2_ = op == 7'h33 || op == 7'h3b || op == 7'h63 || op == 7'h23 || u2fp_;
                         // Prediction check (what D did in the earlier cores).
@@ -2348,7 +2888,11 @@ module rv64_core #(
                         // Resources: ROB entry, issue-queue entry, physical register.
                         slot_ok = ui < nfi; slot = fiq[ui % FW];
                         fp_ok = up < nfp; fp = fpl[up % FW];
+`ifdef RV64_OOO_V
+                        if (((csr_ || isv_) && (s != 0 || rb_count_new != 0)) || rb_count_new >= ROB_N || (!isfault && !done_ && !isv_ && !slot_ok) || (writes_ && !elim_ && !fp_ok)) stop = 1;
+`else
                         if ((csr_ && (s != 0 || rb_count_new != 0)) || rb_count_new >= ROB_N || (!isfault && !done_ && !slot_ok) || (writes_ && !elim_ && !fp_ok)) stop = 1;
+`endif
                         else begin
                             sa = simple_alu(wi, 64'b0, 64'b0, 64'b0);
                             cls_ = (op == 7'h03 || fpld_) ? C_LD : (op == 7'h23 || fpst_) ? C_ST : fpop_ ? C_FP : sa[66] ? C_ALU : C_FULL;
@@ -2361,6 +2905,9 @@ module rv64_core #(
                             rb_bhit[e] = q_bhit[j]; rb_bctr[e] = q_bctr[j]; rb_rsp[e] = q_rsp[j]; rb_rtos[e] = q_rtos[j]; rb_gh[e] = q_gh[j]; rb_tp[e] = q_tp[j];
                             rb_li[e] = q_li[j]; rb_lp[e] = op == 7'h63 && !isfault; rb_ld[e] = tkp;
                             rb_fence[e] = op == 7'h0f && f3_ == 3'd0 && !isfault;
+`ifdef RV64_OOO_V
+                            rb_vec[e] = isv_; rb_vref[e] = isv_ && op == 7'h27;
+`endif
                             rb_opdst[e] = rat[ard_]; rb_pdst[e] = writes_ ? (elim_ ? ep_ : fp) : 0;
                             rb_elim[e] = elim_; rb_off[e] = eoff;
                             if (done_) begin
@@ -2388,7 +2935,11 @@ module rv64_core #(
                                 prf[fp] = vp_val[vpi]; prf_written[fp] = 1; prf_ready[fp] = 1; prf_late[fp] = 1;
                             end
                             if (op == 7'h63 || op == 7'h67) for (i = 0; i < NAR; i = i + 1) begin snap[e][i] = rat[i]; snap_off[e][i] = rat_off[i]; end
+`ifdef RV64_OOO_V
+                            if (!isfault && !done_ && !isv_) begin
+`else
                             if (!isfault && !done_) begin
+`endif
                                 iq_valid[slot] = 1; iq_issued[slot] = 0; iq_slp[slot] = 0; iq_wany[slot] = 0; iq_cls[slot] = cls_; iq_rob[slot] = e;
                                 iq_pc[slot] = wpc; iq_insn[slot] = wi; iq_ps1[slot] = ps1_; iq_ps2[slot] = ps2_;
                                 iq_pdst[slot] = writes_ ? fp : 0; iq_writes[slot] = writes_;
@@ -2405,9 +2956,16 @@ module rv64_core #(
                             pv_ok = !isfault && cls_ == C_ALU && writes_ && !cur_fz && !done_ && o1_ == 0 && o2_ == 0;
                             pv_rd = ard_; pv_insn = wi; pv_pc = wpc; pv_a = ps1_; pv_b = ps2_;
                             rb_tail = rb_tail + 1; rb_count_new = rb_count_new + 1; n_ren = n_ren + 1;
+`ifdef RV64_OOO_V
+                            if (!isfault && !done_ && !isv_) ui = ui + 1;
+`else
                             if (!isfault && !done_) ui = ui + 1;
+`endif
                             if (writes_ && !elim_) up = up + 1;
                             if (csr_) begin csr_busy = 1; stop = 1; end
+`ifdef RV64_OOO_V
+                            if (isv_) begin v_busy = 1; stop = 1; end
+`endif
                             if (d_want != q_pred[j] || (TG_N != 0 && op == 7'h63 && !isfault && (br_now ? bt_ : tkp) != q_fpred[j])) begin
                                 d_redirect = 1; d_redirect_pc = d_want; d_redirect_sp = q_rsp[j]; d_redirect_tos = q_rtos[j];
                                 d_redirect_gh = op == 7'h63 ? {q_gh[j][GH_L-2:0], br_now ? bt_ : tkp} : q_gh[j]; stop = 1;

@@ -1141,6 +1141,9 @@ def main():
     parser.add_argument('--core', choices=sorted(CORES), default='multicycle', help='Core implementation to test')
     parser.add_argument('--fpu', action='store_true',
                         help='ooo core: build with RV64F/D (define RV64_OOO_FPU) and add the F/D cases (golden model fp=True)')
+    parser.add_argument('--vector', action='store_true',
+                        help='ooo core: build with the RVV subset (define RV64_OOO_V; implies --fpu) and add the vector cases (golden model vector=True)')
+    parser.add_argument('--vlen', type=int, choices=(128, 256, 512), default=256, help='with --vector: VLEN (define RV64_OOO_VLEN)')
     parser.add_argument('--n-miss', type=int, default=1,
                         help='Out-of-order core: data misses in flight (N_MISS; above 1, split reads in tb_core)')
     parser.add_argument('--core-source', type=Path,
@@ -1181,8 +1184,9 @@ def main():
     if args.l0:
         if args.core != 'ooo' or args.ld_lat is None or args.ld_lat < 3: parser.error('--l0 needs the ooo core and --ld-lat >= 3')
         lat += [f'RV64_OOO_L0_N={args.l0}', f'RV64_OOO_L0_LAT={args.l0_lat}']
-    if args.fpu and args.core != 'ooo': parser.error('--fpu applies to the ooo core')
-    wide += lat + (['RV64_OOO_FPU'] if args.fpu else [])
+    if args.vector: args.fpu = True   # vector FP uses the F state
+    if args.fpu and args.core != 'ooo': parser.error('--fpu (and --vector) apply to the ooo core')
+    wide += lat + (['RV64_OOO_FPU'] if args.fpu else []) + (['RV64_OOO_V', f'RV64_OOO_VLEN={args.vlen}'] if args.vector else [])
     executable = sim.build('tb_core', [core_src, ROOT / 'sim/cpu/tb_core.sv'], OUT / 'cpu.vvp',
                            params=cache, defines=wide, timeout=limit)
     sim.elaborate('rv64_bram_soc', [core_src, ROOT/'rtl/cpu/rv64_bram_soc.sv'], OUT/'soc.vvp',
@@ -1208,6 +1212,10 @@ def main():
             parser.error('--shard and --merge-shards exclude each other and --image')
         shard = shard_of(parser, args.shard) if args.shard else None
         workloads = shard_select(workloads, *shard, args.fpu) if shard else []
+    if args.vector:
+        # RVV step 1 (simd): directed and random programs in the implemented subset.
+        import vec_step1_cases
+        workloads += [(name,fp_cases.image_for(words),kind,addr) for name,words,kind,addr in vec_step1_cases.cases(args.vlen, 100)]
     if args.image:
         data = args.image.read_bytes()
         if len(data)>16384: raise ValueError('Firmware exceeds laboratory RAM')
@@ -1219,7 +1227,7 @@ def main():
     iss_fp = iss_fp_check(workloads) if args.fpu else None   # rv_iss --fp 1 against the golden model
     for name, image, kind, address in workloads:
         final = {}
-        expected, covered = execute(image, 3 if kind == 4 else kind, address, fp=args.fpu, state=final)  # kind 4: store faults once
+        expected, covered = execute(image, 3 if kind == 4 else kind, address, fp=args.fpu, **({'vector': True, 'vlen': args.vlen} if args.vector else {}), state=final)  # kind 4: store faults once
         if name == 'compiled_firmware':
             if 'W 0000000000003000 0000000000000024 ff' not in expected:
                 raise AssertionError('Compiled firmware did not produce the known sum 36')
@@ -1311,7 +1319,7 @@ def main():
         for outcome in ('taken','not_taken'):
             if branch_name+':'+outcome not in coverage: raise AssertionError('Missing branch outcome')
     report={'status':'PASS','cases':len(workloads),'runs':len(records),'iss_fp_check':iss_fp,'instruction_names_covered':len(required),
-            'core':args.core,'fpu':args.fpu,'ld_lat':args.ld_lat or 1,'l0_n':args.l0 or 0,'l0_lat':args.l0_lat if args.l0 else None,'core_source':str(args.core_source) if args.core_source else CORES[args.core],
+            'core':args.core,'fpu':args.fpu,'vector':args.vector,'vlen':args.vlen if args.vector else None,'ld_lat':args.ld_lat or 1,'l0_n':args.l0 or 0,'l0_lat':args.l0_lat if args.l0 else None,'core_source':str(args.core_source) if args.core_source else CORES[args.core],
             'icache_beats':args.icache_beats or 'tb_core default (512)','dcache_beats':args.dcache_beats or 'tb_core default (512)',
             'reset_test':reset_result,'bram_soc_tests':soc_results,
             'coverage':sorted(coverage),'validation_scope':'local directed/random differential simulation; no official ISA certification or synthesis',

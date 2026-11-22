@@ -118,6 +118,9 @@ def main():
     knobs.add_argument('--l0-lat', type=int, help='L0 hit latency in clocks: define RV64_OOO_L0_LAT (0.15.4)')
     knobs.add_argument('--fpu', action='store_true',
                        help='Build with RISC-V F and D: define RV64_OOO_FPU (0.17.0); integer programs run unchanged')
+    knobs.add_argument('--vector', action='store_true',
+                       help='Build with the RVV subset: define RV64_OOO_V (implies --fpu); programs without vector instructions run unchanged')
+    knobs.add_argument('--vlen', type=int, choices=(128, 256, 512), help='With --vector: define RV64_OOO_VLEN (default 256)')
     knobs.add_argument('--n-miss', type=int, default=1,
                        help='Data misses in flight: core and SoC parameter N_MISS (0.16.0; above 1, split data reads)')
     simulator.add_argument(parser)
@@ -162,8 +165,11 @@ def main():
                                    'sampled: --sample-pieces pieces per call (default 4) from rv_iss checkpoints')
     args = parser.parse_args()
     # Core knobs as Verilog defines for the out-of-order builds (timing and trace benches alike).
+    if args.vlen and not args.vector: parser.error('--vlen needs --vector')
+    if args.vector: args.fpu = True   # vector FP uses the F state
     args.ooo_knobs = {'RV64_OOO_LD_LAT': args.ld_lat, 'RV64_OOO_L0_N': args.l0, 'RV64_OOO_L0_LAT': args.l0_lat}
     args.ooo_defines = [f'{k}={v}' for k, v in args.ooo_knobs.items() if v is not None] + (['RV64_OOO_FPU'] if args.fpu else [])
+    args.ooo_defines += (['RV64_OOO_V'] + ([f'RV64_OOO_VLEN={args.vlen}'] if args.vlen else [])) if args.vector else []
     if args.ooo_defines and args.core != 'ooo':
         parser.error('--ld-lat, --l0, --l0-lat and --fpu apply to --core ooo only')
     if args.n_miss != 1 and (args.core != 'ooo' or not 1 <= args.n_miss <= 8):
@@ -351,7 +357,8 @@ def main():
             'core_source': args.core_source or core_file,
             'cache_beats': {'icache': args.icache_beats, 'dcache': args.dcache_beats},
             'memory_model': {k.lower(): v for k, v in memory_model.items()} |
-                            {'ld_lat': args.ld_lat, 'l0_n': args.l0, 'l0_lat': args.l0_lat, 'fpu': args.fpu},
+                            {'ld_lat': args.ld_lat, 'l0_n': args.l0, 'l0_lat': args.l0_lat, 'fpu': args.fpu,
+                             'vector': args.vector, 'vlen': (args.vlen or 256) if args.vector else None},
             'rtl_sha256': {p.relative_to(snap).as_posix(): sha(p) for p in rtl},
             'platform': f'rv64_bram_soc, {ram_bytes // 1024} KiB synchronous RAM, no added wait cycles in the timing run',
             'hardware': f'none ({sim.label} simulation)',

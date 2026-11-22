@@ -78,6 +78,15 @@ module tb_core #(parameter integer MEM_BYTES=16384, parameter integer ICACHE_BEA
     // +max_retired=N (benchmark checkpoint pieces): stop once N instructions have
     // retired, closing the trace without a trap line. Off by default.
     integer max_retired=0,image_bin=0;
+`ifdef RV64_OOO_V
+    reg [63:0] vqa [0:4095]; reg [63:0] vqd [0:4095]; reg [7:0] vqs [0:4095];   // W records of the vector store in flight
+    integer vqn=0, vk;
+    reg [7:0] vrn; reg [11:0] vcn;
+    // The write capture runs at posedge, the edge on which the core may clear vx_wv; so it uses the value
+    // sampled at the previous negedge (stable there), whatever the order of the posedge processes.
+    reg vx_wv_q=0;
+    always @(negedge clk) vx_wv_q = dut.vx_wv;
+`endif
     reg [31:0] rng;
     reg [63:0] fault_addr=64'hffffffffffffffff;
     reg active=0,held=0;
@@ -145,9 +154,18 @@ module tb_core #(parameter integer MEM_BYTES=16384, parameter integer ICACHE_BEA
                     else if (pending_write4!="") begin $fdisplay(fd,"%s",pending_write4); pending_write4=""; end
                 end
 `ifdef RV64_OOO_FPU
+`ifdef RV64_OOO_V
+                if (q==0 && dut.rt_vec) begin for (vk=0;vk<vqn;vk=vk+1) $fdisplay(fd,"W %016h %016h %02h",vqa[vk],vqd[vk],vqs[vk]); vqn=0; end
+`endif
                 // F/D (FP-CONTRACT.md 7): flags raised, a written fcsr, then R with rd 0x20+n for f registers.
                 if (dut.rt_ff[5*q +: 5] != 0) $fdisplay(fd,"F %02h",{3'b0,dut.rt_ff[5*q +: 5]});
                 if (dut.rt_csrw[q]) $fdisplay(fd,"C 003 %016h",{56'b0,dut.rt_csrv[8*q +: 8]});
+`ifdef RV64_OOO_V
+                if (q==0 && dut.rt_vec) begin
+                    for (vk=0;vk<dut.rt_cn;vk=vk+1) begin vcn=dut.rt_vcsr[12*vk +: 12]; $fdisplay(fd,"C %03h %016h",vcn,dut.rt_vcval[64*vk +: 64]); end
+                    for (vk=0;vk<dut.rt_vn;vk=vk+1) begin vrn=dut.rt_vb+vk; $fdisplay(fd,"V %02h %h",vrn,dut.vreg[vrn]); end
+                end
+`endif
                 $fdisplay(fd,"R %016h %08h %02h %016h %016h",rtpc[64*q +: 64],rtinsn[32*q +: 32],
                           {2'b0,dut.rt_rdfp[q],rtrd[5*q +: 5]},rtdata[64*q +: 64],rtnext[64*q +: 64]);
 `else
@@ -202,6 +220,13 @@ module tb_core #(parameter integer MEM_BYTES=16384, parameter integer ICACHE_BEA
                 if (pending_write2!="") $fdisplay(fd,"%s",pending_write2);
                 if (pending_write3!="") $fdisplay(fd,"%s",pending_write3);
                 if (pending_write4!="") $fdisplay(fd,"%s",pending_write4);
+`ifdef RV64_OOO_V
+                if (dut.rt_vtrap) begin
+                    for (vk=0;vk<vqn;vk=vk+1) $fdisplay(fd,"W %016h %016h %02h",vqa[vk],vqd[vk],vqs[vk]); vqn=0;
+                    for (vk=0;vk<dut.rt_vn;vk=vk+1) begin vrn=dut.rt_vb+vk; $fdisplay(fd,"V %02h %h",vrn,dut.vreg[vrn]); end
+                    for (vk=0;vk<dut.rt_cn;vk=vk+1) begin vcn=dut.rt_vcsr[12*vk +: 12]; $fdisplay(fd,"C %03h %016h",vcn,dut.rt_vcval[64*vk +: 64]); end
+                end
+`endif
                 $fdisplay(fd,"T %016h %016h %016h",tpc,cause,tval);
                 $fclose(fd);
 `ifdef RV64_OOO_FPU
@@ -301,6 +326,10 @@ module tb_core #(parameter integer MEM_BYTES=16384, parameter integer ICACHE_BEA
                         if (sp_v[sp_k] && (sp_beat[sp_k]==addr[63:3] || (wstrb2!=0 && sp_beat[sp_k]==addr2[63:3]) ||
                             (xwstrb[7:0]!=0 && sp_beat[sp_k]==xaddr[63:3]) || (xwstrb[15:8]!=0 && sp_beat[sp_k]==xaddr[127:67])))
                             split_stale=split_stale+1;
+`endif
+`ifdef RV64_OOO_V
+                    if (vx_wv_q) begin vqa[vqn]=addr; vqd[vqn]=wdata; vqs[vqn]=wstrb; vqn=vqn+1; end
+                    else
 `endif
                     $sformat(pending_write,"W %016h %016h %02h",addr,wdata,wstrb);
                     for (lane=0;lane<8;lane=lane+1)
