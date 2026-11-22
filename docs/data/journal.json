@@ -2426,6 +2426,21 @@
      "kind": "output"
     },
     {
+     "time": "06:49:37",
+     "text": "**Bandwidth:** **second harness collision**: the rev-2 rerun with --jobs 1 failed at lzma-64k (`FileNotFoundError ... checkpoints/piece004-words.hex`) while other agents' suites used the same native scratch (23 processes on ~/.cache/rv64-suite). Stopped, my WSL children killed by cwd, rerun with `--no-native-scratch` (BOARD 06:50; fixed on main at 171fe1e, scratch per tree and run, and copied into bw/wta, bw/wt190, bw/wtc). Per the coordinator, the bench steps of the 06:33 run are suspect and are superseded by the next row; its test steps stand.",
+     "kind": "output"
+    },
+    {
+     "time": "06:50:08 to ~07:00",
+     "text": "**Bandwidth:** **(a) rev 2, bench-smoke + soc, no native scratch: PASS 12 of 12** (`python -B sim/cpu/suite.py bench-smoke soc --jobs 1 --no-native-scratch --who bandwidth --out-dir build/suite/a2-rp --expect sim/cpu/baselines/0.17.2-release-patch.json` in bw/wta = cpu-v0.19.0 + `bw/a-delay64-on-0190.diff`; Verilator 5.020, clang 23.1.5 images). lzma-64k 384,788 / 133,243, lzma-4k 974,219 / 153,238, dhry-ref 15,706, dhry-fast 10,127, lzma-64k-fpu and dhry-*-fpu identical: **all \"same as baseline\"**; soc-memory 11 checks (the 9 earlier plus the two new boundary cases); soc-btb-reach 8 of 8. With the test steps of the 06:33 run (isa, fpu, vector at both cache sizes PASS), this is the release-patch evidence for (a) at the default configuration. The deciding-configuration identity (L2 on, WRITE_FILL 0 and 1, candidate against the tag) is running.",
+     "kind": "output"
+    },
+    {
+     "time": "07:00:24 to 07:17:00",
+     "text": "**Bandwidth:** **(a) deciding-configuration identity against the tag** (`bw/a-dec.sh`: `python -B sim/cpu/suite.py bench-smoke --only 'build:*,dhry-ref,lzma-64k' --jobs 1 --no-native-scratch --who bandwidth --ld-lat 4 --l0 16 --l2-kib 4096 --l2-lat 20 --mem-lat 350 --n-miss 4 --mem-gap 8 --write-fill 0|1`, in bw/wta = candidate and bw/wt190 = cpu-v0.19.0, main's suite.py 171fe1e copied into both after the first; Verilator 5.020). WRITE_FILL 0: candidate and tag both lzma-64k 604,503 / 705,828 / 229,974 / 230,763 and Dhrystone 25,609 cycles. WRITE_FILL 1 (write fills book DRAM starts): both 604,927 / 736,447 / 236,148 / 236,937 and 25,609. **Bit-exact with the L2 on, at both WRITE_FILL settings.** (a) is ready: `bw/a-delay64-on-0190.diff` (sha256 05c7df23a188), text `bw/architecture-delay64.md`.",
+     "kind": "output"
+    },
+    {
      "time": "04:20",
      "text": "**Prefetch decisions** (coordinator, on `build/research/prefetch.md`). Why there is none: three tries were measured where they couldn't pay off (13:11 I-prefetch on flat memory; 19:16 split-channel I-prefetch, superseded by the I-line plan; 21:25 next-line plus PC-stride, parked because BT4's hash and son loads are random); the streaming benchmarks that need one only arrived at 03:03-03:40. Offline: a 16-line L2 stream prefetcher covers 100% of mm GEMV and ternary DRAM misses at accuracy 1.00; nothing reaches d22 compress misses (stream +2.5%, SMS, Markov and DMP worse or polluting). **Surprise:** a zero-RTL perfect-L2 stand-in (MEM_LAT 21) gives d22 compress **-57.6%** (12 pieces), so d22 compress is DRAM-latency bound but not prefetchable. That gap belongs to L2 capacity (docket 6) and to more misses in flight; N_MISS 8 at d22 is the next cheap bound (bandwidth engineer). Docket: D1, the L2 stream prefetcher, refines item 11 (bandwidth engineer; 16 streams x 16 lines, MEM_GAP-charged; expected mm -75 to -84%, T-2B4T -60 to -75%, decompress -8 to -10%); D3 keeps I lines plus next-line, with next-line sent with the demand miss (middle); D4, FDIP, is new as item 12 (front end, after items 7-10); D5, L1D per-PC stride on 64 B lines, is new as item 13, low priority (middle, after dline). Rejected with data: SMS, Markov, DMP (also the GoFetch side channel); Zicbop parked.",
      "kind": ""
@@ -2928,6 +2943,171 @@
     {
      "time": "06:43",
      "text": "Six research agents spawned at the user's request, from the user's RTL gap list (privilege/traps, MMU, atomics, C extension, CSRs, S-mode, memory ordering, full RVV, misaligned access, counters, other RVA23). Topics and outputs, all read-only outside their own folder, each building on build/research/rv64gc-linux.md, cpu/PRIV-CONTRACT.md and the rv_iss --sys work, each verifying the 'missing' claims against the RTL first: (1) privilege, traps, CSRs and S-mode, build/research/priv-rtl.md; (2) MMU, TLBs and PMP/PMA, mmu-rtl.md; (3) A extension and RVWMO ordering, atomics-rtl.md; (4) C extension in a 32-wide front end and misaligned access, rvc-misaligned.md (Sonnet); (5) full RVV 1.0 and the RVA23 vector extensions, planned after step 2a, rvv-complete.md (Sonnet); (6) Zicntr/Zihpm/Sscofpmf and a full RVA23U64/S64 gap audit, counters-rva23.md (Sonnet). Middle engineer at 06:43: fusion PATCH on 0.19.0 under test, core 83feecfdaeaf, unused pv_* registers removed and the suite restarted. The S3 tree on top of fusion is s3f, core 2027a47f0603, with a line_fault_once_adopted test and a mutant, dbdcc262d021.",
+     "kind": ""
+    },
+    {
+     "time": "06:51",
+     "text": "**C extension and misaligned access research report** (Sonnet research agent; build/research/rvc-misaligned.md, raw data in build/research/rvc-misaligned/results.txt). Today in rv64_ooo.sv: no C decoder (a PC with bit 1 set gives cause 0), a misaligned load or store gives cause 4 or 6, and there is no mtvec. RVA23U64 mandates Zca, Zcd, Zcb, Zcmop and Zicclsm. Zama16b is an RVA23 development option, not mandatory. Measured with clang 23.1.5 rv64im with and without c (ISS sizes and byte counts, not cycles): Dhrystone text 3,996 -> 3,034 B (-24.1%), dynamic bytes -28.2%; 7-Zip d12 text 54,704 -> 41,172 B (-24.7%), dynamic bytes -22.1%. 51-56% of 32-bit instructions sit at PC mod 4 = 2, and 3-14% cross a 64 B line. No public 32-wide C decoder was found. Recommendation: misaligned first (M0 models and tests, M1 MINOR in-line beat crossing), then C in several steps, after ITTAGE and IWAYS, because both touch predictor indexing. Coordinator: accepted onto the docket in that order, with nothing started. Open questions go to the user: trap emulation versus hardware for Zicclsm, and whether compressed code must decode at full width.",
+     "kind": ""
+    },
+    {
+     "time": "06:52",
+     "text": "**Counters and RVA23 audit research report** (Sonnet research agent; build/research/counters-rva23.md and the notes events.md, audit.md, plan.md; read-only, nothing simulated). rv64_ooo.sv has no counters and only fflags/frm/fcsr (FPU builds). rv_iss --sys has Zicntr, with hpm CSRs reading 0. The trace profile has no mispredict, miss, MSHR or stall data. Hints (Zihintpause, Zihintntl, Zicbop) already execute but are undeclared; pause is a serialising FENCE. Zicond and Zimop are one decode away. Zkt conflicts with value prediction of mul. The isa-roadmap version numbers are stale (it plans 0.19.0 as Zicond). Recommended order, one version each: hints declared and tested; Zicond MINOR; Zimop MINOR; read-only cycle/time/instret with the N trace record MINOR; event bus plus testbench counters, default off; then Zihpm and Sscofpmf after the privilege CSR file. Coordinator decisions: accepted onto the docket in that order. The lockstep cycle value uses the N record. time uses the lab model until the ACLINT step. A ROB drain per rdcycle is acceptable for now. The event bus is a PATCH if it adds no port and changes no architectural behaviour, otherwise a MINOR. Making pause a no-op is a later PATCH. Zkt is decided after the cost of excluding mul from value prediction is measured. None of these is assigned yet, pending the other four research reports.",
+     "kind": ""
+    },
+    {
+     "time": "06:53",
+     "text": "**Full RVV research report** (Sonnet research agent; build/research/rvv-complete.md, static scripts in build/research/rvv-complete/). In the RTL, RV64_OOO_V executes vset*, the vector CSRs, ld/st and FP32 arithmetic. Every integer, mask, permute, reduction, indexed and segment instruction, and every FP SEW other than 32, raises cause 2. The contract and vec_ref.py already define the integer, mask, permute, reduction and indexed groups. rv_iss.c has no vector support. Static counts, clang 23.1.5 -O2 -march=rv64gcv on our bench sources: 3,245 vector instructions over 116 mnemonics; only 157 of the 460 functions with vector code would run on step 1. The top blockers are vmv.v.*/vmerge (258 functions), vector-scalar moves (60), extends (46) and the integer ALU (42). RVA23 mandates V, Zvfhmin, Zvbb and Zvkt. Zvkt requires data-independent latency in the integer vector pipes, so there must be no value prediction or early-out there. Recommended order after 2a: 2b (integer ALU, vmv/vmerge, compare, mask, extends, scalar moves); 2c (mul, div, slides, vrgather, vcompress, reductions, with a DIEL timing test from here on); 2d (indexed); then widening, Zvbb, fixed point, segments, FP64, Zvfhmin and the VS state. Coordinator decisions: (a) executing an instruction that used to raise cause 2 changes the ISA the core implements, so each coverage step is a MINOR, even when the contract already defines it, and 2a stays a PATCH; (b) the RTL lockstep oracle for vector work is a vector mode in rv_iss, carried over from build/cpu/fp/rv_iss_fp.c with provenance, with Spike as the independent second oracle, and both go on the docket before 2b; (c) 2b-2d are re-scoped against the real 2a RTL once it lands, and the opcode count is re-run dynamically then.",
+     "kind": ""
+    },
+    {
+     "time": "06:59 to 07:00",
+     "text": "**Suite harness fix: per-run native folder** (from a hazard the middle engineer reported at 06:59). native_wrap used one WSL-native folder, ~/.cache/rv64-suite/<path in tree>, for every tree. So concurrent suites in different worktrees shared build/suite/bench/<image> and overwrote each other's source snapshots and results. The middle's fu190 suite saw dhry-ref fail with FileNotFoundError on a deleted snapshot, and lzma-64k gave the baseline numbers in 87 s, likely another tree's run. Fix in sim/cpu/suite.py: NS = ~/.cache/rv64-suite/run-<sha256(tree root, run out-dir)[:16]>, and run folders older than 12 h are pruned. Check: `python -B sim/cpu/suite.py release-patch --only dhry-fast,lzma-4k --jobs 2` (06:58 to 06:59) 4/4 PASS, 10,127 cycles and 974,219 / 153,238 as the baseline, written under run-3d8b1dceb2115ae2. No version bump, since this is a test-harness change. Exposure: the 0.19.0 release check, build/suite/20261122-061542 (06:15:42 to 06:28:40), overlapped no other suite. The previous one, frontend wt180b g2off, ended 06:15:00 and the next started 06:32:39, so the 0.19.0 evidence stands. Suspect, with bench steps to rerun: frontend ittage1, c1_off, iways4, iways2 and iways4-4; bandwidth a-rp; middle fu; and coordinator wt14 sl-* if it has bench steps.",
+     "kind": ""
+    },
+    {
+     "time": "07:00 to 07:03",
+     "text": "**Worktree registrations lost and restored** (system-mode engineer's report). At about 07:00 .git/worktrees disappeared: git worktree list showed only main, and git failed inside every worktree. By 07:02:10 to 07:02:26 the 36 entries were back; the restorer is not identified, likely an agent running git worktree repair. Likely cause: WSL git sees the C:/... worktree paths as missing and lists every tree as prunable (checked: in WSL, git worktree list marked them prunable), so a git worktree prune, or a gc, run from WSL git removes them all. Not confirmed which command ran. Prevention by the coordinator in the repository's local git config and worktree metadata: `git config gc.worktreePruneExpire never`, and `git worktree lock` on all 36 worktrees, with a reason. A WSL `git worktree prune --dry-run -v` now prunes nothing. Rule for agents: never run git worktree prune or gc from WSL. Removing a worktree now needs `git worktree unlock` first. Files in the trees were not lost; the system-mode engineer moved item 14 to the fresh tree wt14b at 171fe1e.",
+     "kind": ""
+    },
+    {
+     "time": "06:45-06:47",
+     "text": "(atomics research agent, entered by the coordinator from build/research/atomics-rtl.md section 16) Probe of A/FENCE/Zawrs/CBO encodings on all three cores, commit `3679932`, rtl/ unmodified|WSL: `python3 -B build/research/atomics-rtl/probe/probe.py ooo`, then `... pipe multicycle`|Icarus Verilog 12.0, Python 3.12.3, Ubuntu 24.04 (WSL)",
+     "kind": "Atomics, wrs.nto and cbo.zero raise cause 2; all FENCE forms and FENCE.I execute; all traces equal reference.py (probe/results.txt)"
+    },
+    {
+     "time": "06:53-06:55",
+     "text": "(atomics research agent, entered by the coordinator from build/research/atomics-rtl.md section 16) Static counts of atomics and fences in benchmark images and Linux lab images|grep over `build/cpu/bench/*/bench.disasm.txt`; `llvm-objdump-18 -d --no-show-raw-insn` on `/root/linux-lab/build-linux/vmlinux` and `build-busybox/busybox`|LLVM 18.1.3",
+     "kind": "Benchmarks 0/0; vmlinux 2,402 A and 366 FENCE static; busybox 78 A and 4 FENCE (boot-mix/static-counts.txt)"
+    },
+    {
+     "time": "06:56-06:57",
+     "text": "(atomics research agent, entered by the coordinator from build/research/atomics-rtl.md section 16) Dynamic instruction mix of the lab Linux boot on the model|WSL: `clang -O2 -std=c11 -Wall -Wextra -Werror -o /tmp/atomics-rtl/rv_iss sim/cpu/bench/rv_iss.c` (source sha256 prefix 5358af0b6fea94bf); `rv_iss --sys 1 --ram 67108864 --elf .../out/fw_payload.elf --dtb .../out/lab-virt.dtb --uart-in uart-in.txt --max 400000000 --uart-out console.txt --commit-log clog.fifo` with `boot-mix/count.c` reading the FIFO|clang 18.1.3 (WSL)",
+     "kind": "44,049,836 instructions, stop = finisher, exit 0, 13.4 s (3.29 MIPS with the commit log); A 129,811, FENCE 17,695, FENCE.I 107 (boot-mix/mix-lab-boot.txt). Model result, not RTL."
+    },
+    {
+     "time": "07:04",
+     "text": "**Atomics and memory-ordering research report** (atomics research agent; build/research/atomics-rtl.md, notes in atomics-rtl/). No core executes A: LR, SC and AMOs raise cause 2, as do wrs.nto and cbo.zero; every FENCE form and FENCE.I execute. The out-of-order core is RVWMO-compliant only as the single master: there is no snoop, and load value prediction would break address-dependency order with a second agent. A FENCE holds younger loads, including for fences with no read successor, which are 41% of Linux boot FENCEs. Benchmark images have 0 atomics and 0 fences; the model Linux boot has 0.295% atomics. RVA23U64 mandates A, Ziccrse, Ziccamoa, Za64rs and Zawrs. Zacas, Zabha and Zama16b are development options, and Ztso is not in the profile. Plan: A0 models and tests (no bump); A1 MINOR, LR/SC/AMO at the ROB head in the out-of-order core; A2 PATCH fence decode; A3 Zawrs; A4 PMA and IO; A5 snoop port with a second-agent testbench; A6 speculative ordering; A7 Zabha; A8 Zacas; A9 A in the pipelined core. Coordinator decisions: accepted onto the docket. A0 adds A to reference.py and user-mode rv_iss. Reservations use the exact address until snoops exist, and the core's own ordinary stores do not clear them, as in the current contract. Load value prediction stays, with its contribution to be measured before A5. Ztso is not advertised. Which core gets A first, and the herd7 install, wait for the privilege and MMU reports. Not yet assigned.",
+     "kind": ""
+    },
+    {
+     "time": "05:46 to 05:53",
+     "text": "(pipelining research agent, entered by the coordinator from build/research/pipelining.md section 7) **Pipelining research: set-up** (research agent, read-only). Read DEVLOG 2026-11-20/21 pipelining rows, BOARD 03:30, architecture 2/7/9, cpu-catalog, `rv64_ooo.sv` 0.18.0. Variants `build/research/pipelining/cores/{rel,fe0,fe4,fe8,fe12}.sv` (Q_N 512, FE_DEPTH 0/4/8/12; sha256 edc8b6fd / fcfdae1e / d8a42724 / 2c859135 / 199106c5). Failure: every `build/cpu/bench` image stale (\"Stale build: sim/cpu/bench/build_bench.py changed\"); used `build/suite/bench` dh/lz images and rebuilt rt/js (`build_bench.py --benchmark rt|js --isa rv64imfd_zba_zbb_zbs_zifencei`, Windows clang 23.1.5) into `build/research/pipelining/img/`",
+     "kind": "output"
+    },
+    {
+     "time": "05:54 to 06:59",
+     "text": "(pipelining research agent, entered by the coordinator from build/research/pipelining.md section 7) **Pipelining sweep on 0.18.0** (uncommitted copies; Verilator 5.020, Python 3.12.3, timeout 300 per run; 87 run_bench invocations counting js chunks and merges, 5 failed (rc 1: stale image, two post-change failures, a missing js-ref link in the worktree, a chunk-spec typo), 4 killed at 06:20 when the tree changed). Commands: `run_bench.py --core ooo --sim verilator --core-source cores/<v>.sv` with `--benchmark dhrystone --stalls 0`; `--benchmark lzma --no-differential --l2-kib 4096 --l2-lat 20 --mem-lat 350 --n-miss 4 --mem-gap 8`; `--benchmark rt --fpu --rt-mode full --no-differential`; `--benchmark js --fpu --js-mode sampled --sample-pieces 2 --no-differential --jobs 2 --pieces 0:6/6:12/12:18/merge`; knobs `--ld-lat N [--l0 16]`. Results (Dhry / 7z comp / decomp / RT-P / js clocks): R 15,706 / 604,503 / 229,974 / 1,946,967 / 51.69M; FE 0/4/8/12 at LD 4 + L0 16: 15,832-16,243; 604,490 / 668,494 / 738,357 / 808,670; 230,180 / 275,146 / 321,361 / 367,889; 1.99M-2.26M; 69.5M / 84.5M / 100.1M / 116.3M. Per FE stage: +0.22% / +2.8% / +5.0% / +1.1% / +5.6%. LD 4 without L0 vs LD 1: 7z +23% / +19%, js +50%. Apple-like A (FE 12, LD 3, no L0) vs R: +3.2% / +31.7% / +59.8% / +15.1% / +124% (js 0.829x -> 0.383x laptop per clock). Full table `build/research/pipelining.md` section 5",
+     "kind": "output"
+    },
+    {
+     "time": "06:15 to 06:22",
+     "text": "(pipelining research agent, entered by the coordinator from build/research/pipelining.md section 7) **Sweep disturbed by a tree change**: at 06:15:41 the main tree's SoC, tb_core and runners changed (another agent's uncommitted work); `dh-L3` then failed its trace check (corrupted trace line) and `js-F8 merge` rejected its pieces. Runs started after 06:15:41 discarded (`logs/after-0615/`) and rerun in a detached worktree at `fcef4ca` (SoC/tb_bench equal to `0796790`); identity reruns dh-F0 15,832 and lz-F4 668,494 / 275,146 matched; lz-L3 equal in both trees",
+     "kind": "output"
+    },
+    {
+     "time": "07:00 to 07:02",
+     "text": "(pipelining research agent, entered by the coordinator from build/research/pipelining.md section 7) **Mistake and repair:** `git worktree prune` run from WSL deleted the admin dirs of all 35 Windows-registered linked worktrees (WSL cannot resolve `C:/` paths). Recreated from Windows git (`build/research/pipelining/repair/restore.py`): `gitdir`, `commondir`, detached HEAD from a six-file match against all reachable commits (agrees with the pre-prune listing where known), then `git reset -q` per worktree (index rebuilt, files untouched). Owners of bw/wtdl, wtdlpf, wtmq (best match 4/6) should check `git status`. Rule: never prune worktrees from WSL here",
+     "kind": "output"
+    },
+    {
+     "time": "06:54 to 06:59",
+     "text": "(privilege research agent, entered by the coordinator from build/research/priv-rtl.md appendix) **Linux boot CSR and trap counts on the model**: three runs of `wsl -e bash -c` under timeout 290/200 of `rv_iss --sys 1 --ram 67108864 --elf build/third-party/linux-lab/out/fw_payload.elf --dtb lab-virt.dtb --uart-in build/research/priv-rtl/uart-in.txt --max 400000000 --trace /dev/stdout` (binary build/sys/rv_iss-5358af0b6fea94bf, repository 9984209, Python 3.12.3), piped to count_sys_events.py, count_csr_words.py and a cause 2/3 grep. All three ended 'reboot: Power down' at 44,049,836 instructions (27.7 s with tracing). Counts: 90,735 CSR instructions on 63 CSRs (sstatus 77,920 writes), 613 SRET, 43 MRET, 2,828 SFENCE.VMA, 597 exceptions, 60 interrupts. A drain on every CSR, xRET and trap gives 94,985 drains (2.16 per 1,000 instructions); the proposed CSR classes give 7,758 (0.18 per 1,000). There were 7 cause-2 traps and 1 cause-3 trap, all OpenSBI probes. These are model counts, not cycles or RTL.",
+     "kind": ""
+    },
+    {
+     "time": "07:05",
+     "text": "**Correction to the 07:02 worktree row**: the cause is now known. The pipelining research agent ran `git worktree prune` from WSL at 07:00 and itself rebuilt the 35 entries from Windows git at 07:01 to 07:02 with build/research/pipelining/repair/restore.py. Each detached HEAD was chosen by a six-file match against reachable commits, and each index was rebuilt with git reset -q; working files were untouched. In bw/wtdl, bw/wtdlpf and bw/wtmq only 4 of 6 files matched, so the bandwidth engineer must check those. The locks and gc.worktreePruneExpire=never stay.",
+     "kind": ""
+    },
+    {
+     "time": "07:05",
+     "text": "**Pipelining research report** (build/research/pipelining.md; simulation of 0.18.0, not hardware). Every model segment does in one clock what silicon needs 2-4 stages for: 32-wide fetch with 4 taken branches, 32-slot serial rename, select over 19 ports from 128 entries, and ROB-wide scans. Not charged: front-end depth (FE_DEPTH 0, a 2.7-clock redirect), rename and register-read stages, a checkpoint limit and fetch bandwidth. Sweep: each FE_DEPTH stage costs Dhrystone +0.22%, 7-Zip compress +2.8%, decompress +5.0%, js +5.6% clocks, linear to 12. Realistic config A (FE_DEPTH 12, LD_LAT 3, L0 off) against the published config: Dhrystone 18.12 -> 17.56 DMIPS/MHz; 7-Zip d12 compress 5.99 -> 4.55 and decompress 1.91 -> 1.19 MIPS/MHz; RT-T +53-78% and RT-P +15% clocks; js 63.8% -> 29.5% of goal. Proposed PATCH steps: FE_DEPTH/Q_N defines and a realistic suite preset, a MUL_LAT define, split decode and execute redirects, RR_LAT, N_SNAP, fetch bandwidth, partitioned IQs. Whether the realistic column decides goal status goes to the user. The first PATCH step is accepted onto the docket.",
+     "kind": ""
+    },
+    {
+     "time": "07:05",
+     "text": "**Privilege research report** (build/research/priv-rtl.md). The gap list is confirmed: the multicycle and pipelined cores have no Zicsr; the out-of-order core has only the FPU and vector CSRs, executed with the ROB empty; no core has privilege modes, trap CSRs, xRET, WFI, SFENCE.VMA or interrupt ports, and every trap is terminal. The precise ROB-head trap and rflush are reusable. rv_iss --sys hard-wires RV64GC M/S/U, so the rv64im+B cores need an --isa/--priv option there before lockstep. OpenSBI 1.9 probes seven optional CSRs that must raise cause 2 with tval. RVA23S64 needs H (Sha), so this work stays an 'S-mode + Sv39 Linux experiment' until H exists. Plan: P0 test-only (rv_iss --isa/--priv, tohost exit, a tb_core commit log, folded into docket item 14); P1 MINOR rv64_csr.sv on the multicycle core behind RV64_PRIV (M-mode CSRs, mtvec, MRET), exit rv64mi p and lockstep; then P2 out-of-order, P2b FS/VS, P3 Zicntr, P4 interrupts and WFI, P5 U, P6 S and delegation, P7 the sstatus fast path (PATCH), P9 Sstc/stateen/Ssnpm. Coordinator decisions: accepted, and P0 goes to the system-mode engineer as part of item 14. The out-of-order core follows the multicycle one. mcycle uses the N trace record, as decided for counters. mseccfg reads 0, as in PRIV-CONTRACT and Spike, until a field-adding extension, with the spec difference noted in the contract. misa B waits for a Spike check. A wfi_sleep port is accepted, as part of P4's MINOR. The sstatus fast path waits for kernel-window measurements. H stays out of scope. Atomics A1 goes on the out-of-order core and A9 on the pipelined core, as the atomics report planned.",
+     "kind": ""
+    },
+    {
+     "time": "07:07",
+     "text": "**User decision on the goal basis** (AskUserQuestion): 'Report both, current decides'. Goal status stays on the current, idealised deciding config. A realistic column (pipelining config A: FE_DEPTH 12, LD_LAT 3, L0 off, later MUL_LAT 3) is added for information only. So pipelining step 1, the FE_DEPTH/Q_N defines and a 'realistic' suite preset, stays a PATCH, and step 8, the MINOR that would make it decide, is dropped.",
+     "kind": ""
+    },
+    {
+     "time": "06:50 to 07:07",
+     "text": "(MMU research agent, entered by the coordinator from its report and build/research/mmu-rtl.md section 9; uncommitted, HEAD 9984209) **TLB model on ISS address streams**. tlbsim.h was built into a patched copy of rv_iss.c (sha 5358af0b) by patch.py, with Ubuntu clang 18.1.3 -O2 in WSL; smoke run on rt 10,208,721 instructions, rc 0, 0.36 s. A trace cross-check, scripts/check.sh, was abandoned because the reference trace has no load addresses. Self-test sdtest.c found two compaction bugs (a phantom entry, a partial Fenwick rebuild); after both fixes, 3,000,000 accesses gave 0 mismatches. Runs: scripts/run.sh js (29.4 s, rc 0) and d22 (169.6 s, rc 0, 4,009,020,650 instructions); d22-x925, d22-zen5 and d22-small in parallel (JSON complete, logs truncated because the runs were detached); d22-x925b (147.6 s, walk counts identical to d22-x925) and js-x925 (21.5 s). Final binary sha 564e3402, tlbsim.h 85d41d08. Results for d22 compress (9,684 data pages, 37.8 MiB), in misses per 1,000 instructions: 96-entry L1 DTLB 3.64; L2 TLB 2048 1.06, 4096 0.45, 8192 0.06; 64 KiB Svnapot with 1024 L2 entries 0.000; 2 MiB pages 0. Leaf PTE reads hit the L1D or L2 (60-80% in L2) and add about 19% to L2 reads. An 8-entry walk cache thrashes, and 32 entries is enough. 2-4 walkers suffice. d22 decompress, js and rt are under 0.01 walks per 1,000 instructions. These are functional-model counts, not RTL or timing.",
+     "kind": ""
+    },
+    {
+     "time": "07:10",
+     "text": "**MMU research report** (build/research/mmu-rtl.md). No core has an MMU, PMP or PMA; only rv_iss --sys has Sv39 + Svade, and the riscv-tests v environment has never been run. RVA23S64 mandates Sv39, Svade, Svnapot, Svpbmt, Svinval, Ssccptr, Sstvecd, Sstvala and Sha; PMP is not in any RVA23 profile. Upper-bound cost on d22 compress: X925-like TLBs about 8% clocks, Zen 5-like about 7%, small FPGA TLBs about 13%, 64 KiB pages about 2%, 2 MiB pages about 0%; other workloads under 0.3%. A VIPT note: our 128 KiB 2-way L1D has 16 page colours, so the model must assume translate-before-index. Plan: T0 test-only (riscv-tests v env, a paged bare-metal harness for 4 KiB/64 KiB/2 MiB pages on rv_iss --sys and Spike, a TLB-stress program); then a contract MINOR adopting Sv39 + Svade; then T1-T7 after the privilege stages. Coordinator decisions: accepted onto the docket, after privilege P1-P6. The 7-Zip rating stays bare-metal, per the user's 07:08 decision that the current config decides, and a paged column can later be added for information. The L1D stays a behavioural design point, with translate-before-index stated as a model assumption and no hardware claim. Lockstep: never cache faulting translations, plus a Spike-like flush knob for bring-up. T1 must reserve a split-read tag, or a slot, for page walks. Larger JS and ray-tracing images for translation studies are later.",
+     "kind": ""
+    },
+    {
+     "time": "03:05 to 03:10",
+     "text": "(frontend engineer, ITTAGE; entered by the coordinator from handoff-it/devlog-rows.md) **Front-end js probes, smoke** (frontend engineer): `fe_patch.py` JALR record/oracle probe; run_bench js `--core-source` probe cores, `--pieces 0:2 --sample-pieces 1 --warmup-instructions 200000`. First attempt: probe model core-dumped (8 MiB stack; `ulimit -s unlimited` in run.sh fixes it). Probe core = 0.17.2 clocks (19,198 / 19,776); oracle 15,046 / 12,486; 0 fetch-time target errors.",
+     "kind": "output"
+    },
+    {
+     "time": "03:10 to 03:30",
+     "text": "(frontend engineer, ITTAGE; entered by the coordinator from handoff-it/devlog-rows.md) **js bounds, flat, 0.17.2, 4 pieces per kernel (36, paired)** (`frontend/js/chunks.sh <v> <core> 36 6 --sample-pieces 4`, each invocation `timeout 300`, `--jobs 3`): base 49,358,203 clocks (57.2% of goal); perfect non-return JALR targets (two-pass oracle) 36,270,624 (-26.5%, 81.4%); RV64_OOO_IWAYS 4 38,755,305 (-21.5%, 72.5%); ITTAGE rev. 1 36,675,640 (-25.7%). Base: 40% of retired non-return JALRs had a wrong fetch-time target. Trace model (itmodel.py) on the recorded streams: last target 9.8 MPKI, 5-table ITTAGE 0.33.",
+     "kind": "output"
+    },
+    {
+     "time": "03:20 to 04:00",
+     "text": "(frontend engineer, ITTAGE; entered by the coordinator from handoff-it/devlog-rows.md) **js bounds, deciding config (2 per kernel, --warm-l2), 0.17.2**: base 188,759,975 (17.1%); oracle -9.5%; ITTAGE rev. 1 -9.2%; IWAYS 4 64,063,103 (**-66.1%**, 46.3%). One 3-piece chunk hit the 300 s limit and was split in halves.",
+     "kind": "output"
+    },
+    {
+     "time": "03:34 to 03:57",
+     "text": "(frontend engineer, ITTAGE; entered by the coordinator from handoff-it/devlog-rows.md) **FE_DEPTH 8 (Q_N 512) flat, 0.17.2, 4 per kernel**: base 69,975,902 (+41.8% over depth 0); ITTAGE rev. 1 37,634,525 (-46.2%); IWAYS 4 62,121,738 (-11.2%).",
+     "kind": "output"
+    },
+    {
+     "time": "03:41 to 03:47",
+     "text": "(frontend engineer, ITTAGE; entered by the coordinator from handoff-it/devlog-rows.md) **Codex review 1 of ITTAGE rev. 1**: bug: the 2-per-clock retirement limit was not mirrored in the store-write scan (a store could be written without retiring); confirmed by test_cpu --ittage (tb_core assertion) and by a new case. Also allocation and weak-fallback disagreements and test gaps. All fixed in rev. 2; second review 03:53-03:58 found them resolved, remaining risks stated (retirement re-reads the tables; policy differences; ports).",
+     "kind": "Codex"
+    },
+    {
+     "time": "03:59 to 04:06",
+     "text": "(frontend engineer, ITTAGE; entered by the coordinator from handoff-it/devlog-rows.md) **Coordinator item (c): BTB counters updated at execute** (probe, no rollback): js flat +0.01%, Dhrystone 15,706 / 10,127 identical. Dropped.",
+     "kind": "output"
+    },
+    {
+     "time": "04:19 to 04:44",
+     "text": "(frontend engineer, ITTAGE; entered by the coordinator from handoff-it/devlog-rows.md) **Item 3 bound: BTB_BITS 18** (no index aliasing in 1 MiB): js flat -1.6% at FE_DEPTH 0, **-4.3% at FE_DEPTH 8**. Goes ahead after ITTAGE and IWAYS.",
+     "kind": "output"
+    },
+    {
+     "time": "03:52 to 04:12",
+     "text": "(frontend engineer, ITTAGE; entered by the coordinator from handoff-it/devlog-rows.md) **ITTAGE rev. 2 checks on 0.17.4**: test_cpu without the define 402/402 traces and DONE lines identical to 0.17.4 at 512 and 2 beats; --ittage PASS at both; --ittage --fpu 690/690 at both; mutants (no path history; long tables disabled) FAIL the new timing checks (939 and 865 clocks, limit 600). Dhrystone 15,706 / 10,127 unchanged; 7-Zip d12 deciding 604,503 -> 603,520 / 229,974; rt full flat RT-T identical, RT-P -2 clocks.",
+     "kind": "output"
+    },
+    {
+     "time": "04:00 to 05:02",
+     "text": "(frontend engineer, ITTAGE; entered by the coordinator from handoff-it/devlog-rows.md) **ITTAGE rev. 2 js on 0.17.4, paired**: flat 8 per kernel 49,824,656 -> 37,263,000 (**-25.2%**, 56.7% -> 79.2% of goal; sched, navier, sha256 at the goal); flat FE_DEPTH 8 70,820,557 -> 38,250,343 (-46.0%, 39.8% -> 77.1%); deciding 8 per kernel 170,168,944 -> 149,245,710 (-12.3%, 18.8% -> 23.6%); deciding FE_DEPTH 8 (4 per kernel) 196,240,249 -> 156,120,389 (-20.4%).",
+     "kind": "output"
+    },
+    {
+     "time": "05:09 to 05:28",
+     "text": "(frontend engineer, ITTAGE; entered by the coordinator from handoff-it/devlog-rows.md) **Hand-off 1 rebased on cpu-v0.18.0** (wt180 = bf6abd0; handoff-it/apply.py rewritten with anchors, reproduces the tested core on 0.17.4 and 0.18.0): `suite.py release-patch fpu vector --core-source g1_off.sv --expect sim/cpu/baselines/0.17.2-release-patch.json` SUITE PASSED 16/16, every compared step the same as the baseline.",
+     "kind": "output"
+    },
+    {
+     "time": "05:29 to 05:43",
+     "text": "(frontend engineer, ITTAGE; entered by the coordinator from handoff-it/devlog-rows.md) **ITTAGE suites on 0.18.0**: `suite.py isa fpu vector --test-args=--ittage` 6/6 PASS (402 / 690 / 1,080 runs at 512 and 2 beats); both mutants FAIL the timing checks.",
+     "kind": "output"
+    },
+    {
+     "time": "05:09 to 05:57",
+     "text": "(frontend engineer, ITTAGE; entered by the coordinator from handoff-it/devlog-rows.md) **js on 0.18.0, 8 per kernel, paired**: flat 49,824,656 -> 37,263,000 (-25.2%), deciding 170,168,944 -> 149,245,710 (-12.3%); identical clock for clock to the 0.17.4 runs; under 0.18.0's goal rule (1.3x, Apple M6) flat 65.5% -> 91.4%, deciding 21.7% -> 27.3%. One base piece trapped once (bad image or run; the retry passed): not a core result.",
+     "kind": "output"
+    },
+    {
+     "time": "06:32 to 07:12",
+     "text": "(frontend engineer, from handoff-1.md and its report; entered by the coordinator) **ITTAGE and IWAYS rebased on cpu-v0.19.0** (wt190 clean, wt190t with both hand-offs). ITTAGE: apply.py reproduces js/cores/c1_off.sv byte for byte. `suite.py release-patch fpu vector --core-source c1_off.sv --expect sim/cpu/baselines/0.17.2-release-patch.json` with ITTAGE off: the test steps pass (isa 393, fpu 681, vector 1,071 at both sizes). Its bench steps ran in the shared scratch (one lzma-64k-fpu failure there, a missing file) and were rerun at 07:05 with 171fe1e's suite.py: 10/10, same as the baseline. `--ittage` isa/fpu/vector 6/6 (408 / 696 / 1,086 runs). js flat 8 per kernel 49,824,656 -> 37,263,000 clocks (-25.2%, 65.5% -> 91.4% of the 1.3x goal). IWAYS: both apply.py scripts reproduce c2_off.sv; release-patch with IWAYS 1 16/16 same as the baseline; --iways 2 passes at 512 and 2 beats; --iways 4 --ittage passes at 512 and 4 beats (2 beats fails at elaboration by design); js flat -20.0% (65.5% -> 82.0%). BTB item 3 bound with both knobs: -0.2% at FE_DEPTH 8, +0.6% at FE_DEPTH 0, so it is dropped.",
      "kind": ""
     }
    ],
