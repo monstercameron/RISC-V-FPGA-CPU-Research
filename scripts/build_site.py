@@ -260,6 +260,7 @@ DEFAULTS = dict(
     rob=0, prf=0, iq=0, decode_w=0, alus=0, full=0, loads=0, stores=0, ldst_shared=False,
     fwd=False, snapshots=False, taken=0, loop=False, vp=False, predecode=False, paired=False,
     marks=[], fuse=False, bias=False, btb_n=256, lp_n=256,
+    mul_lat=0, ld_knob=False, l2=False, vp_conf=False, tage=False,
 )
 
 # (version, era, French title, caption, medium, overrides)
@@ -401,6 +402,48 @@ WORKS = [
      "A fourth of the eight hands learns to judge a branch, and those hands now turn to branches before plain arithmetic. "
      "The multiply queue is cut to the number of ports, so none is dropped as they grow. A small gain, in simulation: 15,658 / 10,202 clocks.",
      dict(full=4, marks=["four branch-capable ports"])),
+    # Salle VIII: the council's 7-Zip phase. Figures from the 0.14.7 to 0.15.2 history rows.
+    ("0.14.7", "La Main Leste",
+     "The multiplier answers in two clocks instead of three: a behavioural assumption, its DSP timing not yet proven. "
+     "On the scaled 7-Zip kernel, compression rises from 7.46 to 7.65 MIPS per MHz and decompression from 2.89 to 3.23, in simulation; Dhrystone does not move.",
+     dict(mul_lat=2, marks=["two-clock multiply"])),
+    ("0.14.8", "Le Juste Prix",
+     "A mending for honesty, after the outside reviewer: an instruction folded onto a multiply, a divide or a guessed value now pays its one clock of offset. "
+     "The scaled kernel barely stirs, 473,002 to 473,020 clocks; the drawing is truer, not faster.",
+     dict(marks=["the offset clock paid"])),
+    ("0.14.9", "Le Fil d'Ariane",
+     "After a wrong turn, the return stack's top entry is restored together with its pointer, so the thread home is not lost. "
+     "Return mispredictions in compression fall from 1,894 to 9, and the scaled kernel compresses at 7.72 MIPS per MHz.",
+     dict(marks=["return stack restored whole"])),
+    ("0.14.10", "Le Cadran des Lectures",
+     "A second dial: loads may be made to answer later, as a real memory would. Left at one clock, nothing changes; "
+     "turned to four, the scaled kernel needs about 630,600 / 178,600 clocks instead of 468,772 / 135,703.",
+     dict(ld_knob=True, marks=["load-latency dial"])),
+    ("0.14.11", "Le Retour Décalé",
+     "A return that lands a little past its call is now predicted as the popped address plus its displacement; every such return was missed before. "
+     "Neither benchmark contains one, so neither moves.",
+     dict(marks=["displaced returns"])),
+    ("0.14.12", "La Seconde Quittance",
+     "The same honesty for slow loads: when the dial makes a load answer late, an instruction folded onto it pays its offset clock too. "
+     "At the default one-clock load nothing changes.",
+     dict(marks=["offset clock after slow loads"])),
+    ("0.14.13", "Le Pas Repris",
+     "In the very clock a branch is corrected, fetch already reads one cached beat of the right target. "
+     "The scaled kernel: 7.76 MIPS per MHz compressing, 3.25 decompressing.",
+     dict(marks=["fetch in the recovery clock"])),
+    ("0.15.0", "Les Étages",
+     "The house gains floors below: the system may now be given a second-level cache and a distant memory, each with its own delay. "
+     "By default the floors are closed and every count is as before; opened to a 1 MiB second level and a memory a hundred clocks away, "
+     "the scaled kernel slows to 6.43 / 2.67 MIPS per MHz.",
+     dict(l2=True, marks=["second level and distant memory"])),
+    ("0.15.1", "La Confiance",
+     "A guessed value must now earn trust: thirty-two equal results before it is used, twice as many after each wrong guess, up to sixty-four. "
+     "Wrong guesses in compression fall from 1,953 to 86, and the scaled kernel compresses at 7.97 MIPS per MHz.",
+     dict(vp_conf=True, marks=["value prediction earns trust"])),
+    ("0.15.2", "La Longue Mémoire",
+     "A predictor that remembers the road: four tagged tables of 1,024 entries, looking back 5, 15, 44 and 128 steps of global history, about 18.4 KiB. "
+     "Compression on the scaled kernel leaps from 7.97 to 9.16 MIPS per MHz; Dhrystone's reference run is half a percent slower.",
+     dict(tage=True, marks=["global-history predictor"])),
 ]
 
 ERAS = [
@@ -411,6 +454,7 @@ ERAS = [
     ("V", "Salle V", "L'Octuple", "Eight wide, and learning to guess.", "0.10.0", "0.11.2"),
     ("VI", "Salle VI", "Le Grand Format", "Sixteen wide, and then a council of engineers.", "0.12.0", "0.13.0"),
     ("VII", "Salle VII", "Le Conseil", "The council widens everything at once: doors, room and breath, then a mending, a deeper memory for returns, and a fourth hand for branches.", "0.13.1", "0.14.6"),
+    ("VIII", "Salle VIII", "L'Archive", "The council turns to a second measure, the LZMA kernel of 7-Zip: a quicker multiply, honest offsets, a mended way home, floors of memory below, and a predictor with a long memory.", "0.14.7", "0.15.2"),
 ]
 
 
@@ -491,6 +535,16 @@ def unit_lines(s: dict) -> list[tuple[str, str]]:
             u.append(("Value prediction", "loads, multiplies, divides"))
         if s["predecode"]:
             u.append(("Fetch predecode", "direct jumps, calls, returns, backward branches"))
+        if s["tage"]:
+            u.append(("Global-history predictor", "4 × 1,024 tagged entries, histories 5 / 15 / 44 / 128, about 18.4 KiB"))
+        if s["vp_conf"]:
+            u.append(("Prediction confidence", "32 equal results to predict, doubled per wrong prediction up to 64"))
+        if s["mul_lat"]:
+            u.append(("Multiply latency", f"{s['mul_lat']} clocks (behavioural; DSP timing unproven)"))
+        if s["ld_knob"]:
+            u.append(("Load-to-use latency", "a knob, RV64_OOO_LD_LAT, default 1 clock"))
+        if s["l2"]:
+            u.append(("Memory hierarchy", "optional SoC L2 and memory latency (L2_KIB, L2_WAYS, L2_LINE, L2_LAT, MEM_LAT); defaults keep timing"))
     return u
 
 
@@ -591,6 +645,12 @@ class Art:
         for i in range(rings):
             self.a(f'<circle cx="{cx}" cy="{cy}" r="{56 * (i + 1) / rings:.1f}" fill="none" stroke="{INK}" stroke-width="{1.6 if i % 2 == 0 else 0.8}"/>')
         self.disc(cx, cy, 9, OXBLOOD, off=2)
+        if s["tage"]:
+            # four tagged tables as arcs around the rings; each arc's sweep follows its
+            # history length (5, 15, 44, 128), so the longest memory nearly closes the circle
+            for i, (hist, col) in enumerate(zip((5, 15, 44, 128), (OCHRE, OXBLOOD, SLATE, SAGE))):
+                sweep = 40 + 270 * hist / 128
+                self.arc(cx, cy, 64 + i * 7, 150, 150 + sweep, col, sw=4, op=0.9)
         if s["ras"]:
             for i in range(4):
                 self.box(cx - 30 + i * 4, cy + 74 - i * 7, 60, 6, SAGE, sw=1, off=0)
@@ -614,10 +674,18 @@ class Art:
 
     def marks(self):
         ms = self.s["marks"]
-        x0 = W - 60 - 18 * len(ms)
-        for i, _ in enumerate(ms):
-            x = x0 + 18 * i + 9
-            self.a(f'<path d="M{x} 50 l7 7 l-7 7 l-7 -7z" fill="{GOLD}" stroke="{INK}" stroke-width="1"/>')
+        # one gold diamond per mark, right-aligned clear of the predictor (x >= 220);
+        # past 28 marks they hang in two rows, closer together if need be
+        n = len(ms)
+        per_row = n if n <= 28 else math.ceil(n / 2)
+        pitch = min(18, 520 / max(per_row, 1))
+        rows = [ms[:n - per_row], ms[n - per_row:]] if n > per_row else [ms]
+        for r, row in enumerate(reversed(rows)):
+            y = 50 - 16 * r
+            x0 = W - 60 - pitch * len(row)
+            for i, _ in enumerate(row):
+                x = x0 + pitch * i + pitch / 2
+                self.a(f'<path d="M{x:.1f} {y} l7 7 l-7 7 l-7 -7z" fill="{GOLD}" stroke="{INK}" stroke-width="1"/>')
 
     def caches(self, top):
         s = self.s
@@ -872,8 +940,37 @@ class Art:
             mid = 600 if s["ldst_shared"] else 470
             self.path(f"M{mid - 70} {ly + 18} C{mid - 40} {ly + 70} {mid + 40} {ly + 70} {mid + 70} {ly + 18}", sw=2, col=GOLD)
             self.a(f'<path d="M{mid + 70} {ly + 18} l-9 -4 l3 10z" fill="{GOLD}" stroke="{INK}" stroke-width="0.8"/>')
+        if s["ld_knob"]:
+            # the load-latency dial: a small gauge left of the load ports, needle at one clock
+            self.disc(112, ly - 16, 18, PAPER, sw=1.6, off=0)
+            for k in range(5):
+                a = math.radians(200 + k * 35)
+                self.line(112 + 13 * math.cos(a), ly - 16 + 13 * math.sin(a),
+                          112 + 18 * math.cos(a), ly - 16 + 18 * math.sin(a), sw=1)
+            a = math.radians(200)
+            self.line(112, ly - 16, 112 + 15 * math.cos(a), ly - 16 + 15 * math.sin(a), sw=2, col=OXBLOOD)
         self.caches(796)
+        if s["l2"]:
+            self.memory_floors(796)
         self.bus(940)
+
+    def memory_floors(self, top):
+        """The optional second level between the two caches, and the delay line to a distant memory.
+        Dashed because the defaults leave both closed."""
+        x0, x1 = 312, 488
+        self.box(x0, top + 6, x1 - x0, 70, SAGE, op=0.55, dash="6 4", sw=1.8)
+        for i in range(1, 8):
+            self.line(x0 + i * (x1 - x0) / 8, top + 6, x0 + i * (x1 - x0) / 8, top + 76, sw=0.6, op=0.5)
+        self.text(400, top + 47, "second level", 17, op=0.85)
+        # each first-level cache reaches the second level
+        self.line(296, top + 40, x0 - 4, top + 40, sw=1.2, op=0.7, dash="3 3")
+        self.line(x1, top + 40, 504, top + 40, sw=1.2, op=0.7, dash="3 3")
+        # the long walk to memory: a zig-zag delay line down to the bus
+        pts = [f"400,{top + 76}"]
+        for k in range(8):
+            pts.append(f"{400 + (9 if k % 2 == 0 else -9)},{top + 104 + k * 4}")
+        pts.append(f"400,{top + 140}")
+        self.path("M" + " L".join(pts), sw=1.6, col=OXBLOOD)
 
     def render(self) -> str:
         s = self.s
@@ -1033,33 +1130,77 @@ UNLOGGED_DHRYSTONE = {
               "the probe counts 15,658 / 10,202 region clocks.",
 }
 
+# Probe-only Dhrystone figures (region clocks, reference / fast runtime, simulated),
+# from each version's history row; these versions have no logged run.
+PROBE_DHRYSTONE = {
+    "0.14.7": ("15,658 / 10,202", "unchanged"),
+    "0.14.8": ("15,658 / 10,202", "unchanged"),
+    "0.14.9": ("15,654 / 10,179", ""),
+    "0.14.10": ("15,654 / 10,179", ""),
+    "0.14.11": ("15,654 / 10,179", ""),
+    "0.14.12": ("15,654 / 10,179", ""),
+    "0.14.13": ("15,654 / 10,177", ""),
+    "0.15.0": ("15,654 / 10,177", "defaults keep all timing"),
+    "0.15.2": ("15,732 / 10,139", "reference 0.5% slower than 0.15.1"),
+}
+
 # The second measure: the LZMA benchmark kernel of 7-Zip, scaled down to fit the
 # simulator. Compress / decompress MIPS/MHz, from the DEVLOG.md rows of
 # 2026-11-21 (16:00 to 16:50, 16:55, 17:20, 18:05 to 18:10). Simulation of a scaled
 # kernel, except the native row; none of these is a 7-Zip benchmark score.
+# The 0.15.2 row is from its history row; the full-size (d22) goal from the DEVLOG.md
+# row of 2026-11-21 20:34 (cpu/7zip-benchmark-targets.md).
 SEVENZIP = [
     # (label, note, compress, decompress, style)
-    ("Goal", "about; derived from 10,000 MIPS in 7-Zip at 4 GHz", 10.9, 3.35, "goal"),
-    ("Cortex-X925, native", "laptop core running the same kernel natively", 8.34, 2.59, "native"),
-    ("0.14.6 out of order, 64 KiB caches", "the measured configuration", 7.46, 2.89, "sim"),
-    ("0.14.6 out of order, 4 KiB caches", "the FPGA-class configuration", 3.39, 2.56, "sim"),
-    ("Multicycle core", "0.14.6 tree", 1.61, 1.69, "sim"),
-    ("Pipelined core", "0.14.6 tree", 0.96, 0.89, "sim"),
+    ("Goal, scaled kernel", "about; derived from 10,000 MIPS in 7-Zip at 4 GHz", 10.9, 3.35, "goal"),
+    ("Cortex-X925, native", "laptop core running the same scaled kernel natively; not a simulation", 8.34, 2.59, "native"),
+    ("0.15.2 out of order, 64 KiB caches", "simulated, scaled kernel; the newest version", 9.16, 3.26, "sim"),
+    ("0.14.6 out of order, 64 KiB caches", "simulated, scaled kernel; where the council's 7-Zip phase began", 7.46, 2.89, "sim"),
+    ("0.14.6 out of order, 4 KiB caches", "simulated, scaled kernel; the FPGA-class configuration", 3.39, 2.56, "sim"),
+    ("Multicycle core", "simulated, scaled kernel; 0.14.6 tree", 1.61, 1.69, "sim"),
+    ("Pipelined core", "simulated, scaled kernel; 0.14.6 tree", 0.96, 0.89, "sim"),
+    ("Goal, full-size (d22) kernel", "about; the same 10,000 MIPS goal, calibrated on the full-size kernel, a different and larger workload", 2.03, 2.18, "goal"),
 ]
-SEVENZIP_BY_VERSION = {"0.14.6": (7.46, 2.89, 3.39, 2.56)}
+
+# Per version: (compress, decompress MIPS/MHz at 64 KiB caches, or None, and the rest
+# of the line), all from that version's history row. Simulation of the scaled kernel.
+SEVENZIP_BY_VERSION = {
+    "0.14.6": (7.46, 2.89, "at 64 KiB caches (3.39 / 2.56 at 4 KiB)"),
+    "0.14.7": (7.65, 3.23, "at 64 KiB caches (1,060,024 / 157,281 clocks at 4 KiB)"),
+    "0.14.8": (None, None, "473,020 / 135,703 clocks compress / decompress at 64 KiB caches"),
+    "0.14.9": (7.72, None, "MIPS/MHz compress at 64 KiB caches; decompress unchanged at 135,703 clocks"),
+    "0.14.10": (None, None, "468,772 / 135,703 clocks at 64 KiB caches with the default one-clock load; about 630,600 / 178,600 at four"),
+    "0.14.11": (None, None, "468,772 / 135,703 clocks at 64 KiB caches, unchanged"),
+    "0.14.12": (None, None, "468,772 / 135,703 clocks at 64 KiB caches, unchanged"),
+    "0.14.13": (7.76, 3.25, "at 64 KiB caches (1,055,247 / 156,197 clocks at 4 KiB)"),
+    "0.15.0": (None, None, "466,256 / 134,773 clocks at 64 KiB caches with the default SoC; 6.43 / 2.67 MIPS/MHz with a 1 MiB L2 and MEM_LAT 100"),
+    "0.15.1": (7.97, 3.26, "at 64 KiB caches (1,051,391 / 156,124 clocks at 4 KiB)"),
+    "0.15.2": (9.16, 3.26, "at 64 KiB caches (983,418 / 155,941 clocks at 4 KiB)"),
+}
 
 
 def sevenzip_html(version: str) -> str:
     z = SEVENZIP_BY_VERSION.get(version)
     if not z:
         return ""
-    return (f'<span class="aside z7">Scaled 7-Zip LZMA kernel: {z[0]:.2f} / {z[1]:.2f} MIPS/MHz compress / decompress '
-            f'at 64 KiB caches ({z[2]:.2f} / {z[3]:.2f} at 4 KiB); simulated, not a 7-Zip score.</span>')
+    c, d, rest = z
+    if c is not None and d is not None:
+        head = f"{c:.2f} / {d:.2f} MIPS/MHz compress / decompress {rest}"
+    elif c is not None:
+        head = f"{c:.2f} {rest}"
+    else:
+        head = rest
+    return (f'<span class="aside z7">Scaled 7-Zip LZMA kernel: {e(head)}; simulated, not a 7-Zip score.</span>')
 
 
 def perf_html(v: dict) -> str:
     z7 = sevenzip_html(v["version"])
     if v["dmips_ref"] is None:
+        probe = PROBE_DHRYSTONE.get(v["version"])
+        if probe:
+            clocks, why = probe
+            return (f'<p class="perf none">Dhrystone: no logged run for this version; probe numbers only: '
+                    f'{e(clocks)} region clocks, reference / fast runtime, simulated{"; " + e(why) if why else ""}.{z7}</p>')
         note = UNLOGGED_DHRYSTONE.get(v["version"])
         if note:
             return f'<p class="perf none">Dhrystone: no logged run yet. {e(note)}{z7}</p>'
@@ -1087,7 +1228,8 @@ def sevenzip_plate() -> str:
   <h2 id="z7-h">Le Second Étalon</h2>
   <p class="small">A second measure beside Dhrystone: the LZMA benchmark kernel of 7-Zip, scaled down to run in the simulator, in instructions per clock
   (MIPS per MHz) for compression and decompression. Every row is a simulation of that scaled kernel except the Cortex-X925 row, a native run of the same kernel on a laptop core.
-  None of these is a 7-Zip benchmark score or a hardware result for this processor. The goal is about 10.9 / 3.35, derived from a 10,000 MIPS single-thread 7-Zip rating at 4 GHz.</p>
+  None of these is a 7-Zip benchmark score or a hardware result for this processor. The goal is about 10.9 / 3.35 on the scaled kernel, derived from a 10,000 MIPS single-thread 7-Zip rating at 4 GHz;
+  the same goal on the full-size (d22) kernel is about 2.03 / 2.18, shown last because that kernel is a different, larger workload and its bars do not compare with the rows above.</p>
   <p class="legend small"><span class="sw z-c"></span>compress <span class="sw z-d"></span>decompress <span class="sw z-goal"></span>goal (outlined)</p>
   <ol class="zchart">{"".join(rows)}</ol>
   <p class="small">Scale: 0 to {top:g} MIPS/MHz, linear. Out-of-order rows under Verilator, whole program; multicycle and pipelined under Icarus.</p>
@@ -1110,6 +1252,10 @@ def alt_text(v: dict, s: dict) -> str:
     if s["kind"] == "ooo":
         parts.append(f"Blocks for a {s['rob']}-entry reorder buffer, {s['prf']} physical registers, a {s['iq']}-entry issue queue, "
                      f"{s['alus']} integer units, and instruction and data caches above a bus.")
+        if s["tage"]:
+            parts.append("Four coloured arcs around the predictor rings stand for the tagged global-history tables, longer arcs for longer histories.")
+        if s["l2"]:
+            parts.append("A dashed second-level cache sits between the two caches, with a zig-zag delay line down to the bus for the distant memory.")
     elif s["kind"] == "pipe":
         parts.append(f"{len(s['stages'])} pipeline stages as coloured slabs, a branch target buffer drawn as rings, and two caches above a bus.")
     else:
@@ -1324,7 +1470,11 @@ def index_page(versions) -> str:
     strip = "".join(f'<a href="gallery.html#{slug(v["version"])}" title="No. {v["no"]}, {e(v["title"])} ({v["version"]})"><img src="{v["art"]}" alt="" loading="lazy" width="800" height="1000"></a>'
                     for v in versions)
     hero = best
-    z7 = SEVENZIP_BY_VERSION[max(SEVENZIP_BY_VERSION, key=lambda k: tuple(int(x) for x in k.split(".")))]
+    z7v = max((k for k, z in SEVENZIP_BY_VERSION.items() if z[0] is not None and z[1] is not None),
+              key=lambda k: tuple(int(x) for x in k.split(".")))
+    z7 = SEVENZIP_BY_VERSION[z7v]
+    x925 = next(r for r in SEVENZIP if r[4] == "native")
+    d22 = SEVENZIP[-1]
     body = f"""
 <section class="hero">
   <div class="hero-text">
@@ -1357,7 +1507,8 @@ def index_page(versions) -> str:
   <article>
     <p class="eyebrow">II.</p><h2>Le Journal</h2>
     <p>The development log as a catalogue: findings, timelines and commits by day, and a chart of simulated Dhrystone performance from {fmt_dm(first['dmips_ref'])} to {fmt_dm(best['dmips_ref'])} DMIPS/MHz.
-    Beside it, a second measure: a scaled 7-Zip LZMA kernel, simulated at {z7[0]:.2f} / {z7[1]:.2f} MIPS/MHz compress / decompress (64 KiB caches), against a goal of about {SEVENZIP[0][2]:g} / {SEVENZIP[0][3]:g}.</p>
+    Beside it, a second measure: a scaled 7-Zip LZMA kernel, simulated at {z7[0]:.2f} / {z7[1]:.2f} MIPS/MHz compress / decompress on version {z7v} (64 KiB caches), against a goal of about {SEVENZIP[0][2]:g} / {SEVENZIP[0][3]:g};
+    a laptop's Cortex-X925 runs the same scaled kernel natively at {x925[2]:.2f} / {x925[3]:.2f}. On the full-size (d22) kernel the goal is about {d22[2]:.2f} / {d22[3]:.2f}.</p>
     <p><a href="journal.html">Open the notebook &rarr;</a></p>
   </article>
   <article>
