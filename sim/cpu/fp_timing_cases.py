@@ -11,8 +11,8 @@ caches or bus waits the programs still run and are compared, but not timed.
 import re
 
 FMA_LAT, FMUL_LAT, FADD_LAT, FMISC_LAT, FCVT_LAT = 4, 3, 2, 2, 3   # 0.17.1: FADD 2, FMUL 3 (Lion Cove, Zen 5)
-FDIV_S, FDIV_D, FSQRT_S, FSQRT_D = 11, 13, 12, 18
-FDIV_II_S, FDIV_II_D, FSQRT_II_S, FSQRT_II_D = 3, 4, 4, 6   # handoff-fp-div.py
+FDIV_S, FDIV_D, FSQRT_S, FSQRT_D = 7, 10, 10, 15   # Lion Cove (handoff-fp-div2.py)
+FDIV_II_S, FDIV_II_D, FSQRT_II_S, FSQRT_II_D = 2, 4, 4, 6   # handoff-fp-div.py, FDIV_II_S 2 since handoff-fp-div2.py
 
 
 def _ops(T):

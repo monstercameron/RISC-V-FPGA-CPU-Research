@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Original CPU foundation, wide out-of-order implementation (architecture 0.17.1).
+// Original CPU foundation, wide out-of-order implementation (architecture 0.17.2).
 // RV64IM + B execution (RV64F and D with define RV64_OOO_FPU, default off),
 // serialized FENCE.I, terminal EEI. Same module name and
 // contract as rv64_core.sv and rv64_pipe.sv, plus a wider retirement trace (rt_*);
@@ -156,10 +156,11 @@ module rv64_core #(
     // FP latencies (MUL_LAT convention), 0.17.1: FADD 2 / FMUL 3 / FMA 4 as Lion Cove and Zen 5
     // (uops.info: ADDSD/SS, MULSD/SS, VFMADD231SD/SS); FADD 3 and FMUL = FMA 4 until 0.17.0.
     localparam integer FMA_LAT = 4, FMUL_LAT = 3, FADD_LAT = 2, FCVT_LAT = 3, FMISC_LAT = 2;   // behavioural assumptions
-    localparam integer FDIV_S = 11, FDIV_D = 13, FSQRT_S = 12, FSQRT_D = 18;
+    // Divide/sqrt latencies of Lion Cove (uops.info DIVSS/DIVSD/SQRTSS/SQRTSD); 11/13/12/18 until 0.17.1.
+    localparam integer FDIV_S = 7, FDIV_D = 10, FSQRT_S = 10, FSQRT_D = 15;
     // Divide/sqrt initiation intervals (clocks between starts; uops.info measured throughput of
     // DIVSS/DIVSD/SQRTSS/SQRTSD on Alder Lake-P and Zen 4). Behavioural assumption.
-    localparam integer FDIV_II_S = 3, FDIV_II_D = 4, FSQRT_II_S = 4, FSQRT_II_D = 6;
+    localparam integer FDIV_II_S = 2, FDIV_II_D = 4, FSQRT_II_S = 4, FSQRT_II_D = 6;   // FDIV_II_S 3 until 0.17.1
     localparam integer NP = N_ALU + N_LD + N_ST + N_FP;
     localparam integer MUL_LAT = 2;         // 3 until 0.14.6; 2 is a behavioural assumption (DSP timing unproven)
     localparam integer DIV_LAT = 7;
