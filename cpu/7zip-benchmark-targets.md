@@ -117,10 +117,14 @@ and 25 ns memory, so they do not yet decide it.
 |---|---:|---:|---|
 | Goal (10,000 MIPS at 4 GHz) | 2.03 | 2.18 | |
 | 0.15.4, one miss at a time (2026-11-21 21:53) | **1.53** (75%, +-10.9%) | **1.98** (91%, +-22.9%) | not met |
+| **0.16.0, 4 misses in flight, MEM_GAP 8 (2026-11-22 00:21)** | **2.187** (108%, +-6.8%; low end 2.04) | **2.322** (107%, +-10.2%; low end 2.09) | **met in point estimate**; compress above the goal at the low end of its interval |
 
-The 0.15.4 run has everything in the table above except several misses in flight (memory hand-off 2,
-being integrated as 0.16.0): with 350-clock memory served one miss at a time, compress spends most of
-its time waiting. The next deciding run follows 0.16.0.
+The 0.15.4 run had everything in the table above except several misses in flight; 0.16.0 adds them
+(`--n-miss 4 --mem-gap 8`), with 3M detailed warm-up and 60 sampled pieces per phase (41 invocations,
+each under 300 s, `--warm-l2`): compress kernel 1,850,671,244 clocks (IPC 1.911), decompress
+152,967,666 (IPC 2.138). A 4-piece probe of 3M against 5M warm-up says 3M reads compress about 2.3%
+slow (conservative) and decompress about 1.0% fast. The decompress interval still reaches below the
+goal; more pieces would narrow it (about 80 minutes per 120 pieces).
 
 ## The scaled kernel on our cores (simulation)
 

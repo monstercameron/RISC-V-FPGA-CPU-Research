@@ -510,9 +510,19 @@ def run_iss(args, root, out, build, snap, rtl, core_file, command, sha, sim, cac
     words = {int(k): v for k, v in summary['mailbox'].items()}
     total_instructions = summary['instructions']
     phases = phases_from(marks)
-    memory = final.read_bytes()
-    final.unlink()
-    expected, independent = independent_checks(build, symbols, memory, words)
+    for attempt in range(2):
+        memory = final.read_bytes()
+        final.unlink()
+        try:
+            expected, independent = independent_checks(build, symbols, memory, words)
+            break
+        except AssertionError:
+            # Once at d22 (2026-11-21 23:17) the 64 MiB final-memory file read back wrong through /mnt/c
+            # (liblzma decode mismatch with a correct mailbox); write and check it once more before failing.
+            if attempt:
+                raise
+            print('rv_iss final memory failed the liblzma check; rerunning rv_iss once', flush=True)
+            iss_call(exe, ram_bytes, '--image', out / 'bench.bin', '--mailbox', f'{mailbox:x}', '--final-memory', final)
     del memory
     check_words(words, expected, 'rv_iss')
     arena_used = words.get(15)
