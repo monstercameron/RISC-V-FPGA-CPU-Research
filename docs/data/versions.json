@@ -7160,5 +7160,193 @@
   "dmips_fast": null,
   "ref_run": null,
   "art": "art/v0.19.0.svg"
+ },
+ {
+  "no": 67,
+  "version": "0.19.1",
+  "title": "Le Présage",
+  "caption": "An oracle for indirect jumps, as an option: targets that are not returns are guessed at fetch from five tagged tables of 512 entries over the branch target buffer, with a 128-bit path history. Off, the core is identical to 0.19.0. On the frontend's flat probe, 49.8 to 37.3 million clocks (-25.2%); Dhrystone and 7-Zip take the same clocks as before, and no hardware cost or timing is claimed.",
+  "date": "2026-11-22",
+  "date_fr": "22 novembre 2026",
+  "kind": "ooo",
+  "status": "tagged",
+  "tag": "cpu-v0.19.1",
+  "register": "ITTAGE-style indirect-target predictor in the out-of-order core (frontend engineer; define RV64_OOO_ITTAGE, default off): non-return JALR targets predicted at fetch from 5 tagged tables of 512 entries over the BTB, 128-bit path history, history repair like f_gh, training at retirement; test_cpu.py --ittage with sim/cpu/fe_cases.py (fe_ind_path, fe_ind_path4, fe_iw_alias). Option off: identical to 0.19.0. Coordinator check on main (07:15 to 07:32): suite.py release-patch fpu vector --core-source build/cpu/ooo-debug/coord/cand0191.sv --expect sim/cpu/baselines/0.17.2-release-patch.json --jobs 2 16 steps run, 14 the same as the baseline; isa-ooo and isa-ooo-2beat PASS but DIFF only in counts, 131 -> 134 programs and 393 -> 402 runs (the three new front-end cases), so they are accepted as intended; Dhrystone 15,706 / 10,127 and 7-Zip d12 384,788 / 133,243 (974,219 / 153,238 at 4 KiB) the same as the baseline, with and without the FPU; suite.py isa fpu --test-args=--ittage 4/4 PASS (402 and 690 runs at 512 and 2 beats). From the frontend (Verilator 5.020): js flat 8 pieces per kernel 49,824,656 -> 37,263,000 clocks (-25.2%, 65.5% -> 91.4% of the 1.3x goal), deciding 170,168,944 -> 149,245,710 (-12.3%); oracle bound -26.5% flat; 7-Zip d12 deciding 604,503 -> 603,520 / 229,974; rt RT-T identical; mutants (no path history, short tables only) fail the new timing checks. Two Codex reviews (gpt-6.2-astra), the store-scan bug they found fixed. Hardware cost and timing not evaluated",
+  "breaking": "No (option off by default)",
+  "units": [
+   [
+    "Organisation",
+    "Out of order (rtl/cpu/rv64_ooo.sv)"
+   ],
+   [
+    "Fetch / rename / retire",
+    "32 / 32 / 32 per clock"
+   ],
+   [
+    "Reorder buffer",
+    "512 entries"
+   ],
+   [
+    "Physical registers",
+    "544"
+   ],
+   [
+    "Issue queue",
+    "128 entries"
+   ],
+   [
+    "ALUs",
+    "8, of which 4 full (branch, multiply, divide)"
+   ],
+   [
+    "Memory ports",
+    "4 load, 3 store-address"
+   ],
+   [
+    "Branch target buffer",
+    "1,024 entries, with return stack; hits used only for branch, JAL and JALR; targets as signed PC-relative offsets (±2 GiB)"
+   ],
+   [
+    "Caches",
+    "128 KiB instruction, 128 KiB data, two-way data cache"
+   ],
+   [
+    "Taken transfers per fetch",
+    "4"
+   ],
+   [
+    "Loop predictor",
+    "1,024 entries"
+   ],
+   [
+    "Branch bias",
+    "a branch that has gone one way at least 4 times with no exit is predicted that way"
+   ],
+   [
+    "Instruction fusion",
+    "a simple integer producer and the next instruction reading it, also across rename groups (one pending producer held into the next clock)"
+   ],
+   [
+    "Store writes",
+    "paired on the bus"
+   ],
+   [
+    "Value prediction",
+    "loads, multiplies, divides"
+   ],
+   [
+    "Fetch predecode",
+    "direct jumps, calls, returns, backward branches"
+   ],
+   [
+    "Global-history predictor",
+    "6 tagged tables, histories 4 to 128, about 22.4 KiB in all; aging covers every entry"
+   ],
+   [
+    "Prediction confidence",
+    "32 equal results to predict, doubled per wrong prediction up to 64"
+   ],
+   [
+    "Multiply latency",
+    "2 clocks (behavioural; DSP timing unproven)"
+   ],
+   [
+    "Load-to-use latency",
+    "a knob, RV64_OOO_LD_LAT, default 1 clock"
+   ],
+   [
+    "Memory hierarchy",
+    "optional SoC L2 and memory latency (L2_KIB, L2_WAYS, L2_LINE, L2_LAT, MEM_LAT); defaults keep timing"
+   ],
+   [
+    "Recent-beat buffer",
+    "a knob, RV64_OOO_L0_N (default 0, off), latency RV64_OOO_L0_LAT (default 2)"
+   ],
+   [
+    "Load-wait table",
+    "4,096 entries, cleared every 65,536 clocks"
+   ],
+   [
+    "Data misses in flight",
+    "N_MISS 1 to 8 (default 1); split reads with tags on mem_tag, rsp_valid, rsp_tag, rsp_data, rsp_error; younger missed loads sleep until their beat's answer (wake on fill)"
+   ],
+   [
+    "Floating point",
+    "RV64F and RV64D behind the define RV64_OOO_FPU, default off: four FP ports (two FMA, two misc), pipelined divide and square root, a 64-entry rename map (x and f) on one physical register file, fflags at retirement"
+   ],
+   [
+    "FP latencies, clocks",
+    "add 2, multiply 3, fused multiply-add 4; divide 7 / 10 and square root 10 / 15 (single / double), a single divide every 2 clocks"
+   ]
+  ],
+  "marks": [
+   "a one-beat fetch buffer",
+   "requests issue from EXECUTE",
+   "writes acknowledged in the same clock",
+   "second slot across beats",
+   "second data-cache port",
+   "jump in the second slot",
+   "slot-to-slot forwarding",
+   "branch folding",
+   "registered multiplier",
+   "fetch queue and X stage",
+   "store-to-load forwarding",
+   "stores finish at retirement",
+   "cross-beat fetch",
+   "instruction fusion",
+   "1,024-entry predictors",
+   "fixed-direction bias",
+   "sixteen lanes",
+   "one rule for stores and retirement",
+   "four taken turns",
+   "folded at rename",
+   "four stores a write",
+   "four loads, three stores a clock",
+   "512 in flight",
+   "thirty-two retire",
+   "thirty-two lanes",
+   "mended after review",
+   "constants and branches decided at rename",
+   "64-entry return stack",
+   "front-end depth dial",
+   "four branch-capable ports",
+   "two-clock multiply",
+   "the offset clock paid",
+   "return stack restored whole",
+   "load-latency dial",
+   "displaced returns",
+   "offset clock after slow loads",
+   "fetch in the recovery clock",
+   "second level and distant memory",
+   "value prediction earns trust",
+   "global-history predictor",
+   "BTB hits for transfers only",
+   "recent-beat buffer dial",
+   "PC-relative targets",
+   "load-wait table",
+   "six tagged tables",
+   "several reads in flight",
+   "split read channel",
+   "fusion across rename groups",
+   "wake on fill",
+   "F and D, off by default",
+   "fflags at retirement",
+   "add in two, multiply in three",
+   "divide and root at Lion Cove's pace",
+   "cleanup, bit-exact",
+   "a squashed divide frees the unit",
+   "RVV subset, option off by default",
+   "vector memory with element-precise faults",
+   "wider data-cache lines, option off by default",
+   "indirect-jump predictor, option off by default",
+   "five tagged tables over the target buffer"
+  ],
+  "width": 32,
+  "alus": 8,
+  "dmips_ref": null,
+  "clocks_ref": null,
+  "dmips_fast": null,
+  "ref_run": null,
+  "art": "art/v0.19.1.svg"
  }
 ]

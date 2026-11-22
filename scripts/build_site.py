@@ -524,6 +524,12 @@ WORKS = [
      "On the candidate, Dhrystone runs 15,669 to 15,644 clocks at 64-byte lines (4 KiB caches, four misses in flight); "
      "with the 7-Zip d12 kernel at slow memory (MEM_LAT 350), decompression falls 2.2% and compression rises 0.65%, a regression not yet explained.",
      dict(marks=["wider data-cache lines, option off by default"])),
+    # Figures from the 0.19.1 history row. A new room: the predictor is a different subject from the lines of 0.19.0.
+    ("0.19.1", "Le Présage",
+     "An oracle for indirect jumps, as an option: targets that are not returns are guessed at fetch from five tagged tables of 512 entries over the branch target buffer, "
+     "with a 128-bit path history. Off, the core is identical to 0.19.0. On the frontend's flat probe, 49.8 to 37.3 million clocks (-25.2%); "
+     "Dhrystone and 7-Zip take the same clocks as before, and no hardware cost or timing is claimed.",
+     dict(marks=["indirect-jump predictor, option off by default", "five tagged tables over the target buffer"])),
 ]
 
 ERAS = [
@@ -539,6 +545,7 @@ ERAS = [
     ("X", "Salle X", "La Virgule Flottante", "Numbers that float: single and double precision arrive in the out-of-order core, built in only on request, then add, multiply, divide and root at the latencies of Lion Cove and Zen 5.", "0.17.0", "0.17.4"),
     ("XI", "Salle XI", "Les Vecteurs", "Vectors as an option: a first subset of the RISC-V vector extension, executed in order at the head of the reorder buffer, with the rest of the instructions still to come.", "0.18.0", "0.18.0"),
     ("XII", "Salle XII", "Les Lignes", "Wider lines for the data cache, as an option: a miss fills a longer line, answered one beat at a time, the critical beat first.", "0.19.0", "0.19.0"),
+    ("XIII", "Salle XIII", "Le Présage", "A guess for every indirect jump, as an option: the target of a jump that is not a return is predicted at fetch from tagged tables that remember the path taken.", "0.19.1", "0.19.1"),
 ]
 
 

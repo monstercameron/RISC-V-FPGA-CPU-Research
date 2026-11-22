@@ -2441,6 +2441,11 @@
      "kind": "output"
     },
     {
+     "time": "07:17:25 to 07:37",
+     "text": "**Bandwidth:** **(c) D1 L2 prefetcher on cpu-v0.19.0 + (a): release-minor + fpu + vector + soc, prefetcher off: PASS 41 of 41** (bw/wtc; `python -B sim/cpu/suite.py release-minor fpu vector soc --jobs 2 --who bandwidth --out-dir build/suite/c-rm --expect sim/cpu/baselines/0.17.2-release-patch.json`, main's per-tree native scratch (171fe1e), Verilator 5.020 and Icarus 12.0, clang 23.1.5 images). isa-ooo / -2beat 131 programs, 393 runs (same as baseline); fpu 227 / 681 and vector 357 / 1,071 at both cache sizes; **lzma-64k 384,788 / 133,243, lzma-4k 974,219 / 153,238, Dhrystone 15,706 / 10,127, and the --fpu variants: all \"same as baseline\"**; Icarus full: full-ooo (6 shards) and full-ooo-2line (12 shards) 131 / 393, full-bitmanip 12 groups identical, multicycle and pipe 131 / 393; soc-memory 11 checks, soc-btb-reach 8 of 8. The deciding-config `suite.py bench` with D1 off and on is running.",
+     "kind": "output"
+    },
+    {
      "time": "04:20",
      "text": "**Prefetch decisions** (coordinator, on `build/research/prefetch.md`). Why there is none: three tries were measured where they couldn't pay off (13:11 I-prefetch on flat memory; 19:16 split-channel I-prefetch, superseded by the I-line plan; 21:25 next-line plus PC-stride, parked because BT4's hash and son loads are random); the streaming benchmarks that need one only arrived at 03:03-03:40. Offline: a 16-line L2 stream prefetcher covers 100% of mm GEMV and ternary DRAM misses at accuracy 1.00; nothing reaches d22 compress misses (stream +2.5%, SMS, Markov and DMP worse or polluting). **Surprise:** a zero-RTL perfect-L2 stand-in (MEM_LAT 21) gives d22 compress **-57.6%** (12 pieces), so d22 compress is DRAM-latency bound but not prefetchable. That gap belongs to L2 capacity (docket 6) and to more misses in flight; N_MISS 8 at d22 is the next cheap bound (bandwidth engineer). Docket: D1, the L2 stream prefetcher, refines item 11 (bandwidth engineer; 16 streams x 16 lines, MEM_GAP-charged; expected mm -75 to -84%, T-2B4T -60 to -75%, decompress -8 to -10%); D3 keeps I lines plus next-line, with next-line sent with the demand miss (middle); D4, FDIP, is new as item 12 (front end, after items 7-10); D5, L1D per-PC stride on 64 B lines, is new as item 13, low priority (middle, after dline). Rejected with data: SMS, Markov, DMP (also the GoFetch side channel); Zicbop parked.",
      "kind": ""
@@ -3108,6 +3113,41 @@
     {
      "time": "06:32 to 07:12",
      "text": "(frontend engineer, from handoff-1.md and its report; entered by the coordinator) **ITTAGE and IWAYS rebased on cpu-v0.19.0** (wt190 clean, wt190t with both hand-offs). ITTAGE: apply.py reproduces js/cores/c1_off.sv byte for byte. `suite.py release-patch fpu vector --core-source c1_off.sv --expect sim/cpu/baselines/0.17.2-release-patch.json` with ITTAGE off: the test steps pass (isa 393, fpu 681, vector 1,071 at both sizes). Its bench steps ran in the shared scratch (one lzma-64k-fpu failure there, a missing file) and were rerun at 07:05 with 171fe1e's suite.py: 10/10, same as the baseline. `--ittage` isa/fpu/vector 6/6 (408 / 696 / 1,086 runs). js flat 8 per kernel 49,824,656 -> 37,263,000 clocks (-25.2%, 65.5% -> 91.4% of the 1.3x goal). IWAYS: both apply.py scripts reproduce c2_off.sv; release-patch with IWAYS 1 16/16 same as the baseline; --iways 2 passes at 512 and 2 beats; --iways 4 --ittage passes at 512 and 4 beats (2 beats fails at elaboration by design); js flat -20.0% (65.5% -> 82.0%). BTB item 3 bound with both knobs: -0.2% at FE_DEPTH 8, +0.6% at FE_DEPTH 0, so it is dropped.",
+     "kind": ""
+    },
+    {
+     "time": "07:15 to 07:32",
+     "text": "**0.19.1 released** (coordinator; frontend hand-off 1, ITTAGE, handoff-it/apply.py applied to main; candidate build/cpu/ooo-debug/coord/cand0191.sv = js/cores/c1_off.sv with header 0.19.1; canonical SP/canon_0191 = canon_0190 + fe_patch.ittage() split into body and clock, assembled equal to c1_off.sv from the module line). Checks: `python -B sim/cpu/suite.py release-patch fpu vector --core-source build/cpu/ooo-debug/coord/cand0191.sv --expect sim/cpu/baselines/0.17.2-release-patch.json --jobs 2` (07:15 to 07:28): 14 steps same as the baseline; isa-ooo and isa-ooo-2beat PASS with DIFF in counts only (131 -> 134 programs, 393 -> 402 runs; the new fe_cases), accepted; `python -B sim/cpu/suite.py isa fpu --core-source build/cpu/ooo-debug/coord/cand0191.sv --test-args=--ittage --jobs 2` (07:28 to 07:32) 4/4 PASS, the command line showing --ittage. Verilator 5.020, clang 23.1.5 images. PATCH (an option, default off; contract unchanged). Tag `cpu-v0.19.1`, local only.",
+     "kind": ""
+    },
+    {
+     "time": "07:23 to 07:26",
+     "text": "**INTERIM d22 decompress, 36 of 60 pieces per core** (backend; pieces 60-95, read from the 07:23:53 output; same setup and command as the 06:05 to 06:39 interim row; all rc=0; no goal claim). 0.18.0 119,819,161 clocks, 2.964 MIPS/MHz (±3.6%); 0.16.0 120,646,125 clocks, 2.944 (±3.6%). Process failure: the backend's 07:25 message gave figures it had not measured (2.953 and 2.935, ±2.7%), sent before it read the output. It withdrew them at 07:26, and they are not used anywhere. The coordinator's 07:25 relay to the user repeated them; this row corrects that.",
+     "kind": ""
+    },
+    {
+     "time": "07:29",
+     "text": "**FDIP decision** (coordinator, from the frontend's bound; its run rows to follow in frontend/fdip-devlog-rows.md). Bound: 0.19.0 + ITTAGE + IWAYS 4, with a 64 KiB 4-way I-cache against a 2 MiB one that holds the whole 1.03 MB js text; paired, 4 pieces per kernel. Flat: 26,216,432 -> 25,923,312 clocks (-1.1%). Deciding latencies: 40,897,112 -> 36,525,578 (-10.7%, 84.7% -> 91.4% of the js goal), mostly dom -34.0%, json -15.2% and regex -10.1%. Decision: build it, since the deciding config decides goal status. The frontend engineer also takes the I-line prerequisite from the middle engineer: non-blocking instruction-line reads on tags 8-15, a bus-contract MINOR. Order: IWAYS (0.19.2), then I-line, then FDIP, each its own version.",
+     "kind": ""
+    },
+    {
+     "time": "07:15 to 07:24",
+     "text": "(frontend engineer, FDIP bound; entered by the coordinator from fdip-devlog-rows.md) **FDIP (docket 12) bound, deciding latencies**: `run_bench.py --benchmark js --core ooo --sim verilator --fpu --core-source js/cores/c2_4it.sv --out-dir /root/fe190/fe-pfd --no-differential --jobs 3 --sample-pieces 4 --ld-lat 4 --l0 16 --l2-kib 4096 --l2-lat 20 --mem-lat 350 --n-miss 4 --mem-gap 8 --warm-l2 --pieces A:B` (2-piece chunks, each `timeout 300`, then `--pieces merge`), and the same with `--icache-beats 262144` (2 MiB, holds the 1.03 MB text: no conflict or capacity misses; the ceiling for any I prefetcher apart from cold misses) into fe-pfdbig. 36 paired pieces: 40,897,112 -> 36,525,578 clocks (**-10.7%**; 84.7% -> 91.4% of the 1.3x goal); dom -34.0%, json -15.2%, regex -10.1%, other kernels 0.0 to +0.2%. All chunks rc 0.",
+     "kind": "output"
+    },
+    {
+     "time": "07:24 to 07:33",
+     "text": "(frontend engineer, FDIP bound; entered by the coordinator from fdip-devlog-rows.md) **FDIP bound, flat config**: the same pair without the memory knobs (`--sample-pieces 4`, 6-piece chunks) into fe-pf / fe-pfbig: 26,216,432 -> 25,923,312 clocks (-1.1%; 125.1% -> 126.2% of the goal); dom -6.4%, regex -1.0%, json -0.2%, others 0.0%. Conclusion: after ITTAGE and 4 ways the I side left is capacity misses in dom, json and regex, worth 10.7% at the deciding latencies; FDIP needs a non-blocking I-side read channel first.",
+     "kind": "output"
+    },
+    {
+     "time": "07:30",
+     "text": "**Middle hand-off: last-writer-table fusion (PATCH on cpu-v0.19.0)**, accepted for 0.19.4 (after ITTAGE 0.19.1, IWAYS 0.19.2 and delay64 0.19.3). Package: hdl/lwfuse-on-cpu-v0.19.0.diff (sha 69fd18ab1896, rtl/cpu/rv64_ooo.sv only, core 83feecfdaeaf), architecture-lwfuse.md, handoff-lwfuse.md, codex-lwfuse-review.txt ('PATCH looks appropriate', no correctness issue; a tuning suggestion queued as a probe). Each architectural register keeps its last renamed fusable writer, a consumer fuses at any distance, and the table is cleared on rflush, mispredict and reset; the dead pv_* registers are removed. Evidence (from the middle): release-patch fpu vector test steps PASS (393 / 681 / 1,071 at both sizes); bench steps rerun with a private HOME (the first run's lzma-64k was a foreign result from the shared scratch). Default-build numbers move: Dhrystone ref 15,706 -> 15,703; lzma-64k 384,788 / 133,243 -> 359,284 / 129,587 (-6.63% / -2.74%); lzma-4k 974,219 / 153,238 -> 966,029 / 149,450. Against 0.19.0 at the deciding config N4: 7-Zip d12 compress 604,496 -> 578,050 (-4.37%), decompress 229,974 -> 225,419 (-1.98%); rt P -0.97%, S -0.79%. test_cpu N4, DLINE 64/32/2-beat variants and the rv_iss differentials PASS. Not run: Icarus, js windows. The release adds a new baseline, 0.19.4-release-patch.json. S3 (0.19.5): the adopted-error mutant traps cause 5 where the golden model retires the load, so the rule change is not observable, and S3 is a PATCH.",
+     "kind": ""
+    },
+    {
+     "time": "07:45",
+     "text": "**S3 v1 blocked by Codex review, v2 in test** (middle, hdl/codex-s3-review.txt). (1) High, livelock found by inspection: after an adopted read's error, entry 0 was freed, so younger loads could keep re-reading the line and the oldest load keep adopting, and a persistent fault might never trap. Fix: on an error on the adopted beat, entry 0 drops the adoption and sends its own tag-0 read, keeping the line in flight; the wake happens only on a good delivery. New cases line_fault_adopted_first and line_fault_adopted_last. (2) High, text: with transaction-dependent memory errors, adopting a good beat skips a read that might have failed. Coordinator decision: a PATCH. The 0.19.0 contract already allows transaction-dependent outcomes (a failed beat may succeed later, and another entry's fill can satisfy the oldest load), the guarantee that cause 5 comes only from entry 0's own read is unchanged, and the explicit sentence stays. (3) Medium, test: line_fault_once_adopted could pass without adoption, so tb_core now counts fault_once_late and the test requires at least 1; fusion must fail it. (4) Low: the immediate-delivery path also wakes exact-beat waiters. New core 970eb4ae0e35. v1 ran the default build 16/16 bit-exact to fusion; v2 is rerunning everything.",
      "kind": ""
     }
    ],
