@@ -67,6 +67,31 @@ module rv64_core #(
     wire [63:0] imm_j = {{43{insn[31]}},insn[31],insn[19:12],insn[20],insn[30:21],1'b0};
 
     reg legal, write_rd, load_op, store_op, branch_taken, exception;
+`ifdef RV64_PRIV
+    // S1 (cpu/PRIV-CONTRACT.md): M-mode CSRs, traps to mtvec and MRET. A SYSTEM instruction never pairs: it is
+    // not a slot-0 ALU operation and simple2 is 0 for it. Traps are applied by the CSR file one edge after the
+    // core redirects to mtvec (trap_req), before the handler's first instruction can execute.
+    reg is_csr, is_mret;
+    wire [11:0] csr_addr = insn[31:20];
+    wire csr_wr = f3[1:0] == 2'd1 || insn[19:15] != 0;
+    wire [63:0] csr_src = f3[2] ? {59'b0, insn[19:15]} : a;
+    wire [63:0] csr_old;
+    wire csr_bad;
+    wire [63:0] csr_new = f3[1:0] == 2'd1 ? csr_src : f3[1:0] == 2'd2 ? (csr_old | csr_src) : (csr_old & ~csr_src);
+    wire [63:0] priv_mtvec, priv_mepc;
+    reg trap_req;
+    reg [63:0] trap_req_epc, trap_req_cause, trap_req_tval;
+    reg [1:0] instret_q;          // instructions retired at the last edge, added to minstret at the next
+    // N record (trace, cpu/PRIV-CONTRACT.md section 8): the retiring CSR instruction read mcycle, whose value
+    // the RTL sources (it counts clocks).
+    reg csr_n_valid;
+    reg [63:0] csr_n_value;
+    wire csr_retire = state == EXECUTE && is_csr && !exception;
+    rv64_csr csr_file(.clk(clk), .reset(reset), .addr(csr_addr), .write(csr_wr), .rdata(csr_old), .illegal(csr_bad),
+        .commit(csr_retire && csr_wr), .wdata(csr_new), .trap(trap_req), .trap_cause(trap_req_cause),
+        .trap_epc(trap_req_epc), .trap_tval(trap_req_tval), .mret(state == EXECUTE && is_mret && !exception),
+        .instret_inc(instret_q), .mtvec_base(priv_mtvec), .mepc_value(priv_mepc));
+`endif
     // B extension (0.6.0): Zba, Zbb and Zbs, per the RISC-V bit-manipulation
     // specification; encodings checked against LLVM's assembler. Returns
     // {valid, result}; valid is 0 for anything that is not a B instruction.
@@ -586,6 +611,9 @@ module rv64_core #(
     always @* begin
         legal=1; write_rd=0; load_op=0; store_op=0; branch_taken=0;
         exception=0; exception_cause=0; exception_tval=0;
+`ifdef RV64_PRIV
+        is_csr=0; is_mret=0;
+`endif
         result=0; word_result=0; next_pc=pc+64'd4; effective_addr=0;
         byte_mask=0; access_mask=0;
         case (op)
@@ -688,10 +716,24 @@ module rv64_core #(
                 legal=f3==0 || f3==1;
             end
             7'h73: begin
+`ifdef RV64_PRIV
+                if (f3 == 0) begin
+                    if (insn==32'h00000073) begin exception=1; exception_cause=11; end   // ECALL from M
+                    else if (insn==32'h00100073) begin exception=1; exception_cause=3; exception_tval=pc; end
+                    else if (insn==32'h30200073) begin is_mret=1; next_pc=priv_mepc; end    // MRET
+                    else if (insn==32'h10500073) begin end                               // WFI: a no-op
+                    else legal=0;
+                end else if (f3 == 4) legal=0;
+                else begin
+                    is_csr=1; write_rd=1; result=csr_old;
+                    if (csr_bad) legal=0;
+                end
+`else
                 exception=1;
                 if (insn==32'h00000073) exception_cause=11; // laboratory M-origin ECALL
                 else if (insn==32'h00100073) exception_cause=3;
                 else legal=0;
+`endif
             end
             default: legal=0;
         endcase
@@ -699,18 +741,35 @@ module rv64_core #(
             legal=1; write_rd=1; result=bm0[63:0];  // B extension (0.6.0)
         end
         if (!legal) begin
+            `ifdef RV64_PRIV
+            exception=1; exception_cause=2; exception_tval=(insn[1:0]==2'b11) ? {32'b0,insn} : {48'b0,insn[15:0]};  // a non-32-bit parcel reports 16 bits (as Spike, rv_iss)
+`else
             exception=1; exception_cause=2; exception_tval={32'b0,insn};
+`endif
         end else if (next_pc[1:0]!=0) begin
             exception=1; exception_cause=0; exception_tval=next_pc;
         end
     end
 
+`ifdef RV64_PRIV
+    // A trap at epc: redirect to mtvec now; the CSR file takes mepc/mcause/mtval/mstatus at the next edge.
+    task automatic take_trap(input [63:0] epc, input [63:0] cause, input [63:0] tval);
+        begin
+            trap_req<=1; trap_req_epc<=epc; trap_req_cause<=cause; trap_req_tval<=tval;
+            pc<=priv_mtvec; insn2_valid<=0; state<=FETCH;
+        end
+    endtask
+    task automatic report_trap(input [63:0] cause, input [63:0] tval);
+        take_trap(pc, cause, tval);
+    endtask
+`else
     task automatic report_trap(input [63:0] cause, input [63:0] tval);
         begin
             trap_valid<=1; trap_pc<=pc; trap_cause<=cause; trap_tval<=tval;
             state<=HALTED;
         end
     endtask
+`endif
     // flush: fence.i clears the cache. stored: a store to store_addr completed.
     // pair: insn2 retires on the second slot in the same clock; successor follows it.
     task automatic retire(input [4:0] dest, input [63:0] data, input [63:0] successor,
@@ -720,6 +779,12 @@ module rv64_core #(
         begin
             // A third instruction issues with the pair when issue3 allows (0.7.0).
             triple = pair && issue3;
+`ifdef RV64_PRIV
+            // minstret: every retired instruction except a CSR instruction that writes minstret itself
+            instret_q <= (csr_retire && csr_wr && csr_addr == 12'hb02) ? 2'd0 : 2'd1 + {1'b0, pair} + {1'b0, triple};
+            csr_n_valid <= csr_retire && csr_addr == 12'hb00 && dest != 0;
+            csr_n_value <= csr_old;
+`endif
             if (triple) successor = pc3 + 64'd4;
             after_successor = successor + 64'd4;
             retire_valid<=1; retire_pc<=pc; retire_insn<=insn;
@@ -797,8 +862,15 @@ module rv64_core #(
             mul_op_a<=0; mul_op_b<=0; mul_high<=0; mul_word<=0;
             div_neg_q<=0; div_neg_r<=0; div_want_rem<=0; div_is_word<=0;
             for (i=0;i<32;i=i+1) regs[i]<=0;
+`ifdef RV64_PRIV
+            trap_req<=0; trap_req_epc<=0; trap_req_cause<=0; trap_req_tval<=0; instret_q<=0;
+            csr_n_valid<=0; csr_n_value<=0;
+`endif
         end else begin
             retire_valid<=0; retire2_valid<=0; retire3_valid<=0;
+`ifdef RV64_PRIV
+            trap_req<=0; instret_q<=0; csr_n_valid<=0;
+`endif
             case (state)
                 FETCH: begin
                     if (pc[1:0]!=0) report_trap(0,pc);
@@ -843,8 +915,12 @@ module rv64_core #(
                             // insn retires alone; insn2's store faults or waits in MEMORY.
                             retire(slot0_dest,slot0_value,pc2,1'b0,1'b0,64'b0,1'b0);
                             if (mem_ready) begin
+`ifdef RV64_PRIV
+                                take_trap(pc2, 7, ea2s);
+`else
                                 trap_valid<=1; trap_pc<=pc2; trap_cause<=7; trap_tval<=ea2s;
                                 state<=HALTED;
+`endif
                             end else begin
                                 insn<=insn2; pending_addr<=ea2s; pending_wdata<=store2_wdata;
                                 pending_wstrb<=store2_wstrb; pending_load<=0; pending_f3<=f3_2;

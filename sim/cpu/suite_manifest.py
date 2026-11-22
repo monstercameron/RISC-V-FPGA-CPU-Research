@@ -328,6 +328,22 @@ def spike_lockstep(ctx):
                expect_fail=r'^FAIL rv64ui-xor \(stall \d+\): differs at record \d+: spike \S+ \(0x[0-9a-f]{8}\) x\d+=\S+; rtl \S+ \(0x[0-9a-f]{8}\) x\d+=',
                mutate=('4: r = x ^ y;', '4: r = x | y;'), est=60,
                note='passes only if the lockstep FAILS on the mutant core, at an XOR')
+    # S1 (docket item 15, RV64_PRIV): the multicycle core with M-mode traps, CSRs and MRET against Spike on the
+    # p environment and the directed program (rv_iss --adopt then reproduces each RTL trace), and the built-in
+    # mutants of spike_lockstep.py as negative controls (each run is bounded: 2M instructions, a 1 GiB trace).
+    s1 = ['--asm', 'sim/cpu/sys/tests/s1_directed.S', '--model', 'rtl', '--core', 'multicycle', '--rtl-priv',
+          '--priv', 'm', '--isa', 'rv64im_zba_zbb_zbs_zicsr_zifencei', '--sim', 'verilator']
+    yield Step('spike-s1-multicycle', s, SL, ['penv', 'rv64mi', 'rv64ui', 'rv64um', 'rv64uzba', 'rv64uzbb', 'rv64uzbs', *s1],
+               r'count:^PASS: (\d+) records of \d+ runs', tags=('spike', 'multicycle', 'priv'), core='multicycle',
+               candidate=True, sim='verilator', out_arg=None, when='path-exists:rtl/cpu/rv64_csr.sv', est=150,
+               note='RV64_PRIV multicycle vs Spike, every record; pmpaddr and ma_data fail identically on Spike')
+    for m in ('csr-mret-mpie', 'csr-mtvec-mode', 'csr-trap-mepc', 'csr-minstret-write', 'core-ebreak-tval',
+              'core-pair-store-epc'):
+        yield Step(f'spike-s1-negative-{m}', s, SL, ['penv', 'rv64mi', *s1, '--mutant', m], 'unittest',
+                   tags=('spike', 'negative', 'multicycle', 'priv'), core='multicycle', sim='verilator', out_arg=None,
+                   when='path-exists:rtl/cpu/rv64_csr.sv', est=60,
+                   expect_fail=r'^FAIL \S+: (differs at record \d+: spike|error: tb_core stopped without a tohost write)',
+                   note=f'passes only if the lockstep FAILS on the {m} mutant')
 
 
 def sys_mode(ctx):
@@ -351,7 +367,9 @@ def sys_mode(ctx):
                    out_arg=None, lock='sys-tests', est=120,
                    note=f'rv_iss --isa {sub} --priv {pr} vs Spike; pmpaddr and ma_data fail identically on both')
     yield Step('sys-penv-iss', ('sys',), 'sim/cpu/spike_lockstep.py',
-               ['penv', 'rv64mi', 'rv64ui', 'rv64um', 'rv64uzba', 'rv64uzbb', 'rv64uzbs', '--model', 'iss', '--priv', 'm'],
+               ['penv', 'rv64mi', 'rv64ui', 'rv64um', 'rv64uzba', 'rv64uzbb', 'rv64uzbs', '--asm',
+                'sim/cpu/sys/tests/s1_directed.S', '--isa', 'rv64im_zba_zbb_zbs_zicsr_zifencei', '--model', 'iss',
+                '--priv', 'm'],
                r'count:^PASS: (\d+) records of \d+ runs', tags=('python', 'sys', 'spike'), out_arg=None, est=90,
                note='the p-environment lockstep path (for the RTL with privilege, docket item 15) on rv_iss')
     yield Step('sys-spike-boot', ('sys',), 'sim/cpu/sys/spike_compare.py', ['--instructions', '100000000', '--min',

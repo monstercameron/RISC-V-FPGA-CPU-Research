@@ -66,6 +66,11 @@ CORES = {'multicycle': 'rtl/cpu/rv64_core.sv', 'pipe': 'rtl/cpu/rv64_pipe.sv', '
 DRAM = 0x80000000
 SHIM = 0xC0000000
 LIMIT = 280.0
+# A tb_core trace larger than this is killed (a run that never ends must not fill the disk). The largest
+# legitimate trace, LZMA d12 whole (4.2M instructions), is about 0.35 GB.
+TRACE_CAP = 1 << 30
+# penv: the instruction budget of both Spike and tb_core; a run that reaches it has not ended at tohost.
+PENV_MAX = 2_000_000
 
 
 def run(args, timeout=LIMIT, **kw):
@@ -215,6 +220,7 @@ def rtl_records(lines, skip=0, fflags=0, stub=None):
     seen = 0
     expect_pc = None
     raised = False
+    sourced = False
     for line in lines:
         k = line[:1]
         if k == 'W':
@@ -243,12 +249,16 @@ def rtl_records(lines, skip=0, fflags=0, stub=None):
             seen += 1
             fl = fflags if raised else None
             if seen > skip:
-                regs = () if rd == 0 else (((f'x{rd}' if rd < 32 else f'f{rd - 32}'), val),)
+                # after an N record the value is the RTL's own (mcycle): DUT-sourced, not compared (None)
+                regs = () if rd == 0 else (((f'x{rd}' if rd < 32 else f'f{rd - 32}'), None if sourced else val),)
                 yield ('R', pc, insn, regs, tuple(stores), None if (insn & 0x7f) == 0x73 else fl)
             elif stub is not None and rd:
                 stub[rd] = val
             stores = []
             raised = False
+            sourced = False
+        elif k == 'N':
+            sourced = True
         elif k in ('E', 'I'):
             expect_pc = None        # a trap taken (not terminal): the next record is at the handler
         elif k == 'T':
@@ -259,6 +269,17 @@ def rtl_records(lines, skip=0, fflags=0, stub=None):
             yield ('T', int(cause, 16), pc, int(tval, 16), tuple(stores))
             return
         # V (vector) records do not occur in these programs; any other line is ignored
+
+
+def same(x, y):
+    """x (Spike) equals y (RTL), where a register value None in y (an N record: DUT-sourced) matches any."""
+    if x is None or y is None or x[0] != y[0] or len(x) != len(y):
+        return x == y
+    if x[0] == 'R' and y[3] and y[3][0][1] is None:
+        return x[:3] == y[:3] and x[4:] == y[4:] and bool(x[3]) and x[3][0][0] == y[3][0][0]
+    if x[0] == 'R' and (x[2] & 0x707f) == 0x2073 and x[2] >> 20 == 0xf12 and x[:3] == y[:3] and x[4:] == y[4:]             and x[3] and y[3] and x[3][0][0] == y[3][0][0] and (x[3][0][1], y[3][0][1]) == (5, 0):
+        return True    # marchid: Spike's is its registered 5, the lab cores' 0 (a known difference, csrr only)
+    return x == y
 
 
 def fmt(r):
@@ -302,7 +323,7 @@ def lockstep(spike, elf, ram, fp, rtl_trace, skip, fflags0, limit, deadline, stu
                         result = ('limit', count, f'{count} records equal (window of {limit})', None)
                         break
                     a, b = next(s_it, None), next(r_it, None)
-                    if a is None or b is None or a != b:
+                    if a is None or b is None or not same(a, b):
                         what = 'differs' if a is not None and b is not None else 'a log ended'
                         result = ('diff', count, f'{what} at record {count}: spike {fmt(a)}; rtl {fmt(b)}', None)
                         break
@@ -324,18 +345,52 @@ def lockstep(spike, elf, ram, fp, rtl_trace, skip, fflags0, limit, deadline, stu
 
 # ---------------------------------------------------------------- the RTL run
 
+# S1 negative controls (penv --rtl-priv --mutant NAME): one-line mutations of the CSR file or the core that the
+# p-environment tests plus sim/cpu/sys/tests/s1_directed.S must catch. (file, old, new)
+MUTANTS = {
+    'csr-mret-mpie': ('csr', 'mpie_bit <= 1;', 'mpie_bit <= 0;'),
+    'csr-mtvec-mode': ('csr', "12'h305: mtvec <= {wdata[63:2], 1'b0, wdata[0]};", "12'h305: mtvec <= {wdata[63:2], 2'b00};"),
+    'csr-trap-mepc': ('csr', "mepc <= {trap_epc[63:2], 2'b00};", "mepc <= {trap_epc[63:2], 2'b00} + 64'd4;"),
+    'csr-minstret-write': ('csr', "12'hb02: minstret <= wdata;", "12'hb02: minstret <= wdata + 64'd1;"),
+    'core-ebreak-tval': ('core', 'exception_cause=3; exception_tval=pc;', 'exception_cause=3; exception_tval=0;'),
+    'core-pair-store-epc': ('core', 'take_trap(pc2, 7, ea2s);', 'take_trap(pc, 7, ea2s);'),
+}
+
+
+def mutant_file(src, name, work):
+    """A copy of src with MUTANTS[name] applied (its anchor must occur exactly once)."""
+    _, old, new = MUTANTS[name]
+    text = src.read_text(encoding='utf-8')
+    if text.count(old) != 1:
+        raise SystemExit(f'error: mutant {name}: anchor {old!r} occurs {text.count(old)} times in {src}')
+    out = work / f'{name}-{src.name}'
+    out.write_text(text.replace(old, new), encoding='utf-8', newline='\n')
+    return out
+
+
 class Core:
     def __init__(self, a, ram, fp, work):
         src = Path(a.core_source).resolve() if a.core_source else ROOT / CORES[a.core]
         if fp and 'RV64_OOO_FPU' not in src.read_text(encoding='utf-8'):
             raise SystemExit(f'error: {src.name} has no RV64_OOO_FPU option (F/D programs need --core ooo)')
-        self.src, self.sim = src, simulator.get(a.sim)
+        self.sim = simulator.get(a.sim)
         defines = (['WIDE_TRACE'] if a.core == 'ooo' else []) + (['RV64_OOO_FPU'] if fp else [])
+        extra = []
+        if getattr(a, 'rtl_priv', False):
+            # S1: the privilege option (RV64_PRIV) and its CSR file
+            defines.append('RV64_PRIV')
+            extra = [Path(a.csr_source).resolve() if getattr(a, 'csr_source', None) else ROOT / 'rtl/cpu/rv64_csr.sv']
+        if getattr(a, 'mutant', None):
+            if MUTANTS[a.mutant][0] == 'csr':
+                extra = [mutant_file(extra[0], a.mutant, work)]
+            else:
+                src = mutant_file(src, a.mutant, work)
         params = {'MEM_BYTES': ram, **{k: v for k, v in (('ICACHE_BEATS', a.icache_beats),
                                                           ('DCACHE_BEATS', a.dcache_beats)) if v}}
+        self.src = src
         if getattr(a, 'mem_base', 0):
             params['MEM_BASE'] = f"64'h{a.mem_base:x}"
-        self.exe = self.sim.build('tb_core', [src, ROOT / 'sim/cpu/tb_core.sv'], work / f'tb_core-{a.core}-{ram}.vvp',
+        self.exe = self.sim.build('tb_core', [*extra, src, ROOT / 'sim/cpu/tb_core.sv'], work / f'tb_core-{a.core}-{ram}.vvp',
                                   params=params, defines=defines, timeout=simulator.STEP_TIMEOUT)
 
     def trace(self, image_path, trace_path, stall, seed, max_retired=0, timeout=LIMIT, tohost=None):
@@ -345,7 +400,32 @@ class Core:
             args.append(f'+tohost={tohost:x}')
         if max_retired:
             args.append(f'+max_retired={max_retired}')
-        return run(args, timeout=timeout)
+        # run() with a size cap on the trace, polled every 0.2 s
+        trace_path = Path(trace_path)
+        t_end = time.time() + timeout
+        with tempfile.TemporaryFile('w+') as out:
+            proc = subprocess.Popen([str(x) for x in args], stdout=out, stderr=subprocess.STDOUT, text=True)
+            try:
+                while proc.poll() is None:
+                    try:
+                        size = trace_path.stat().st_size
+                    except FileNotFoundError:
+                        size = 0
+                    if size > TRACE_CAP:
+                        raise RuntimeError(f'tb_core trace passed the {TRACE_CAP >> 20} MiB cap; run killed')
+                    if time.time() > t_end:
+                        raise subprocess.TimeoutExpired(args[0], timeout)
+                    time.sleep(0.2)
+            finally:
+                if proc.poll() is None:
+                    proc.kill()
+                    proc.wait()
+                    trace_path.unlink(missing_ok=True)
+            out.seek(0)
+            text = out.read()
+        if proc.returncode:
+            raise RuntimeError(f'{Path(str(args[0])).name} rc={proc.returncode}: {text.strip()[-600:]}')
+        return text
 
 
 def spike_path(a):
@@ -434,11 +514,19 @@ def main():
     ap.add_argument('--isa', default='rv64im_zba_zbb_zbs_zicsr_zifencei_zicntr', help='penv: the ISA of Spike, '
                     'rv_iss and the test build')
     ap.add_argument('--priv', default='m', choices=('m', 'mu', 'msu'), help='penv: the privilege modes')
+    ap.add_argument('--asm', action='append', default=[], help='penv: an extra M-mode program (its directory has '
+                    's1.ld), compared with Spike like the riscv-tests')
+    ap.add_argument('--rtl-priv', action='store_true', help='build the core with RV64_PRIV (S1) and rv64_csr.sv')
+    ap.add_argument('--csr-source', help='a candidate rv64_csr.sv instead of rtl/cpu/rv64_csr.sv')
+    ap.add_argument('--mutant', choices=sorted(MUTANTS), help='penv --rtl-priv: a negative control, one of the '
+                    'built-in S1 mutations (the run must then FAIL)')
     ap.add_argument('--model', default='rtl', choices=('rtl', 'iss'),
                     help='penv: compare the RTL core (tb_core, MEM_BASE 0x8000_0000, +tohost) or rv_iss --sys')
     a = ap.parse_args()
     if a.mode == 'self-test':
         return self_test()
+    if a.mutant and not (a.mode == 'penv' and a.rtl_priv and a.model == 'rtl'):
+        raise SystemExit('error: --mutant needs penv --rtl-priv --model rtl')
     if a.mode == 'penv':
         return penv(a)
     t_end = time.time() + a.deadline
@@ -589,6 +677,35 @@ def spike_penv_records(log):
         yield ('R', pc, insn, regs, stores, int(m[1], 16) if m and (insn & 0x7f) != 0x73 else None), prv
 
 
+def adopt_check(iss, elf, trc, itrc, a):
+    """The N-record path (mcycle counts the RTL's clocks): rv_iss --sys takes the RTL trace's N values for its
+    mcycle reads (--adopt) and must then write the RTL's R, N, W and E records exactly, values included; rv_iss's
+    own boot ROM below 0x8000_0000 is skipped. A failure raises RuntimeError."""
+    run([iss, '--sys', '1', '--ram', str(PENV_RAM), '--elf', elf, '--isa', a.isa, '--priv', a.priv,
+         '--trace', itrc, '--max', str(PENV_MAX), '--adopt', trc])
+
+    def body(path):
+        out = []
+        for line in path.read_text().splitlines():
+            k = line[:1]
+            if k == 'R' and int(line.split()[1], 16) < PENV_BASE:
+                continue
+            if k in ('R', 'N', 'W', 'E'):
+                out.append(line.lower())
+        return out
+    r, i = body(trc), body(itrc)
+    for n, (x, y) in enumerate(zip(r, i)):
+        if x != y:
+            raise RuntimeError(f'rv_iss --adopt differs from the RTL trace at line {n}: rtl {x!r}; iss {y!r}')
+    # The RTL may retire the instruction after the tohost store in the same clock (pairing), where rv_iss stops at
+    # the store: a trailing `jal x0, 0` (the program's spin loop) is the only record allowed beyond rv_iss's end.
+    while len(r) > len(i) and r[-1].split()[:1] == ['r'] and r[-1].split()[2] == '0000006f':
+        r.pop()
+    if len(r) != len(i):
+        raise RuntimeError(f'rv_iss --adopt wrote {len(i)} records where the RTL trace has {len(r)} '
+                           f'(rtl tail {r[len(i) - 1:len(i) + 2]!r}; iss tail {i[-2:]!r})')
+
+
 def penv(a):
     """P0: riscv-tests in the official p environment (M-mode traps, linked at 0x8000_0000, HTIF tohost end) on a
     subset machine, compared with Spike configured the same (--isa, --priv). --model rtl runs tb_core with
@@ -606,14 +723,20 @@ def penv(a):
         if a.model == 'rtl':
             a.mem_base = PENV_BASE
             core = Core(a, PENV_RAM, 'f' in a.isa.split('_')[0][4:], work)
-        else:
-            iss = srt.build_iss()
-        for suite in a.suites:
-            for name in srt.suite_tests(suite):
+        iss = srt.build_iss()
+        programs = [(s_, n_) for s_ in a.suites for n_ in srt.suite_tests(s_)] + [('asm', Path(f)) for f in a.asm]
+        for suite, name in programs:
+            if True:
                 total += 1
-                tag = f'{suite}-{name}'
+                tag = f'{suite}-{name}' if suite != 'asm' else name.stem
                 try:
-                    elf = srt.build_test(suite, name, a.isa)
+                    if suite == 'asm':
+                        elf = work / f'{tag}.elf'
+                        run(['clang', '--target=riscv64-unknown-elf', f'-march={a.isa.replace("_zicntr", "")}',
+                             '-mabi=lp64', '-mcmodel=medany', '-mno-relax', '-nostdlib', '-static', '-fuse-ld=lld',
+                             f'-T{name.with_name("s1.ld")}', '-o', elf, name])
+                    else:
+                        elf = srt.build_test(suite, name, a.isa)
                     sym = run(['llvm-nm', elf])
                     tohost = int(next(l.split()[0] for l in sym.splitlines() if l.split()[-1] == 'tohost'), 16)
                     trc = work / f'{tag}.trace'
@@ -624,21 +747,25 @@ def penv(a):
                         if len(data) > PENV_RAM:
                             raise RuntimeError(f'{len(data)} bytes exceed {PENV_RAM}')
                         binf.write_bytes(data.ljust(PENV_RAM, b'\0'))
-                        out = core.trace(binf, trc, 0, 1, timeout=max(10.0, t_end - time.time()), tohost=tohost)
+                        out = core.trace(binf, trc, 0, 1, max_retired=PENV_MAX,
+                                         timeout=max(10.0, t_end - time.time()), tohost=tohost)
                         ended = 'TOHOST' in out
+                        if not ended:
+                            raise RuntimeError(f'tb_core stopped without a tohost write (the {PENV_MAX} instruction '
+                                               f'budget or a halt): {out.strip()[-200:]}')
                         m = re.search(r'TOHOST value=([0-9a-f]+)', out)
                         value = int(m[1], 16) & 0xffffffff if m else None
                     else:
                         # the same platform as Spike's: 64 KiB of RAM at 0x8000_0000 and Spike's time model
                         res = json.loads(run([iss, '--sys', '1', '--ram', str(PENV_RAM), '--elf', elf, '--isa', a.isa,
-                                              '--priv', a.priv, '--trace', trc, '--max', '2000000', '--marchid', '5',
+                                              '--priv', a.priv, '--trace', trc, '--max', str(PENV_MAX), '--marchid', '5',
                                               '--time', 'spike']).strip().splitlines()[-1])
                         ended = res['stop'] == 'tohost'
                         value = res['exit_code'] & 0xffffffff
                     fifo = work / f'{tag}.fifo'
                     os.mkfifo(fifo)
                     proc = subprocess.Popen([spike, f'--isa={a.isa}', f'--priv={a.priv}', '--pmpregions=0', '--triggers=0',
-                                             f'-m{PENV_BASE:#x}:{PENV_RAM:#x}', '--instructions=2000000', '--log-commits',
+                                             f'-m{PENV_BASE:#x}:{PENV_RAM:#x}', f'--instructions={PENV_MAX}', '--log-commits',
                                              f'--log={fifo}', str(elf)], stdin=subprocess.DEVNULL,
                                             stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
                     count, msg = 0, None
@@ -665,7 +792,7 @@ def penv(a):
                                 x, prv = next(s_it, (None, None))
                                 # The lab trace has no privilege field: compare the rest, and with --priv m require
                                 # Spike to stay in M (a model or core can only be in M then).
-                                if x != b or (a.priv == 'm' and prv != 3):
+                                if not same(x, b) or (a.priv == 'm' and prv != 3):
                                     msg = f'differs at record {count}: spike {fmt(x)} (priv {prv}); {a.model} {fmt(b)}'
                                     break
                                 count += 1
@@ -686,6 +813,9 @@ def penv(a):
                         msg = f'{count} records equal, but the run did not end at tohost'
                     if msg is None and count == 0:
                         msg = 'no records'
+                    if msg is None and core and a.rtl_priv:
+                        # after Spike agrees: rv_iss must reproduce the RTL trace with its mcycle values adopted
+                        adopt_check(iss, elf, trc, work / f'{tag}.iss.trace', a)
                 except (RuntimeError, ValueError, OSError, subprocess.TimeoutExpired, StopIteration) as e:
                     count, msg, value = 0, f'error: {str(e)[-300:]}', None
                 n_rec += count

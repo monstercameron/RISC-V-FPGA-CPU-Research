@@ -45,7 +45,9 @@
  * the reset code), --time lab|spike, --commit-log FILE (Spike --log-commits format; --commit-from/--commit-to
  * select an instruction range), --uart-in FILE (scripted RX bytes), --uart-out FILE (TX; default stdout),
  * --isa rv64...(default rv64imafdc_zicsr_zifencei_zicntr; also b/zba_zbb_zbs) and --priv m|mu|msu (default msu),
- * --marchid N, --dump-on-output STR (write <dump-prefix>marker.state once the console output ends with STR);
+ * --marchid N, --adopt FILE (mcycle reads take the values of the N records in FILE, an RTL trace, in order:
+ * the RTL is the source of mcycle, which counts its clocks; each adopted read is written to --trace as N),
+ * --dump-on-output STR (write <dump-prefix>marker.state once the console output ends with STR);
  * --state, --dump-at/--dump-prefix and --final-state read and write "RVISSST3" full-system states
  * (layout in PRIV-CONTRACT.md); --trace adds E (exception) and I (interrupt) records. Without --sys nothing
  * below changes.
@@ -1151,8 +1153,33 @@ static void parse_dumps(const char *list) {
 
 static int sys_on, time_spike;
 static u64 marchid_val;
+/* --adopt: the DUT-sourced mcycle values (N records of an RTL trace), consumed by mcycle reads in order */
+static u64 *adopt_v;
+static size_t adopt_n, adopt_i;
+static const char *adopt_path;
+
+static void adopt_load(const char *path) {
+    FILE *f = fopen(path, "r");
+    char line[256];
+    size_t cap = 0;
+    if (!f) die("cannot open --adopt file");
+    while (fgets(line, sizeof line, f)) {
+        unsigned csr;
+        unsigned long long v;
+        if (line[0] != 'N') continue;
+        if (sscanf(line, "N %x %llx", &csr, &v) != 2 || csr != 0xb00) die("--adopt: bad N record");
+        if (adopt_n == cap) {
+            cap = cap ? 2 * cap : 64;
+            adopt_v = realloc(adopt_v, cap * sizeof *adopt_v);
+            if (!adopt_v) die("out of memory");
+        }
+        adopt_v[adopt_n++] = (u64)v;
+    }
+    fclose(f);
+}
 static int prv = 3;
 static u64 mstatus, medeleg, mideleg, mie, mip_sw, mip_dev, mtvec, mepc, mcause, mtval, mscratch;
+static u64 mcontext;
 static u64 mcounteren, mcountinhibit, menvcfg, stvec, sepc, scause, stval, sscratch, satp, scounteren, senvcfg;
 static u64 mcycle, minstret;
 /* Counter writes win over the writing instruction's own increment (a flag skips that one increment).
@@ -1690,8 +1717,8 @@ static int csr_access(u32 csr, int write, u64 wval_in, u64 *old, int kind, u64 s
     case 0x342: v = mcause; break;
     case 0x343: v = mtval; break;
     case 0x344: v = mip_read(); break;
-    case 0x747: v = 0; break;                        /* mseccfg: no writable fields in this ISA */
-    case 0x7a0: case 0x7a1: case 0x7a2: case 0x7a3: case 0x7a4: case 0x7a8: v = 0; break;  /* Sdtrig, 0 triggers */
+    case 0x7a0: case 0x7a1: case 0x7a2: case 0x7a3: case 0x7a4: v = 0; break;  /* Sdtrig, 0 triggers */
+    case 0x7a8: v = mcontext; break;  /* Spike: a writable 13-bit context even with --triggers=0 (not in RVISSST3) */
     case 0xb00: v = mcycle; break;
     case 0xb02: v = minstret; break;
     case 0xf11: v = 0; break;
@@ -1701,7 +1728,8 @@ static int csr_access(u32 csr, int write, u64 wval_in, u64 *old, int kind, u64 s
     case 0xf15: v = 0; break;
     default:
         if ((csr >= 0x323 && csr <= 0x33f) || (csr >= 0xb03 && csr <= 0xb1f)) { v = 0; break; }  /* mhpmevent/counter */
-        /* pmpcfg 0x3A0-0x3AF and pmpaddr 0x3B0-0x3EF: with 0 PMP entries they do not exist (cause 2), as Spike */
+        /* pmpcfg 0x3A0-0x3AF and pmpaddr 0x3B0-0x3EF: with 0 PMP entries they do not exist (cause 2), as Spike.
+           mseccfg 0x747 exists only with Smepmp, Smmpm, Zicfilp or Zkr (none here): cause 2, as Spike */
         ok = 0;
     }
     if (!ok) return 0;
@@ -1741,6 +1769,7 @@ static int csr_access(u32 csr, int write, u64 wval_in, u64 *old, int kind, u64 s
     case 0x30a: menvcfg = nv & (has_s ? 1 : 0); break;
     case 0x320: mcountinhibit = nv & (has_zicntr ? 5 : 0); break;
     case 0x340: mscratch = nv; break;
+    case 0x7a8: mcontext = nv & 0x1fff; break;
     case 0x341: mepc = nv & ~(u64)1; break;
     case 0x342: mcause = nv; break;
     case 0x343: mtval = nv; break;
@@ -2127,6 +2156,12 @@ static void sys_step(void) {
         u64 src = f3 >= 5 ? rs1 : a, old;
         int write = kind == 1 || rs1 != 0;
         if (!csr_access(csr, write, 0, &old, kind, src, 1)) ILLEGAL();
+        if (adopt_path && csr == 0xb00 && rd != 0) {
+            /* the RTL's own mcycle value for this read (its N record); the write, if any, was applied above */
+            if (adopt_i == adopt_n) die("--adopt: an mcycle read with no N record left");
+            old = adopt_v[adopt_i++];
+            if (tracing()) fprintf(trace_fd, "N b00 %016" PRIx64 "\n", old);
+        }
         value = old; dest = rd; ok = 1; serial = 1;
         break;
     }
@@ -2465,6 +2500,7 @@ static int sys_main(const char *state, const char *trace, const char *final_stat
         pc = ROM_BASE;
         prv = 3;
     }
+    if (adopt_path) adopt_load(adopt_path);
     if (trace && !(trace_fd = fopen(trace, "w"))) die("cannot write trace");
     if (trace_fd) setvbuf(trace_fd, NULL, _IOFBF, 1 << 20);
     if (clog_path && !(clog = fopen(clog_path, "w"))) die("cannot write commit log");
@@ -2536,6 +2572,7 @@ static int sys_main(const char *state, const char *trace, const char *final_stat
     }
     double t1 = now();
     if (trace_fd && fclose(trace_fd)) die("trace write failed");
+    if (adopt_path && adopt_i != adopt_n) die("--adopt: N records left unused (the runs took different paths)");
     if (clog && fclose(clog)) die("commit log write failed");
     if (final_state) write_sys_state(final_state);
     fflush(uart_out);
@@ -2589,13 +2626,14 @@ int main(int argc, char **argv) {
         else if (!strcmp(k, "--uart-in")) uart_in_path = v;
         else if (!strcmp(k, "--uart-out")) uart_out_path = v;
         else if (!strcmp(k, "--marchid")) marchid_val = strtoull(v, NULL, 0);
+        else if (!strcmp(k, "--adopt")) adopt_path = v;
         else if (!strcmp(k, "--isa")) sys_isa = v;
         else if (!strcmp(k, "--priv")) sys_priv = v;
         else if (!strcmp(k, "--dump-on-output")) out_marker = v;
         else die("unknown option");
     }
     if (!sys_on && (sys_elf || sys_dtb || sys_nbins || time_spike || clog_path || uart_in_path || uart_out_path ||
-                    marchid_val || out_marker || sys_isa || sys_priv || clog_from || clog_to != ~(u64)0))
+                    marchid_val || adopt_path || out_marker || sys_isa || sys_priv || clog_from || clog_to != ~(u64)0))
         die("system-mode options need --sys 1");
     if (sys_on) {
         if (!ram || (ram & 7) || image) die("--sys needs --ram and takes --elf/--bin/--state, not --image");

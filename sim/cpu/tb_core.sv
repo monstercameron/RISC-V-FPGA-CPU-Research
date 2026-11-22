@@ -216,6 +216,10 @@ module tb_core #(parameter integer MEM_BYTES=16384, parameter integer ICACHE_BEA
             if (!(retired2 && rinsn2[6:0]==7'h23) && pending_write!="") begin
                 $fdisplay(fd,"%s",pending_write); pending_write="";
             end
+`ifdef RV64_PRIV
+            // N (S1): the first slot is a CSR instruction that read mcycle, a value the RTL sources
+            if (retired && dut.csr_n_valid) $fdisplay(fd,"N b00 %016h",dut.csr_n_value);
+`endif
             if (retired) begin
                 $fdisplay(fd,"R %016h %08h %02h %016h %016h",rpc,rinsn,rd,rval,npc);
                 retire_count=retire_count+1;
@@ -232,6 +236,10 @@ module tb_core #(parameter integer MEM_BYTES=16384, parameter integer ICACHE_BEA
                 retire_count=retire_count+1; slot3_count=slot3_count+1;
                 if (rinsn3[6:0]==7'h63) slot3_branches=slot3_branches+1;
             end
+`endif
+`ifdef RV64_PRIV
+            // E (S1): a trap taken at the last edge (after that edge's retirements, before the handler's)
+            if (dut.trap_req) $fdisplay(fd,"E %016h %016h %016h",dut.trap_req_epc,dut.trap_req_cause,dut.trap_req_tval);
 `endif
             if (tohost_hit && pending_write=="" && !trapped) begin
                 $fclose(fd);

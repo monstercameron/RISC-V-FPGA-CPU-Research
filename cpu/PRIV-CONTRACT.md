@@ -1,14 +1,18 @@
-# Privilege and platform contract: lab-virt (DRAFT)
+# Privilege and platform contract: lab-virt (DRAFT, with S1 adopted)
 
-**Status: draft proposal, not a version.** Nothing here is implemented in RTL, and nothing here is part of
-the architectural contract in `cpu/architecture.md` until the council adopts it as a MINOR version with
-its own history row. It describes what the golden model `rv_iss --sys` (milestone M1) implements, so that
+**Status: draft proposal, except S1.** **S1 (adopted with the MINOR that adds `RV64_PRIV`, see
+`cpu/architecture.md` section 4 and its history row):** the machine `--isa rv64im_zba_zbb_zbs_zicsr_zifencei
+--priv m` of section 1.1, the M-mode parts of section 2 (trap entry, the M causes, mtval, MRET, WFI), the
+M-mode CSRs of section 3 as they apply to that machine (the S1 column below), and the `E` and `N` trace records
+of section 8 are part of the architectural contract for the multicycle core built with `RV64_PRIV`. Everything
+else (S, U, interrupts, Sv39, A, F/D, C, the platform devices, the time models and checkpoints in RTL) is not
+part of the architectural contract until the council adopts it as a later MINOR with its own history row. It describes what the golden model `rv_iss --sys` (milestone M1) implements, so that
 the RTL stages S1-S6 (`build/research/rv64gc-linux.md`, section 3) have a fixed target. Where this text
 is silent, the RISC-V specifications govern: the unprivileged ISA, the privileged architecture v1.12
 (Machine and Supervisor levels), the SiFive CLINT / ACLINT layout and the PLIC 1.0.0 specification.
 
 Claims are kept apart. *Model* means `rv_iss --sys` behaviour (simulation, checked against Spike and
-riscv-tests). *RTL* means a hardware stage, none of which exists yet. No physical-hardware claim is made.
+riscv-tests). *RTL* means a hardware stage; only S1 exists (simulation only). No physical-hardware claim is made.
 This platform is an "S-mode + Sv39 Linux experiment"; it is **not** RVA23S64 (no H, Sstc, Svpbmt, Sscofpmf,
 Svinval and others).
 
@@ -58,8 +62,18 @@ string is `rv64` + letters from i, m, a, f, d, c, g, b, then `_zba`, `_zbb`, `_z
 - Without M: the M encodings are cause 2. Without S the PLIC has only the M context. A full-system state
   records the configuration and is refused under another one.
 
-The lab cores today (multicycle and pipelined: `rv64im_zba_zbb_zbs_zifencei`) correspond to
-`--isa rv64im_zba_zbb_zbs_zicsr_zifencei_zicntr --priv m` once they implement the M-mode CSRs (S1).
+The lab cores (multicycle and pipelined: `rv64im_zba_zbb_zbs_zifencei`) correspond to
+`--isa rv64im_zba_zbb_zbs_zicsr_zifencei --priv m` with the M-mode CSRs. **S1 (adopted):** the multicycle core
+with `RV64_PRIV` is that machine, compared record by record with Spike and rv_iss configured the same
+(`spike_lockstep.py penv --rtl-priv`), with these RTL rules on top of the model's:
+- mcycle counts clocks (the model's counts retirements): a read is DUT-sourced, marked by an `N` record
+  (section 8), and taken as given by the comparison (rv_iss `--adopt`). minstret counts retirements in both.
+- mip reads 0 (no interrupt sources; Spike's CLINT resets mtimecmp to 0, so Spike's MTIP is set: programs
+  compared with Spike do not read mip). WFI is a no-op (Spike waits).
+- The core starts at 0x8000_0000 with minstret 0; Spike and rv_iss first run 5 boot-ROM instructions, so a
+  program that compares minstret writes it first.
+- marchid reads 0 (Spike 5; the lockstep waives a `csrr` of 0xF12).
+- A run ends through the testbench's tohost (`tb_core.sv +tohost`); `trap_valid` is never set.
 
 ## 2. Privilege modes and traps
 
@@ -113,9 +127,11 @@ with bits 11:10 = 3 are cause 2. CSRRS/CSRRC with rs1 = x0 (and the immediate fo
 | mhpmevent3-31 0x323-0x33F, mhpmcounter3-31 0xB03-0xB1F | read 0, writes ignored (no Zihpm; the user hpmcounter CSRs do not exist) |
 | mscratch 0x340, mepc 0x341, mcause 0x342, mtval 0x343 | mepc bit 0 reads 0 |
 | pmpcfg0-15 (0x3A0-0x3AF), pmpaddr0-63 (0x3B0-0x3EF) | 0 PMP entries: every access is cause 2, as Spike with no PMP regions (the specification also allows read-only zero; OpenSBI's probe sees 0 entries either way) |
-| mcycle 0xB00, minstret 0xB02 | count retired instructions (a CPI-1 clock); a write sets the value seen after that instruction; inhibited by mcountinhibit |
+| mseccfg 0x747 | absent (cause 2): it exists only with Smepmp, Smmpm, Zicfilp or Zkr, none of which is implemented; Spike checks the same |
+| mcycle 0xB00, minstret 0xB02 | model: count retired instructions (a CPI-1 clock); a write sets the value seen after that instruction; inhibited by mcountinhibit. S1 RTL: mcycle counts clocks and its reads are `N` records (section 1.1); minstret as the model |
 | mvendorid 0xF11, marchid 0xF12, mimpid 0xF13, mhartid 0xF14, mconfigptr 0xF15 | 0 (marchid is a model option, set to Spike's 5 for comparisons) |
-| tselect 0x7A0, tdata1-3 0x7A1-0x7A3, tinfo 0x7A4, mcontext 0x7A8, scontext 0x5A8, mseccfg 0x747 | read 0, writes ignored: Sdtrig with zero triggers, as Spike `--triggers=0` (OpenSBI probes tselect) |
+| tselect 0x7A0, tdata1-3 0x7A1-0x7A3, tinfo 0x7A4, scontext 0x5A8 | read 0, writes ignored: Sdtrig with zero triggers, as Spike `--triggers=0` (OpenSBI probes tselect) |
+| mcontext 0x7A8 | 13-bit read/write register (found 2026-11-22 in the S1 review: Spike creates it writable even with `--triggers=0`); not in the RVISSST3 checkpoint |
 
 ## 4. Virtual memory: Sv39 with Svade
 
@@ -196,7 +212,12 @@ The device tree source is `sim/cpu/sys/lab-virt.dts` (MIT, ours).
 **Trace (`--trace`, reference.py format) in system mode:** R and W records as today, with virtual
 addresses; `insn` of a compressed instruction is the 16-bit parcel zero-extended, `next` = pc + 2. New:
 `E pc cause tval` before a trap is taken (exception) and `I pc cause tval` (interrupt, tval 0). A trapping
-instruction emits only its E record. Proposed for the RTL stages but not yet emitted: `P m` on a mode change,
+instruction emits only its E record. **S1 (adopted):** the RTL writes `E epc cause tval` the same way, and
+`N b00 value` immediately before the R record of a CSR instruction with rd != x0 that read mcycle: the value
+the RTL read (it counts clocks). A comparison takes it as the RTL's own: Spike's value is not compared, and
+rv_iss `--sys --adopt TRACE` uses the N values of an RTL trace for its mcycle reads, in order (an extra read or
+an unused value is an error) and writes the same N records, so rv_iss then reproduces the RTL trace exactly.
+Proposed for later RTL stages but not yet emitted: `P m` on a mode change,
 `C csr val` for implicit CSR writes, `W va pa bytes` once Sv39 exists in RTL.
 
 **Commit log (`--commit-log`):** Spike's `--log-commits` format (`core   0: P PC (INSN) xN VAL ... mem ADDR
