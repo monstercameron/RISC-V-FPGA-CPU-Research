@@ -48,7 +48,7 @@ Nothing is downloaded and no FPGA is needed. `.\sim\cpu\run.ps1` or `bash sim/cp
 ```sh
 python -B sim/cpu/suite.py --list                                   # suites, presets, steps
 python -B sim/cpu/suite.py release-patch --core-source cand.sv --dry-run    # exact commands
-python -B sim/cpu/suite.py release-patch --core-source cand.sv     --expect sim/cpu/baselines/0.19.4-release-patch.json --devlog-row   # same counts and clocks as 0.19.4?
+python -B sim/cpu/suite.py release-patch --core-source cand.sv     --expect sim/cpu/baselines/0.21.0-release-patch.json --devlog-row   # same counts and clocks as 0.21.0?
 python -B sim/cpu/suite.py release-minor --jobs 3                   # plus the full Icarus run (sharded)
 python -B sim/cpu/suite.py isa fpu --cache-sizes default,2,64 --only 'fpu-*'
 ```

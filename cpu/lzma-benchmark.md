@@ -24,7 +24,13 @@ simulation"**. They are not 7-Zip benchmark scores. Reference scores for real CP
 - **Timing.** Timing starts after the data, its CRC and the encoder properties are prepared.
   - Each compression pass is one `ICompressCoder::Code()`, which includes encoder and
     match-finder initialisation. The output stream copies the packed bytes and updates their CRC.
-  - Each decompression pass decodes to the end and CRCs the output; the CRC must match.
+  - Each decompression pass decodes to the end and CRCs the output; the CRC must match. The CRC is
+    computed as the output is written: the LZMA decoder (`CPP/7zip/Compress/LzmaDecoder.cpp`) decodes
+    at most `_outStep` = 1 MiB past its last write (lines 32, 139-141) and then writes that step
+    (line 178) to a `CCrcOutStream`, which CRCs it (`Bench.cpp` lines 382-390), all inside the
+    decode timing (`Bench.cpp` lines 2105-2159). `CrcUpdate` uses the Arm CRC32 instructions where
+    the CPU has them (`C/7zCrc.c` lines 84-147, 175-226, 367-369), otherwise slicing-by-12 tables
+    (`C/7zCrc.c` line 29, `C/7zCrcOpt.c` lines 46-100); RISC-V has no hardware path.
   - Passes repeat until about 4 s of nominal work (`kComplexInCommands`) is done.
 - **Rating.** Bench.cpp converts speed to "MIPS" with fixed per-byte command counts:
   - Compression: `870 + (t*t*5 >> 16)` commands per input byte, with
@@ -40,10 +46,29 @@ simulation"**. They are not 7-Zip benchmark scores. Reference scores for real CP
 |---|---|---|
 | Data | GenerateLz(32, salt 0), 4 MiB + 64 KiB | Same generator (checked byte-identical to the upstream C++ text in 60 cases, including 4 MiB + 64 KiB), **4,160 B** (4 KiB + 1/64, the same shape) |
 | Encoder | LZMA SDK, level 5, BT4, lc3 lp0 pb2, fb32, mc32 | The same unmodified LZMA SDK files (`vendor/lzma/`), same settings, **4 KiB dictionary** (the LZMA minimum) |
-| Streams | Input copied from memory; output copied with a CRC; decoder output CRC-checked | Same, as callbacks; the CRC is a byte-table CRC-32, not 7-Zip's sliced or hardware CRC |
+| Streams | Input copied from memory; output copied with a CRC; decoder output CRC-checked per 1 MiB step as written | Same, as callbacks. Decoder output: 1 MiB steps, each CRC'd inside the timed region with slicing-by-12 (7-Zip's algorithm without a CRC instruction); packed-stream and data CRCs: byte-table CRC-32 |
 | Passes | Repeated for about 4 s, alloc once, init per pass | One pass. The *kernel* phases exclude the fixed per-pass init; *call* phases include it |
 | Memory | malloc, about 25 MiB for d22 | Static arena in 1 MiB of RAM (878,400 B used; the BT4 hash alone is 528 KiB) |
 | Rating | 950 commands/B (d22) | 870 commands/B (dictionaries up to 2^18 count as 2^18); decompress formula unchanged |
+
+### Known departures from `Bench.cpp`
+
+The decompression CRC matches 7-Zip's structure since 2026-11-22 (before that, the kernel ran one
+byte-table CRC pass over the whole output after decoding, which made 11.7% of the d22 decompress
+instructions and 24% of its clocks at a 4 MiB L2 a separate sequential re-read of the 4 MiB output;
+see DEVLOG.md 2026-11-22 05:21 onwards). These differences remain, all known and small:
+- **Input copy.** 7-Zip's decoder reads the packed stream through `CBenchmarkInStream::Read`, which
+  copies it in blocks of at most 1 MiB into the decoder's input buffer (`Bench.cpp` lines 283-299,
+  inside the timing). The kernel decodes straight from the packed buffer, without the copy.
+- **Circular dictionary.** 7-Zip's decoder decodes into its own dictionary buffer of the dictionary
+  size (`LzmaDec_Allocate`, `C/LzmaDec.c` lines 1312-1339; at `-md22` 4 MiB, which wraps once for the
+  4 MiB + 64 KiB of data, `LzmaDecoder.cpp` lines 180-181). The kernel decodes into a flat output
+  buffer of the data size, so it never wraps.
+- **CRC algorithm.** The kernel always uses slicing-by-12 for the decoder output, which is what 7-Zip
+  runs on RISC-V. On the Arm laptop `7zz b` uses the CRC32 instructions instead, so the native
+  calibration run and `7zz b` differ there. The packed-stream CRC during compression (7-Zip:
+  `CheckCrc_Enc`, on for LZMA, `Bench.cpp` line 1917) stays byte-table, about 0.5% of the d22
+  compress instructions.
 
 Because the match finder searches only a 4 KiB window, the kernel runs far fewer clocks per byte than
 `-md22`, although the BT4 hash table is 528 KiB and not all of it fits a small cache (measured on the
@@ -57,8 +82,13 @@ real 7-Zip rating, and is comparable to one only through a calibration on real h
 |---|---|---|---:|
 | compress kernel | first input-stream read, which LzFind makes right after clearing its hash | `LzmaEnc_Encode()` returns | 3,065,962 |
 | compress call | `LzmaEnc_Encode()` called | returns | 3,509,472 |
-| decompress kernel | after `LzmaDec_Init()` | output CRC done | 429,119 |
-| decompress call | `LzmaDec_Init()` | output CRC done | 429,130 |
+| decompress kernel | after `LzmaDec_Init()` | CRC of the last output step done | 412,564 |
+| decompress call | `LzmaDec_Init()` | CRC of the last output step done | 412,577 |
+
+Decompress counts since the 2026-11-22 CRC change (before it: 429,119 / 429,130). The slicing tables are
+built after compression and before the decompress phases, so everything up to the end of compression
+executes the same instructions as before (at d22 the compress kernel is 3,535,891,073 instructions either
+way); only the code and data layout moved.
 
 The whole program is 4.18 M instructions. Data generation and setup take 211 k, and encoder init
 takes 443 k, almost all of it clearing the fixed 132 k-entry BT4 hash, which LzFind keeps at a
@@ -99,6 +129,10 @@ The native harness `lzma_native.c` builds the same sources for the host, runs ma
 estimates the clock from a dependent-add chain, so the kernel can be calibrated on a real CPU.
 
 ## Results, 2026-11-21 (architecture 0.14.6, rv64imb, clang 23.1.5 -O2; simulation)
+
+These results predate the 2026-11-22 CRC change: their decompress figures include the byte-table
+CRC post-pass and are not comparable with later ones. Current goals and figures are in
+[7zip-benchmark-targets.md](7zip-benchmark-targets.md).
 
 Ratings are 7-Zip "MIPS" per MHz, which equals 7-Zip commands per clock; kernel phases only.
 

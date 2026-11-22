@@ -1,0 +1,893 @@
+{
+  "tool": "sim/cpu/suite.py",
+  "selection": [
+    "release-patch",
+    "fpu",
+    "vector"
+  ],
+  "argv": "python -B sim/cpu/suite.py release-patch fpu vector --expect sim/cpu/baselines/0.19.4-release-patch.json --jobs 2",
+  "who": "suite",
+  "started": "2026-11-22T11:59:55-05:00",
+  "finished": "2026-11-22T12:21:57-05:00",
+  "wall_seconds": 1320.2,
+  "jobs": 2,
+  "commit": {
+    "commit": "18b2158",
+    "uncommitted": true,
+    "changed_files": 5
+  },
+  "core_source": null,
+  "core_sha256": "1674fd2f5c23d84cff6282907c2f2aff3e7f61b4f0b772dbb6c5a371c3cfa289",
+  "tools": {
+    "python_host": "3.12.10 (Windows ARM64)",
+    "bench_compiler": "clang version 23.1.5 (https://github.com/llvm/llvm-project 392dfff97d29b59d77e5cac6d4b6ef2585fe7117)",
+    "bench_compiler_source": "windows-llvm",
+    "python3": "3.12.3",
+    "machine": "aarch64",
+    "verilator": "Verilator 5.020 2024-01-01 rev (Debian 5.020-1)",
+    "verilator_cxx": "Ubuntu clang version 18.1.3 (1ubuntu1)",
+    "icarus": "Icarus Verilog version 12.0 (stable) ()"
+  },
+  "expect": "C:\\Users\\mreca\\Desktop\\RISC-V-FPGA-CPU-Research\\sim\\cpu\\baselines\\0.19.4-release-patch.json",
+  "expect_notes": [
+    "build:lzma-d12-rv64imb-ooo: payload_bytes 51,768 -> 52552",
+    "lzma-64k: compress_kernel.clocks 359,284 -> 359685; compress_call.clocks 410,532 -> 410938; decompress_kernel.clocks 129,587 -> 119775; decompress_kernel.instructions 429,119 -> 412564; decompress_call.clocks 129,602 -> 119777; decompress_call.instructions 429,130 -> 412577",
+    "lzma-4k: compress_kernel.clocks 966,029 -> 969114; compress_call.clocks 1,017,303 -> 1020375; decompress_kernel.clocks 149,450 -> 147148; decompress_kernel.instructions 429,119 -> 412564; decompress_call.clocks 149,465 -> 147150; decompress_call.instructions 429,130 -> 412577",
+    "lzma-64k-fpu: compress_kernel.clocks 359,284 -> 359685; compress_call.clocks 410,532 -> 410938; decompress_kernel.clocks 129,587 -> 119775; decompress_kernel.instructions 429,119 -> 412564; decompress_call.clocks 129,602 -> 119777; decompress_call.instructions 429,130 -> 412577",
+    "spike-lzma-ooo: count 4,179,371 -> 4189563",
+    "spike-lzma-pipe: count 4,179,371 -> 4189563",
+    "spike-lzma-multicycle: count 4,179,371 -> 4189563"
+  ],
+  "skipped": {},
+  "steps": {
+    "build:lzma-d12-rv64imb-ooo": {
+      "status": "DIFF",
+      "rc": 0,
+      "seconds": 2.5,
+      "command": "'C:\\Users\\mreca\\AppData\\Local\\Programs\\Python\\Python312-arm64\\python.exe' -B sim/cpu/bench/build_bench.py --benchmark lzma --lzma-dict-log 12 --out-dir 'build\\suite\\bench\\lzma-d12-rv64imb-ooo' --clang 'C:\\Program Files\\LLVM\\bin\\clang.exe' --objcopy 'C:\\Program Files\\LLVM\\bin\\llvm-objcopy.exe' --objdump 'C:\\Program Files\\LLVM\\bin\\llvm-objdump.exe' --nm 'C:\\Program Files\\LLVM\\bin\\llvm-nm.exe'",
+      "side": "llvm",
+      "suites": [
+        "bench-smoke",
+        "bench"
+      ],
+      "core_file": null,
+      "metrics": {
+        "payload_bytes": 52552
+      },
+      "summary": "clang version 23.1.5 (https://github.com",
+      "log": "build/suite/20261122-115955/build_lzma-d12-rv64imb-ooo.log",
+      "note": "",
+      "expect": "DIFF: payload_bytes 51,768 -> 52552"
+    },
+    "build:vl-dhrystone-rv64imb-ooo": {
+      "status": "REUSED",
+      "rc": 0,
+      "seconds": 0.0,
+      "command": "",
+      "side": "llvm",
+      "suites": [
+        "bench-smoke",
+        "bench"
+      ],
+      "core_file": null,
+      "metrics": {
+        "payload_bytes": 5296
+      },
+      "summary": "valid build reused (clang version 23.1.5 (https://gi)",
+      "log": "build/suite/20261122-115955/build_vl-dhrystone-rv64imb-ooo.log",
+      "note": ""
+    },
+    "build:vl-dhrystone-rv64imb-fastrt-ooo": {
+      "status": "REUSED",
+      "rc": 0,
+      "seconds": 0.0,
+      "command": "",
+      "side": "llvm",
+      "suites": [
+        "bench-smoke"
+      ],
+      "core_file": null,
+      "metrics": {
+        "payload_bytes": 5728
+      },
+      "summary": "valid build reused (clang version 23.1.5 (https://gi)",
+      "log": "build/suite/20261122-115955/build_vl-dhrystone-rv64imb-fastrt-ooo.log",
+      "note": ""
+    },
+    "build:rt-g16s2i32-pt16x12x4-rv64imfdb": {
+      "status": "REUSED",
+      "rc": 0,
+      "seconds": 0.0,
+      "command": "",
+      "side": "llvm",
+      "suites": [
+        "spike-lockstep"
+      ],
+      "core_file": null,
+      "metrics": {
+        "payload_bytes": 145036
+      },
+      "summary": "valid build reused (clang version 23.1.5 (https://gi)",
+      "log": "build/suite/20261122-115955/build_rt-g16s2i32-pt16x12x4-rv64imfdb.log",
+      "note": ""
+    },
+    "build:js-s1-rv64imfdb": {
+      "status": "REUSED",
+      "rc": 0,
+      "seconds": 0.0,
+      "command": "",
+      "side": "llvm",
+      "suites": [
+        "spike-lockstep"
+      ],
+      "core_file": null,
+      "metrics": {
+        "payload_bytes": 1016464
+      },
+      "summary": "valid build reused (clang version 23.1.5 (https://gi)",
+      "log": "build/suite/20261122-115955/build_js-s1-rv64imfdb.log",
+      "note": ""
+    },
+    "isa-ooo": {
+      "status": "PASS",
+      "rc": 0,
+      "seconds": 102.7,
+      "command": "NB=\"$HOME/.cache/rv64-suite\"; find \"$NB\" -mindepth 1 -maxdepth 1 -name \"run-*\" -mmin +720 -exec rm -rf {} + 2>/dev/null; NS=\"$NB\"/run-6e76def9c712d229; mkdir -p \"$NS\"/build/suite/20261122-115955/isa-ooo; timeout -k 10 300 python3 -B sim/cpu/test_cpu.py --core ooo --sim verilator --out-dir \"$NS\"/build/suite/20261122-115955/isa-ooo; rc=$?; mkdir -p build/suite/20261122-115955/isa-ooo && find \"$NS\"/build/suite/20261122-115955/isa-ooo -maxdepth 1 -type f \\( -name '*.json' -o -name '*.log' -o -name '*.txt' -o -name '*.md' \\) -size -8M -exec cp -p {} build/suite/20261122-115955/isa-ooo/ \\;; exit $rc",
+      "side": "linux",
+      "suites": [
+        "isa"
+      ],
+      "core_file": "rv64_ooo.sv",
+      "metrics": {
+        "programs": 137,
+        "runs": 411,
+        "instruction_names": 106
+      },
+      "summary": "137 programs, 411 runs, 106 names",
+      "log": "build/suite/20261122-115955/isa-ooo.log",
+      "note": "",
+      "expect": "same as baseline"
+    },
+    "isa-ooo-2beat": {
+      "status": "PASS",
+      "rc": 0,
+      "seconds": 104.8,
+      "command": "NB=\"$HOME/.cache/rv64-suite\"; find \"$NB\" -mindepth 1 -maxdepth 1 -name \"run-*\" -mmin +720 -exec rm -rf {} + 2>/dev/null; NS=\"$NB\"/run-6e76def9c712d229; mkdir -p \"$NS\"/build/suite/20261122-115955/isa-ooo-2beat; timeout -k 10 300 python3 -B sim/cpu/test_cpu.py --core ooo --sim verilator --icache-beats 2 --dcache-beats 2 --out-dir \"$NS\"/build/suite/20261122-115955/isa-ooo-2beat; rc=$?; mkdir -p build/suite/20261122-115955/isa-ooo-2beat && find \"$NS\"/build/suite/20261122-115955/isa-ooo-2beat -maxdepth 1 -type f \\( -name '*.json' -o -name '*.log' -o -name '*.txt' -o -name '*.md' \\) -size -8M -exec cp -p {} build/suite/20261122-115955/isa-ooo-2beat/ \\;; exit $rc",
+      "side": "linux",
+      "suites": [
+        "isa"
+      ],
+      "core_file": "rv64_ooo.sv",
+      "metrics": {
+        "programs": 137,
+        "runs": 411,
+        "instruction_names": 106
+      },
+      "summary": "137 programs, 411 runs, 106 names",
+      "log": "build/suite/20261122-115955/isa-ooo-2beat.log",
+      "note": "",
+      "expect": "same as baseline"
+    },
+    "fpu-ooo": {
+      "status": "PASS",
+      "rc": 0,
+      "seconds": 83.3,
+      "command": "NB=\"$HOME/.cache/rv64-suite\"; find \"$NB\" -mindepth 1 -maxdepth 1 -name \"run-*\" -mmin +720 -exec rm -rf {} + 2>/dev/null; NS=\"$NB\"/run-6e76def9c712d229; mkdir -p \"$NS\"/build/suite/20261122-115955/fpu-ooo; timeout -k 10 300 python3 -B sim/cpu/test_cpu.py --core ooo --sim verilator --fpu --out-dir \"$NS\"/build/suite/20261122-115955/fpu-ooo; rc=$?; mkdir -p build/suite/20261122-115955/fpu-ooo && find \"$NS\"/build/suite/20261122-115955/fpu-ooo -maxdepth 1 -type f \\( -name '*.json' -o -name '*.log' -o -name '*.txt' -o -name '*.md' \\) -size -8M -exec cp -p {} build/suite/20261122-115955/fpu-ooo/ \\;; exit $rc",
+      "side": "linux",
+      "suites": [
+        "fpu"
+      ],
+      "core_file": "rv64_ooo.sv",
+      "metrics": {
+        "programs": 233,
+        "runs": 699,
+        "instruction_names": 174
+      },
+      "summary": "233 programs, 699 runs, 174 names",
+      "log": "build/suite/20261122-115955/fpu-ooo.log",
+      "note": "",
+      "expect": "same as baseline"
+    },
+    "fpu-ooo-2beat": {
+      "status": "PASS",
+      "rc": 0,
+      "seconds": 87.7,
+      "command": "NB=\"$HOME/.cache/rv64-suite\"; find \"$NB\" -mindepth 1 -maxdepth 1 -name \"run-*\" -mmin +720 -exec rm -rf {} + 2>/dev/null; NS=\"$NB\"/run-6e76def9c712d229; mkdir -p \"$NS\"/build/suite/20261122-115955/fpu-ooo-2beat; timeout -k 10 300 python3 -B sim/cpu/test_cpu.py --core ooo --sim verilator --icache-beats 2 --dcache-beats 2 --fpu --out-dir \"$NS\"/build/suite/20261122-115955/fpu-ooo-2beat; rc=$?; mkdir -p build/suite/20261122-115955/fpu-ooo-2beat && find \"$NS\"/build/suite/20261122-115955/fpu-ooo-2beat -maxdepth 1 -type f \\( -name '*.json' -o -name '*.log' -o -name '*.txt' -o -name '*.md' \\) -size -8M -exec cp -p {} build/suite/20261122-115955/fpu-ooo-2beat/ \\;; exit $rc",
+      "side": "linux",
+      "suites": [
+        "fpu"
+      ],
+      "core_file": "rv64_ooo.sv",
+      "metrics": {
+        "programs": 233,
+        "runs": 699,
+        "instruction_names": 174
+      },
+      "summary": "233 programs, 699 runs, 174 names",
+      "log": "build/suite/20261122-115955/fpu-ooo-2beat.log",
+      "note": "",
+      "expect": "same as baseline"
+    },
+    "vector-ooo": {
+      "status": "PASS",
+      "rc": 0,
+      "seconds": 115.0,
+      "command": "NB=\"$HOME/.cache/rv64-suite\"; find \"$NB\" -mindepth 1 -maxdepth 1 -name \"run-*\" -mmin +720 -exec rm -rf {} + 2>/dev/null; NS=\"$NB\"/run-6e76def9c712d229; mkdir -p \"$NS\"/build/suite/20261122-115955/vector-ooo; timeout -k 10 300 python3 -B sim/cpu/test_cpu.py --core ooo --sim verilator --vector --out-dir \"$NS\"/build/suite/20261122-115955/vector-ooo; rc=$?; mkdir -p build/suite/20261122-115955/vector-ooo && find \"$NS\"/build/suite/20261122-115955/vector-ooo -maxdepth 1 -type f \\( -name '*.json' -o -name '*.log' -o -name '*.txt' -o -name '*.md' \\) -size -8M -exec cp -p {} build/suite/20261122-115955/vector-ooo/ \\;; exit $rc",
+      "side": "linux",
+      "suites": [
+        "vector"
+      ],
+      "core_file": "rv64_ooo.sv",
+      "metrics": {
+        "programs": 364,
+        "runs": 1092,
+        "instruction_names": 174
+      },
+      "summary": "364 programs, 1092 runs, 174 names",
+      "log": "build/suite/20261122-115955/vector-ooo.log",
+      "note": "",
+      "expect": "same as baseline"
+    },
+    "vector-ooo-2beat": {
+      "status": "PASS",
+      "rc": 0,
+      "seconds": 123.1,
+      "command": "NB=\"$HOME/.cache/rv64-suite\"; find \"$NB\" -mindepth 1 -maxdepth 1 -name \"run-*\" -mmin +720 -exec rm -rf {} + 2>/dev/null; NS=\"$NB\"/run-6e76def9c712d229; mkdir -p \"$NS\"/build/suite/20261122-115955/vector-ooo-2beat; timeout -k 10 300 python3 -B sim/cpu/test_cpu.py --core ooo --sim verilator --icache-beats 2 --dcache-beats 2 --vector --out-dir \"$NS\"/build/suite/20261122-115955/vector-ooo-2beat; rc=$?; mkdir -p build/suite/20261122-115955/vector-ooo-2beat && find \"$NS\"/build/suite/20261122-115955/vector-ooo-2beat -maxdepth 1 -type f \\( -name '*.json' -o -name '*.log' -o -name '*.txt' -o -name '*.md' \\) -size -8M -exec cp -p {} build/suite/20261122-115955/vector-ooo-2beat/ \\;; exit $rc",
+      "side": "linux",
+      "suites": [
+        "vector"
+      ],
+      "core_file": "rv64_ooo.sv",
+      "metrics": {
+        "programs": 364,
+        "runs": 1092,
+        "instruction_names": 174
+      },
+      "summary": "364 programs, 1092 runs, 174 names",
+      "log": "build/suite/20261122-115955/vector-ooo-2beat.log",
+      "note": "",
+      "expect": "same as baseline"
+    },
+    "lzma-64k": {
+      "status": "DIFF",
+      "rc": 0,
+      "seconds": 148.9,
+      "command": "NB=\"$HOME/.cache/rv64-suite\"; find \"$NB\" -mindepth 1 -maxdepth 1 -name \"run-*\" -mmin +720 -exec rm -rf {} + 2>/dev/null; NS=\"$NB\"/run-6e76def9c712d229; mkdir -p \"$NS\"/build/suite/bench/lzma-d12-rv64imb-ooo; if ! cmp -s build/suite/bench/lzma-d12-rv64imb-ooo/build.json \"$NS\"/build/suite/bench/lzma-d12-rv64imb-ooo/build.json 2>/dev/null; then rm -rf \"$NS\"/build/suite/bench/lzma-d12-rv64imb-ooo && mkdir -p \"$NS\"/build/suite/bench/lzma-d12-rv64imb-ooo && cp -a build/suite/bench/lzma-d12-rv64imb-ooo/. \"$NS\"/build/suite/bench/lzma-d12-rv64imb-ooo/; fi; timeout -k 10 300 python3 -B sim/cpu/bench/run_bench.py --benchmark lzma --core ooo --sim verilator --out-dir \"$NS\"/build/suite/bench/lzma-d12-rv64imb-ooo; rc=$?; mkdir -p build/suite/bench/lzma-d12-rv64imb-ooo && find \"$NS\"/build/suite/bench/lzma-d12-rv64imb-ooo -maxdepth 1 -type f \\( -name '*.json' -o -name '*.log' -o -name '*.txt' -o -name '*.md' \\) -size -8M -exec cp -p {} build/suite/bench/lzma-d12-rv64imb-ooo/ \\;; exit $rc",
+      "side": "linux",
+      "suites": [
+        "bench-smoke",
+        "bench"
+      ],
+      "core_file": "rv64_ooo.sv",
+      "metrics": {
+        "compress_kernel.clocks": 359685,
+        "compress_kernel.instructions": 3065962,
+        "compress_call.clocks": 410938,
+        "compress_call.instructions": 3509472,
+        "decompress_kernel.clocks": 119775,
+        "decompress_kernel.instructions": 412564,
+        "decompress_call.clocks": 119777,
+        "decompress_call.instructions": 412577
+      },
+      "summary": "compress_kernel 359,685, compress_call 410,938, decompress_kernel 119,775, decompress_call 119,777",
+      "log": "build/suite/20261122-115955/lzma-64k.log",
+      "note": "",
+      "expect": "DIFF: compress_kernel.clocks 359,284 -> 359685; compress_call.clocks 410,532 -> 410938; decompress_kernel.clocks 129,587 -> 119775; decompress_kernel.instructions 429,119 -> 412564; decompress_call.clocks 129,602 -> 119777; decompress_call.instructions 429,130 -> 412577"
+    },
+    "lzma-4k": {
+      "status": "DIFF",
+      "rc": 0,
+      "seconds": 91.6,
+      "command": "NB=\"$HOME/.cache/rv64-suite\"; find \"$NB\" -mindepth 1 -maxdepth 1 -name \"run-*\" -mmin +720 -exec rm -rf {} + 2>/dev/null; NS=\"$NB\"/run-6e76def9c712d229; mkdir -p \"$NS\"/build/suite/bench/lzma-d12-rv64imb-ooo; if ! cmp -s build/suite/bench/lzma-d12-rv64imb-ooo/build.json \"$NS\"/build/suite/bench/lzma-d12-rv64imb-ooo/build.json 2>/dev/null; then rm -rf \"$NS\"/build/suite/bench/lzma-d12-rv64imb-ooo && mkdir -p \"$NS\"/build/suite/bench/lzma-d12-rv64imb-ooo && cp -a build/suite/bench/lzma-d12-rv64imb-ooo/. \"$NS\"/build/suite/bench/lzma-d12-rv64imb-ooo/; fi; timeout -k 10 300 python3 -B sim/cpu/bench/run_bench.py --benchmark lzma --core ooo --sim verilator --icache-beats 512 --dcache-beats 512 --no-differential --out-dir \"$NS\"/build/suite/bench/lzma-d12-rv64imb-ooo; rc=$?; mkdir -p build/suite/bench/lzma-d12-rv64imb-ooo && find \"$NS\"/build/suite/bench/lzma-d12-rv64imb-ooo -maxdepth 1 -type f \\( -name '*.json' -o -name '*.log' -o -name '*.txt' -o -name '*.md' \\) -size -8M -exec cp -p {} build/suite/bench/lzma-d12-rv64imb-ooo/ \\;; exit $rc",
+      "side": "linux",
+      "suites": [
+        "bench-smoke"
+      ],
+      "core_file": "rv64_ooo.sv",
+      "metrics": {
+        "compress_kernel.clocks": 969114,
+        "compress_kernel.instructions": 3065962,
+        "compress_call.clocks": 1020375,
+        "compress_call.instructions": 3509472,
+        "decompress_kernel.clocks": 147148,
+        "decompress_kernel.instructions": 412564,
+        "decompress_call.clocks": 147150,
+        "decompress_call.instructions": 412577
+      },
+      "summary": "compress_kernel 969,114, compress_call 1,020,375, decompress_kernel 147,148, decompress_call 147,150",
+      "log": "build/suite/20261122-115955/lzma-4k.log",
+      "note": "",
+      "expect": "DIFF: compress_kernel.clocks 966,029 -> 969114; compress_call.clocks 1,017,303 -> 1020375; decompress_kernel.clocks 149,450 -> 147148; decompress_kernel.instructions 429,119 -> 412564; decompress_call.clocks 149,465 -> 147150; decompress_call.instructions 429,130 -> 412577"
+    },
+    "dhry-ref": {
+      "status": "PASS",
+      "rc": 0,
+      "seconds": 75.5,
+      "command": "NB=\"$HOME/.cache/rv64-suite\"; find \"$NB\" -mindepth 1 -maxdepth 1 -name \"run-*\" -mmin +720 -exec rm -rf {} + 2>/dev/null; NS=\"$NB\"/run-6e76def9c712d229; mkdir -p \"$NS\"/build/suite/bench/vl-dhrystone-rv64imb-ooo; if ! cmp -s build/suite/bench/vl-dhrystone-rv64imb-ooo/build.json \"$NS\"/build/suite/bench/vl-dhrystone-rv64imb-ooo/build.json 2>/dev/null; then rm -rf \"$NS\"/build/suite/bench/vl-dhrystone-rv64imb-ooo && mkdir -p \"$NS\"/build/suite/bench/vl-dhrystone-rv64imb-ooo && cp -a build/suite/bench/vl-dhrystone-rv64imb-ooo/. \"$NS\"/build/suite/bench/vl-dhrystone-rv64imb-ooo/; fi; timeout -k 10 300 python3 -B sim/cpu/bench/run_bench.py --benchmark dhrystone --core ooo --sim verilator --out-dir \"$NS\"/build/suite/bench/vl-dhrystone-rv64imb-ooo; rc=$?; mkdir -p build/suite/bench/vl-dhrystone-rv64imb-ooo && find \"$NS\"/build/suite/bench/vl-dhrystone-rv64imb-ooo -maxdepth 1 -type f \\( -name '*.json' -o -name '*.log' -o -name '*.txt' -o -name '*.md' \\) -size -8M -exec cp -p {} build/suite/bench/vl-dhrystone-rv64imb-ooo/ \\;; exit $rc",
+      "side": "linux",
+      "suites": [
+        "bench-smoke",
+        "bench"
+      ],
+      "core_file": "rv64_ooo.sv",
+      "metrics": {
+        "timed_cycles": 15703,
+        "timed_instructions": 275030,
+        "dhrystone_runs": 500,
+        "dmips_per_mhz": 18.1224
+      },
+      "summary": "15,703 cycles, 275,030 instructions, 18.1224 DMIPS/MHz",
+      "log": "build/suite/20261122-115955/dhry-ref.log",
+      "note": "",
+      "expect": "same as baseline"
+    },
+    "dhry-fast": {
+      "status": "PASS",
+      "rc": 0,
+      "seconds": 6.2,
+      "command": "NB=\"$HOME/.cache/rv64-suite\"; find \"$NB\" -mindepth 1 -maxdepth 1 -name \"run-*\" -mmin +720 -exec rm -rf {} + 2>/dev/null; NS=\"$NB\"/run-6e76def9c712d229; mkdir -p \"$NS\"/build/suite/bench/vl-dhrystone-rv64imb-fastrt-ooo; if ! cmp -s build/suite/bench/vl-dhrystone-rv64imb-fastrt-ooo/build.json \"$NS\"/build/suite/bench/vl-dhrystone-rv64imb-fastrt-ooo/build.json 2>/dev/null; then rm -rf \"$NS\"/build/suite/bench/vl-dhrystone-rv64imb-fastrt-ooo && mkdir -p \"$NS\"/build/suite/bench/vl-dhrystone-rv64imb-fastrt-ooo && cp -a build/suite/bench/vl-dhrystone-rv64imb-fastrt-ooo/. \"$NS\"/build/suite/bench/vl-dhrystone-rv64imb-fastrt-ooo/; fi; timeout -k 10 300 python3 -B sim/cpu/bench/run_bench.py --benchmark dhrystone --core ooo --sim verilator --out-dir \"$NS\"/build/suite/bench/vl-dhrystone-rv64imb-fastrt-ooo; rc=$?; mkdir -p build/suite/bench/vl-dhrystone-rv64imb-fastrt-ooo && find \"$NS\"/build/suite/bench/vl-dhrystone-rv64imb-fastrt-ooo -maxdepth 1 -type f \\( -name '*.json' -o -name '*.log' -o -name '*.txt' -o -name '*.md' \\) -size -8M -exec cp -p {} build/suite/bench/vl-dhrystone-rv64imb-fastrt-ooo/ \\;; exit $rc",
+      "side": "linux",
+      "suites": [
+        "bench-smoke"
+      ],
+      "core_file": "rv64_ooo.sv",
+      "metrics": {
+        "timed_cycles": 10127,
+        "timed_instructions": 223030,
+        "dhrystone_runs": 500,
+        "dmips_per_mhz": 28.1007
+      },
+      "summary": "10,127 cycles, 223,030 instructions, 28.1007 DMIPS/MHz",
+      "log": "build/suite/20261122-115955/dhry-fast.log",
+      "note": "",
+      "expect": "same as baseline"
+    },
+    "lzma-64k-fpu": {
+      "status": "DIFF",
+      "rc": 0,
+      "seconds": 189.8,
+      "command": "NB=\"$HOME/.cache/rv64-suite\"; find \"$NB\" -mindepth 1 -maxdepth 1 -name \"run-*\" -mmin +720 -exec rm -rf {} + 2>/dev/null; NS=\"$NB\"/run-6e76def9c712d229; mkdir -p \"$NS\"/build/suite/bench/lzma-d12-rv64imb-ooo; if ! cmp -s build/suite/bench/lzma-d12-rv64imb-ooo/build.json \"$NS\"/build/suite/bench/lzma-d12-rv64imb-ooo/build.json 2>/dev/null; then rm -rf \"$NS\"/build/suite/bench/lzma-d12-rv64imb-ooo && mkdir -p \"$NS\"/build/suite/bench/lzma-d12-rv64imb-ooo && cp -a build/suite/bench/lzma-d12-rv64imb-ooo/. \"$NS\"/build/suite/bench/lzma-d12-rv64imb-ooo/; fi; timeout -k 10 300 python3 -B sim/cpu/bench/run_bench.py --benchmark lzma --core ooo --sim verilator --fpu --out-dir \"$NS\"/build/suite/bench/lzma-d12-rv64imb-ooo; rc=$?; mkdir -p build/suite/bench/lzma-d12-rv64imb-ooo && find \"$NS\"/build/suite/bench/lzma-d12-rv64imb-ooo -maxdepth 1 -type f \\( -name '*.json' -o -name '*.log' -o -name '*.txt' -o -name '*.md' \\) -size -8M -exec cp -p {} build/suite/bench/lzma-d12-rv64imb-ooo/ \\;; exit $rc",
+      "side": "linux",
+      "suites": [
+        "bench-smoke"
+      ],
+      "core_file": "rv64_ooo.sv",
+      "metrics": {
+        "compress_kernel.clocks": 359685,
+        "compress_kernel.instructions": 3065962,
+        "compress_call.clocks": 410938,
+        "compress_call.instructions": 3509472,
+        "decompress_kernel.clocks": 119775,
+        "decompress_kernel.instructions": 412564,
+        "decompress_call.clocks": 119777,
+        "decompress_call.instructions": 412577
+      },
+      "summary": "compress_kernel 359,685, compress_call 410,938, decompress_kernel 119,775, decompress_call 119,777",
+      "log": "build/suite/20261122-115955/lzma-64k-fpu.log",
+      "note": "",
+      "expect": "DIFF: compress_kernel.clocks 359,284 -> 359685; compress_call.clocks 410,532 -> 410938; decompress_kernel.clocks 129,587 -> 119775; decompress_kernel.instructions 429,119 -> 412564; decompress_call.clocks 129,602 -> 119777; decompress_call.instructions 429,130 -> 412577"
+    },
+    "dhry-ref-fpu": {
+      "status": "PASS",
+      "rc": 0,
+      "seconds": 71.9,
+      "command": "NB=\"$HOME/.cache/rv64-suite\"; find \"$NB\" -mindepth 1 -maxdepth 1 -name \"run-*\" -mmin +720 -exec rm -rf {} + 2>/dev/null; NS=\"$NB\"/run-6e76def9c712d229; mkdir -p \"$NS\"/build/suite/bench/vl-dhrystone-rv64imb-ooo; if ! cmp -s build/suite/bench/vl-dhrystone-rv64imb-ooo/build.json \"$NS\"/build/suite/bench/vl-dhrystone-rv64imb-ooo/build.json 2>/dev/null; then rm -rf \"$NS\"/build/suite/bench/vl-dhrystone-rv64imb-ooo && mkdir -p \"$NS\"/build/suite/bench/vl-dhrystone-rv64imb-ooo && cp -a build/suite/bench/vl-dhrystone-rv64imb-ooo/. \"$NS\"/build/suite/bench/vl-dhrystone-rv64imb-ooo/; fi; timeout -k 10 300 python3 -B sim/cpu/bench/run_bench.py --benchmark dhrystone --core ooo --sim verilator --fpu --out-dir \"$NS\"/build/suite/bench/vl-dhrystone-rv64imb-ooo; rc=$?; mkdir -p build/suite/bench/vl-dhrystone-rv64imb-ooo && find \"$NS\"/build/suite/bench/vl-dhrystone-rv64imb-ooo -maxdepth 1 -type f \\( -name '*.json' -o -name '*.log' -o -name '*.txt' -o -name '*.md' \\) -size -8M -exec cp -p {} build/suite/bench/vl-dhrystone-rv64imb-ooo/ \\;; exit $rc",
+      "side": "linux",
+      "suites": [
+        "bench-smoke"
+      ],
+      "core_file": "rv64_ooo.sv",
+      "metrics": {
+        "timed_cycles": 15703,
+        "timed_instructions": 275030,
+        "dhrystone_runs": 500,
+        "dmips_per_mhz": 18.1224
+      },
+      "summary": "15,703 cycles, 275,030 instructions, 18.1224 DMIPS/MHz",
+      "log": "build/suite/20261122-115955/dhry-ref-fpu.log",
+      "note": "",
+      "expect": "same as baseline"
+    },
+    "dhry-fast-fpu": {
+      "status": "PASS",
+      "rc": 0,
+      "seconds": 4.8,
+      "command": "NB=\"$HOME/.cache/rv64-suite\"; find \"$NB\" -mindepth 1 -maxdepth 1 -name \"run-*\" -mmin +720 -exec rm -rf {} + 2>/dev/null; NS=\"$NB\"/run-6e76def9c712d229; mkdir -p \"$NS\"/build/suite/bench/vl-dhrystone-rv64imb-fastrt-ooo; if ! cmp -s build/suite/bench/vl-dhrystone-rv64imb-fastrt-ooo/build.json \"$NS\"/build/suite/bench/vl-dhrystone-rv64imb-fastrt-ooo/build.json 2>/dev/null; then rm -rf \"$NS\"/build/suite/bench/vl-dhrystone-rv64imb-fastrt-ooo && mkdir -p \"$NS\"/build/suite/bench/vl-dhrystone-rv64imb-fastrt-ooo && cp -a build/suite/bench/vl-dhrystone-rv64imb-fastrt-ooo/. \"$NS\"/build/suite/bench/vl-dhrystone-rv64imb-fastrt-ooo/; fi; timeout -k 10 300 python3 -B sim/cpu/bench/run_bench.py --benchmark dhrystone --core ooo --sim verilator --fpu --out-dir \"$NS\"/build/suite/bench/vl-dhrystone-rv64imb-fastrt-ooo; rc=$?; mkdir -p build/suite/bench/vl-dhrystone-rv64imb-fastrt-ooo && find \"$NS\"/build/suite/bench/vl-dhrystone-rv64imb-fastrt-ooo -maxdepth 1 -type f \\( -name '*.json' -o -name '*.log' -o -name '*.txt' -o -name '*.md' \\) -size -8M -exec cp -p {} build/suite/bench/vl-dhrystone-rv64imb-fastrt-ooo/ \\;; exit $rc",
+      "side": "linux",
+      "suites": [
+        "bench-smoke"
+      ],
+      "core_file": "rv64_ooo.sv",
+      "metrics": {
+        "timed_cycles": 10127,
+        "timed_instructions": 223030,
+        "dhrystone_runs": 500,
+        "dmips_per_mhz": 28.1007
+      },
+      "summary": "10,127 cycles, 223,030 instructions, 28.1007 DMIPS/MHz",
+      "log": "build/suite/20261122-115955/dhry-fast-fpu.log",
+      "note": "",
+      "expect": "same as baseline"
+    },
+    "spike-rvt-ooo": {
+      "status": "PASS",
+      "rc": 0,
+      "seconds": 129.4,
+      "command": "NB=\"$HOME/.cache/rv64-suite\"; find \"$NB\" -mindepth 1 -maxdepth 1 -name \"run-*\" -mmin +720 -exec rm -rf {} + 2>/dev/null; NS=\"$NB\"/run-6e76def9c712d229; mkdir -p \"$NS\"/build/suite/20261122-115955/spike-rvt-ooo; timeout -k 10 300 python3 -B sim/cpu/spike_lockstep.py rvt rv64ui rv64um rv64uzba rv64uzbb rv64uzbs --core ooo --sim verilator; rc=$?; mkdir -p build/suite/20261122-115955/spike-rvt-ooo && find \"$NS\"/build/suite/20261122-115955/spike-rvt-ooo -maxdepth 1 -type f \\( -name '*.json' -o -name '*.log' -o -name '*.txt' -o -name '*.md' \\) -size -8M -exec cp -p {} build/suite/20261122-115955/spike-rvt-ooo/ \\;; exit $rc",
+      "side": "linux",
+      "suites": [
+        "spike-lockstep"
+      ],
+      "core_file": "rv64_ooo.sv",
+      "metrics": {
+        "count": 35095
+      },
+      "summary": "PASS: 35095 records of 107 runs",
+      "log": "build/suite/20261122-115955/spike-rvt-ooo.log",
+      "note": "RTL trace vs Spike record by record (pc, insn, register write, store address/data/width, final trap)",
+      "expect": "same as baseline"
+    },
+    "spike-lzma-ooo": {
+      "status": "DIFF",
+      "rc": 0,
+      "seconds": 44.0,
+      "command": "NB=\"$HOME/.cache/rv64-suite\"; find \"$NB\" -mindepth 1 -maxdepth 1 -name \"run-*\" -mmin +720 -exec rm -rf {} + 2>/dev/null; NS=\"$NB\"/run-6e76def9c712d229; mkdir -p \"$NS\"/build/suite/bench/lzma-d12-rv64imb-ooo; if ! cmp -s build/suite/bench/lzma-d12-rv64imb-ooo/build.json \"$NS\"/build/suite/bench/lzma-d12-rv64imb-ooo/build.json 2>/dev/null; then rm -rf \"$NS\"/build/suite/bench/lzma-d12-rv64imb-ooo && mkdir -p \"$NS\"/build/suite/bench/lzma-d12-rv64imb-ooo && cp -a build/suite/bench/lzma-d12-rv64imb-ooo/. \"$NS\"/build/suite/bench/lzma-d12-rv64imb-ooo/; fi; timeout -k 10 300 python3 -B sim/cpu/spike_lockstep.py image --core ooo --sim verilator --stalls 0 --out-dir \"$NS\"/build/suite/bench/lzma-d12-rv64imb-ooo; rc=$?; mkdir -p build/suite/bench/lzma-d12-rv64imb-ooo && find \"$NS\"/build/suite/bench/lzma-d12-rv64imb-ooo -maxdepth 1 -type f \\( -name '*.json' -o -name '*.log' -o -name '*.txt' -o -name '*.md' \\) -size -8M -exec cp -p {} build/suite/bench/lzma-d12-rv64imb-ooo/ \\;; exit $rc",
+      "side": "linux",
+      "suites": [
+        "spike-lockstep"
+      ],
+      "core_file": "rv64_ooo.sv",
+      "metrics": {
+        "count": 4189563
+      },
+      "summary": "PASS: 4189563 records of 1 runs",
+      "log": "build/suite/20261122-115955/spike-lzma-ooo.log",
+      "note": "RTL trace vs Spike record by record (pc, insn, register write, store address/data/width, final trap)",
+      "expect": "DIFF: count 4,179,371 -> 4189563"
+    },
+    "spike-rvt-ooo-2beat": {
+      "status": "PASS",
+      "rc": 0,
+      "seconds": 152.4,
+      "command": "NB=\"$HOME/.cache/rv64-suite\"; find \"$NB\" -mindepth 1 -maxdepth 1 -name \"run-*\" -mmin +720 -exec rm -rf {} + 2>/dev/null; NS=\"$NB\"/run-6e76def9c712d229; mkdir -p \"$NS\"/build/suite/20261122-115955/spike-rvt-ooo-2beat; timeout -k 10 300 python3 -B sim/cpu/spike_lockstep.py rvt rv64ui rv64um rv64uzba rv64uzbb rv64uzbs --core ooo --sim verilator --icache-beats 2 --dcache-beats 2; rc=$?; mkdir -p build/suite/20261122-115955/spike-rvt-ooo-2beat && find \"$NS\"/build/suite/20261122-115955/spike-rvt-ooo-2beat -maxdepth 1 -type f \\( -name '*.json' -o -name '*.log' -o -name '*.txt' -o -name '*.md' \\) -size -8M -exec cp -p {} build/suite/20261122-115955/spike-rvt-ooo-2beat/ \\;; exit $rc",
+      "side": "linux",
+      "suites": [
+        "spike-lockstep"
+      ],
+      "core_file": "rv64_ooo.sv",
+      "metrics": {
+        "count": 35095
+      },
+      "summary": "PASS: 35095 records of 107 runs",
+      "log": "build/suite/20261122-115955/spike-rvt-ooo-2beat.log",
+      "note": "RTL trace vs Spike record by record (pc, insn, register write, store address/data/width, final trap)",
+      "expect": "same as baseline"
+    },
+    "spike-lzma-ooo-2beat": {
+      "status": "PASS",
+      "rc": 0,
+      "seconds": 132.6,
+      "command": "NB=\"$HOME/.cache/rv64-suite\"; find \"$NB\" -mindepth 1 -maxdepth 1 -name \"run-*\" -mmin +720 -exec rm -rf {} + 2>/dev/null; NS=\"$NB\"/run-6e76def9c712d229; mkdir -p \"$NS\"/build/suite/bench/lzma-d12-rv64imb-ooo; if ! cmp -s build/suite/bench/lzma-d12-rv64imb-ooo/build.json \"$NS\"/build/suite/bench/lzma-d12-rv64imb-ooo/build.json 2>/dev/null; then rm -rf \"$NS\"/build/suite/bench/lzma-d12-rv64imb-ooo && mkdir -p \"$NS\"/build/suite/bench/lzma-d12-rv64imb-ooo && cp -a build/suite/bench/lzma-d12-rv64imb-ooo/. \"$NS\"/build/suite/bench/lzma-d12-rv64imb-ooo/; fi; timeout -k 10 300 python3 -B sim/cpu/spike_lockstep.py image --core ooo --sim verilator --stalls 7 --max 1500000 --icache-beats 2 --dcache-beats 2 --out-dir \"$NS\"/build/suite/bench/lzma-d12-rv64imb-ooo; rc=$?; mkdir -p build/suite/bench/lzma-d12-rv64imb-ooo && find \"$NS\"/build/suite/bench/lzma-d12-rv64imb-ooo -maxdepth 1 -type f \\( -name '*.json' -o -name '*.log' -o -name '*.txt' -o -name '*.md' \\) -size -8M -exec cp -p {} build/suite/bench/lzma-d12-rv64imb-ooo/ \\;; exit $rc",
+      "side": "linux",
+      "suites": [
+        "spike-lockstep"
+      ],
+      "core_file": "rv64_ooo.sv",
+      "metrics": {
+        "count": 1500000
+      },
+      "summary": "PASS: 1500000 records of 1 runs",
+      "log": "build/suite/20261122-115955/spike-lzma-ooo-2beat.log",
+      "note": "RTL trace vs Spike record by record (pc, insn, register write, store address/data/width, final trap)",
+      "expect": "same as baseline"
+    },
+    "spike-dhry-ooo": {
+      "status": "PASS",
+      "rc": 0,
+      "seconds": 5.5,
+      "command": "NB=\"$HOME/.cache/rv64-suite\"; find \"$NB\" -mindepth 1 -maxdepth 1 -name \"run-*\" -mmin +720 -exec rm -rf {} + 2>/dev/null; NS=\"$NB\"/run-6e76def9c712d229; mkdir -p \"$NS\"/build/suite/bench/vl-dhrystone-rv64imb-ooo; if ! cmp -s build/suite/bench/vl-dhrystone-rv64imb-ooo/build.json \"$NS\"/build/suite/bench/vl-dhrystone-rv64imb-ooo/build.json 2>/dev/null; then rm -rf \"$NS\"/build/suite/bench/vl-dhrystone-rv64imb-ooo && mkdir -p \"$NS\"/build/suite/bench/vl-dhrystone-rv64imb-ooo && cp -a build/suite/bench/vl-dhrystone-rv64imb-ooo/. \"$NS\"/build/suite/bench/vl-dhrystone-rv64imb-ooo/; fi; timeout -k 10 300 python3 -B sim/cpu/spike_lockstep.py image --core ooo --sim verilator --stalls 0,7 --out-dir \"$NS\"/build/suite/bench/vl-dhrystone-rv64imb-ooo; rc=$?; mkdir -p build/suite/bench/vl-dhrystone-rv64imb-ooo && find \"$NS\"/build/suite/bench/vl-dhrystone-rv64imb-ooo -maxdepth 1 -type f \\( -name '*.json' -o -name '*.log' -o -name '*.txt' -o -name '*.md' \\) -size -8M -exec cp -p {} build/suite/bench/vl-dhrystone-rv64imb-ooo/ \\;; exit $rc",
+      "side": "linux",
+      "suites": [
+        "spike-lockstep"
+      ],
+      "core_file": "rv64_ooo.sv",
+      "metrics": {
+        "count": 563860
+      },
+      "summary": "PASS: 563860 records of 2 runs",
+      "log": "build/suite/20261122-115955/spike-dhry-ooo.log",
+      "note": "RTL trace vs Spike record by record (pc, insn, register write, store address/data/width, final trap)",
+      "expect": "same as baseline"
+    },
+    "spike-rvt-pipe": {
+      "status": "PASS",
+      "rc": 0,
+      "seconds": 113.0,
+      "command": "NB=\"$HOME/.cache/rv64-suite\"; find \"$NB\" -mindepth 1 -maxdepth 1 -name \"run-*\" -mmin +720 -exec rm -rf {} + 2>/dev/null; NS=\"$NB\"/run-6e76def9c712d229; mkdir -p \"$NS\"/build/suite/20261122-115955/spike-rvt-pipe; timeout -k 10 300 python3 -B sim/cpu/spike_lockstep.py rvt rv64ui rv64um rv64uzba rv64uzbb rv64uzbs --core pipe --sim verilator; rc=$?; mkdir -p build/suite/20261122-115955/spike-rvt-pipe && find \"$NS\"/build/suite/20261122-115955/spike-rvt-pipe -maxdepth 1 -type f \\( -name '*.json' -o -name '*.log' -o -name '*.txt' -o -name '*.md' \\) -size -8M -exec cp -p {} build/suite/20261122-115955/spike-rvt-pipe/ \\;; exit $rc",
+      "side": "linux",
+      "suites": [
+        "spike-lockstep"
+      ],
+      "core_file": "rv64_pipe.sv",
+      "metrics": {
+        "count": 35095
+      },
+      "summary": "PASS: 35095 records of 107 runs",
+      "log": "build/suite/20261122-115955/spike-rvt-pipe.log",
+      "note": "RTL trace vs Spike record by record (pc, insn, register write, store address/data/width, final trap)",
+      "expect": "same as baseline"
+    },
+    "spike-lzma-pipe": {
+      "status": "DIFF",
+      "rc": 0,
+      "seconds": 24.5,
+      "command": "NB=\"$HOME/.cache/rv64-suite\"; find \"$NB\" -mindepth 1 -maxdepth 1 -name \"run-*\" -mmin +720 -exec rm -rf {} + 2>/dev/null; NS=\"$NB\"/run-6e76def9c712d229; mkdir -p \"$NS\"/build/suite/bench/lzma-d12-rv64imb-ooo; if ! cmp -s build/suite/bench/lzma-d12-rv64imb-ooo/build.json \"$NS\"/build/suite/bench/lzma-d12-rv64imb-ooo/build.json 2>/dev/null; then rm -rf \"$NS\"/build/suite/bench/lzma-d12-rv64imb-ooo && mkdir -p \"$NS\"/build/suite/bench/lzma-d12-rv64imb-ooo && cp -a build/suite/bench/lzma-d12-rv64imb-ooo/. \"$NS\"/build/suite/bench/lzma-d12-rv64imb-ooo/; fi; timeout -k 10 300 python3 -B sim/cpu/spike_lockstep.py image --core pipe --sim verilator --stalls 0 --out-dir \"$NS\"/build/suite/bench/lzma-d12-rv64imb-ooo; rc=$?; mkdir -p build/suite/bench/lzma-d12-rv64imb-ooo && find \"$NS\"/build/suite/bench/lzma-d12-rv64imb-ooo -maxdepth 1 -type f \\( -name '*.json' -o -name '*.log' -o -name '*.txt' -o -name '*.md' \\) -size -8M -exec cp -p {} build/suite/bench/lzma-d12-rv64imb-ooo/ \\;; exit $rc",
+      "side": "linux",
+      "suites": [
+        "spike-lockstep"
+      ],
+      "core_file": "rv64_pipe.sv",
+      "metrics": {
+        "count": 4189563
+      },
+      "summary": "PASS: 4189563 records of 1 runs",
+      "log": "build/suite/20261122-115955/spike-lzma-pipe.log",
+      "note": "RTL trace vs Spike record by record (pc, insn, register write, store address/data/width, final trap)",
+      "expect": "DIFF: count 4,179,371 -> 4189563"
+    },
+    "spike-rvt-pipe-2beat": {
+      "status": "PASS",
+      "rc": 0,
+      "seconds": 109.5,
+      "command": "NB=\"$HOME/.cache/rv64-suite\"; find \"$NB\" -mindepth 1 -maxdepth 1 -name \"run-*\" -mmin +720 -exec rm -rf {} + 2>/dev/null; NS=\"$NB\"/run-6e76def9c712d229; mkdir -p \"$NS\"/build/suite/20261122-115955/spike-rvt-pipe-2beat; timeout -k 10 300 python3 -B sim/cpu/spike_lockstep.py rvt rv64ui rv64um rv64uzba rv64uzbb rv64uzbs --core pipe --sim verilator --icache-beats 2 --dcache-beats 2; rc=$?; mkdir -p build/suite/20261122-115955/spike-rvt-pipe-2beat && find \"$NS\"/build/suite/20261122-115955/spike-rvt-pipe-2beat -maxdepth 1 -type f \\( -name '*.json' -o -name '*.log' -o -name '*.txt' -o -name '*.md' \\) -size -8M -exec cp -p {} build/suite/20261122-115955/spike-rvt-pipe-2beat/ \\;; exit $rc",
+      "side": "linux",
+      "suites": [
+        "spike-lockstep"
+      ],
+      "core_file": "rv64_pipe.sv",
+      "metrics": {
+        "count": 35095
+      },
+      "summary": "PASS: 35095 records of 107 runs",
+      "log": "build/suite/20261122-115955/spike-rvt-pipe-2beat.log",
+      "note": "RTL trace vs Spike record by record (pc, insn, register write, store address/data/width, final trap)",
+      "expect": "same as baseline"
+    },
+    "spike-lzma-pipe-2beat": {
+      "status": "PASS",
+      "rc": 0,
+      "seconds": 11.7,
+      "command": "NB=\"$HOME/.cache/rv64-suite\"; find \"$NB\" -mindepth 1 -maxdepth 1 -name \"run-*\" -mmin +720 -exec rm -rf {} + 2>/dev/null; NS=\"$NB\"/run-6e76def9c712d229; mkdir -p \"$NS\"/build/suite/bench/lzma-d12-rv64imb-ooo; if ! cmp -s build/suite/bench/lzma-d12-rv64imb-ooo/build.json \"$NS\"/build/suite/bench/lzma-d12-rv64imb-ooo/build.json 2>/dev/null; then rm -rf \"$NS\"/build/suite/bench/lzma-d12-rv64imb-ooo && mkdir -p \"$NS\"/build/suite/bench/lzma-d12-rv64imb-ooo && cp -a build/suite/bench/lzma-d12-rv64imb-ooo/. \"$NS\"/build/suite/bench/lzma-d12-rv64imb-ooo/; fi; timeout -k 10 300 python3 -B sim/cpu/spike_lockstep.py image --core pipe --sim verilator --stalls 7 --max 1500000 --icache-beats 2 --dcache-beats 2 --out-dir \"$NS\"/build/suite/bench/lzma-d12-rv64imb-ooo; rc=$?; mkdir -p build/suite/bench/lzma-d12-rv64imb-ooo && find \"$NS\"/build/suite/bench/lzma-d12-rv64imb-ooo -maxdepth 1 -type f \\( -name '*.json' -o -name '*.log' -o -name '*.txt' -o -name '*.md' \\) -size -8M -exec cp -p {} build/suite/bench/lzma-d12-rv64imb-ooo/ \\;; exit $rc",
+      "side": "linux",
+      "suites": [
+        "spike-lockstep"
+      ],
+      "core_file": "rv64_pipe.sv",
+      "metrics": {
+        "count": 1500000
+      },
+      "summary": "PASS: 1500000 records of 1 runs",
+      "log": "build/suite/20261122-115955/spike-lzma-pipe-2beat.log",
+      "note": "RTL trace vs Spike record by record (pc, insn, register write, store address/data/width, final trap)",
+      "expect": "same as baseline"
+    },
+    "spike-dhry-pipe": {
+      "status": "PASS",
+      "rc": 0,
+      "seconds": 5.1,
+      "command": "NB=\"$HOME/.cache/rv64-suite\"; find \"$NB\" -mindepth 1 -maxdepth 1 -name \"run-*\" -mmin +720 -exec rm -rf {} + 2>/dev/null; NS=\"$NB\"/run-6e76def9c712d229; mkdir -p \"$NS\"/build/suite/bench/vl-dhrystone-rv64imb-ooo; if ! cmp -s build/suite/bench/vl-dhrystone-rv64imb-ooo/build.json \"$NS\"/build/suite/bench/vl-dhrystone-rv64imb-ooo/build.json 2>/dev/null; then rm -rf \"$NS\"/build/suite/bench/vl-dhrystone-rv64imb-ooo && mkdir -p \"$NS\"/build/suite/bench/vl-dhrystone-rv64imb-ooo && cp -a build/suite/bench/vl-dhrystone-rv64imb-ooo/. \"$NS\"/build/suite/bench/vl-dhrystone-rv64imb-ooo/; fi; timeout -k 10 300 python3 -B sim/cpu/spike_lockstep.py image --core pipe --sim verilator --stalls 0,7 --out-dir \"$NS\"/build/suite/bench/vl-dhrystone-rv64imb-ooo; rc=$?; mkdir -p build/suite/bench/vl-dhrystone-rv64imb-ooo && find \"$NS\"/build/suite/bench/vl-dhrystone-rv64imb-ooo -maxdepth 1 -type f \\( -name '*.json' -o -name '*.log' -o -name '*.txt' -o -name '*.md' \\) -size -8M -exec cp -p {} build/suite/bench/vl-dhrystone-rv64imb-ooo/ \\;; exit $rc",
+      "side": "linux",
+      "suites": [
+        "spike-lockstep"
+      ],
+      "core_file": "rv64_pipe.sv",
+      "metrics": {
+        "count": 563860
+      },
+      "summary": "PASS: 563860 records of 2 runs",
+      "log": "build/suite/20261122-115955/spike-dhry-pipe.log",
+      "note": "RTL trace vs Spike record by record (pc, insn, register write, store address/data/width, final trap)",
+      "expect": "same as baseline"
+    },
+    "spike-rvt-multicycle": {
+      "status": "PASS",
+      "rc": 0,
+      "seconds": 110.0,
+      "command": "NB=\"$HOME/.cache/rv64-suite\"; find \"$NB\" -mindepth 1 -maxdepth 1 -name \"run-*\" -mmin +720 -exec rm -rf {} + 2>/dev/null; NS=\"$NB\"/run-6e76def9c712d229; mkdir -p \"$NS\"/build/suite/20261122-115955/spike-rvt-multicycle; timeout -k 10 300 python3 -B sim/cpu/spike_lockstep.py rvt rv64ui rv64um rv64uzba rv64uzbb rv64uzbs --core multicycle --sim verilator; rc=$?; mkdir -p build/suite/20261122-115955/spike-rvt-multicycle && find \"$NS\"/build/suite/20261122-115955/spike-rvt-multicycle -maxdepth 1 -type f \\( -name '*.json' -o -name '*.log' -o -name '*.txt' -o -name '*.md' \\) -size -8M -exec cp -p {} build/suite/20261122-115955/spike-rvt-multicycle/ \\;; exit $rc",
+      "side": "linux",
+      "suites": [
+        "spike-lockstep"
+      ],
+      "core_file": "rv64_core.sv",
+      "metrics": {
+        "count": 35095
+      },
+      "summary": "PASS: 35095 records of 107 runs",
+      "log": "build/suite/20261122-115955/spike-rvt-multicycle.log",
+      "note": "RTL trace vs Spike record by record (pc, insn, register write, store address/data/width, final trap)",
+      "expect": "same as baseline"
+    },
+    "spike-lzma-multicycle": {
+      "status": "DIFF",
+      "rc": 0,
+      "seconds": 20.9,
+      "command": "NB=\"$HOME/.cache/rv64-suite\"; find \"$NB\" -mindepth 1 -maxdepth 1 -name \"run-*\" -mmin +720 -exec rm -rf {} + 2>/dev/null; NS=\"$NB\"/run-6e76def9c712d229; mkdir -p \"$NS\"/build/suite/bench/lzma-d12-rv64imb-ooo; if ! cmp -s build/suite/bench/lzma-d12-rv64imb-ooo/build.json \"$NS\"/build/suite/bench/lzma-d12-rv64imb-ooo/build.json 2>/dev/null; then rm -rf \"$NS\"/build/suite/bench/lzma-d12-rv64imb-ooo && mkdir -p \"$NS\"/build/suite/bench/lzma-d12-rv64imb-ooo && cp -a build/suite/bench/lzma-d12-rv64imb-ooo/. \"$NS\"/build/suite/bench/lzma-d12-rv64imb-ooo/; fi; timeout -k 10 300 python3 -B sim/cpu/spike_lockstep.py image --core multicycle --sim verilator --stalls 0 --out-dir \"$NS\"/build/suite/bench/lzma-d12-rv64imb-ooo; rc=$?; mkdir -p build/suite/bench/lzma-d12-rv64imb-ooo && find \"$NS\"/build/suite/bench/lzma-d12-rv64imb-ooo -maxdepth 1 -type f \\( -name '*.json' -o -name '*.log' -o -name '*.txt' -o -name '*.md' \\) -size -8M -exec cp -p {} build/suite/bench/lzma-d12-rv64imb-ooo/ \\;; exit $rc",
+      "side": "linux",
+      "suites": [
+        "spike-lockstep"
+      ],
+      "core_file": "rv64_core.sv",
+      "metrics": {
+        "count": 4189563
+      },
+      "summary": "PASS: 4189563 records of 1 runs",
+      "log": "build/suite/20261122-115955/spike-lzma-multicycle.log",
+      "note": "RTL trace vs Spike record by record (pc, insn, register write, store address/data/width, final trap)",
+      "expect": "DIFF: count 4,179,371 -> 4189563"
+    },
+    "spike-rvt-multicycle-2beat": {
+      "status": "PASS",
+      "rc": 0,
+      "seconds": 109.0,
+      "command": "NB=\"$HOME/.cache/rv64-suite\"; find \"$NB\" -mindepth 1 -maxdepth 1 -name \"run-*\" -mmin +720 -exec rm -rf {} + 2>/dev/null; NS=\"$NB\"/run-6e76def9c712d229; mkdir -p \"$NS\"/build/suite/20261122-115955/spike-rvt-multicycle-2beat; timeout -k 10 300 python3 -B sim/cpu/spike_lockstep.py rvt rv64ui rv64um rv64uzba rv64uzbb rv64uzbs --core multicycle --sim verilator --icache-beats 2 --dcache-beats 2; rc=$?; mkdir -p build/suite/20261122-115955/spike-rvt-multicycle-2beat && find \"$NS\"/build/suite/20261122-115955/spike-rvt-multicycle-2beat -maxdepth 1 -type f \\( -name '*.json' -o -name '*.log' -o -name '*.txt' -o -name '*.md' \\) -size -8M -exec cp -p {} build/suite/20261122-115955/spike-rvt-multicycle-2beat/ \\;; exit $rc",
+      "side": "linux",
+      "suites": [
+        "spike-lockstep"
+      ],
+      "core_file": "rv64_core.sv",
+      "metrics": {
+        "count": 35095
+      },
+      "summary": "PASS: 35095 records of 107 runs",
+      "log": "build/suite/20261122-115955/spike-rvt-multicycle-2beat.log",
+      "note": "RTL trace vs Spike record by record (pc, insn, register write, store address/data/width, final trap)",
+      "expect": "same as baseline"
+    },
+    "spike-lzma-multicycle-2beat": {
+      "status": "PASS",
+      "rc": 0,
+      "seconds": 11.1,
+      "command": "NB=\"$HOME/.cache/rv64-suite\"; find \"$NB\" -mindepth 1 -maxdepth 1 -name \"run-*\" -mmin +720 -exec rm -rf {} + 2>/dev/null; NS=\"$NB\"/run-6e76def9c712d229; mkdir -p \"$NS\"/build/suite/bench/lzma-d12-rv64imb-ooo; if ! cmp -s build/suite/bench/lzma-d12-rv64imb-ooo/build.json \"$NS\"/build/suite/bench/lzma-d12-rv64imb-ooo/build.json 2>/dev/null; then rm -rf \"$NS\"/build/suite/bench/lzma-d12-rv64imb-ooo && mkdir -p \"$NS\"/build/suite/bench/lzma-d12-rv64imb-ooo && cp -a build/suite/bench/lzma-d12-rv64imb-ooo/. \"$NS\"/build/suite/bench/lzma-d12-rv64imb-ooo/; fi; timeout -k 10 300 python3 -B sim/cpu/spike_lockstep.py image --core multicycle --sim verilator --stalls 7 --max 1500000 --icache-beats 2 --dcache-beats 2 --out-dir \"$NS\"/build/suite/bench/lzma-d12-rv64imb-ooo; rc=$?; mkdir -p build/suite/bench/lzma-d12-rv64imb-ooo && find \"$NS\"/build/suite/bench/lzma-d12-rv64imb-ooo -maxdepth 1 -type f \\( -name '*.json' -o -name '*.log' -o -name '*.txt' -o -name '*.md' \\) -size -8M -exec cp -p {} build/suite/bench/lzma-d12-rv64imb-ooo/ \\;; exit $rc",
+      "side": "linux",
+      "suites": [
+        "spike-lockstep"
+      ],
+      "core_file": "rv64_core.sv",
+      "metrics": {
+        "count": 1500000
+      },
+      "summary": "PASS: 1500000 records of 1 runs",
+      "log": "build/suite/20261122-115955/spike-lzma-multicycle-2beat.log",
+      "note": "RTL trace vs Spike record by record (pc, insn, register write, store address/data/width, final trap)",
+      "expect": "same as baseline"
+    },
+    "spike-dhry-multicycle": {
+      "status": "PASS",
+      "rc": 0,
+      "seconds": 5.4,
+      "command": "NB=\"$HOME/.cache/rv64-suite\"; find \"$NB\" -mindepth 1 -maxdepth 1 -name \"run-*\" -mmin +720 -exec rm -rf {} + 2>/dev/null; NS=\"$NB\"/run-6e76def9c712d229; mkdir -p \"$NS\"/build/suite/bench/vl-dhrystone-rv64imb-ooo; if ! cmp -s build/suite/bench/vl-dhrystone-rv64imb-ooo/build.json \"$NS\"/build/suite/bench/vl-dhrystone-rv64imb-ooo/build.json 2>/dev/null; then rm -rf \"$NS\"/build/suite/bench/vl-dhrystone-rv64imb-ooo && mkdir -p \"$NS\"/build/suite/bench/vl-dhrystone-rv64imb-ooo && cp -a build/suite/bench/vl-dhrystone-rv64imb-ooo/. \"$NS\"/build/suite/bench/vl-dhrystone-rv64imb-ooo/; fi; timeout -k 10 300 python3 -B sim/cpu/spike_lockstep.py image --core multicycle --sim verilator --stalls 0,7 --out-dir \"$NS\"/build/suite/bench/vl-dhrystone-rv64imb-ooo; rc=$?; mkdir -p build/suite/bench/vl-dhrystone-rv64imb-ooo && find \"$NS\"/build/suite/bench/vl-dhrystone-rv64imb-ooo -maxdepth 1 -type f \\( -name '*.json' -o -name '*.log' -o -name '*.txt' -o -name '*.md' \\) -size -8M -exec cp -p {} build/suite/bench/vl-dhrystone-rv64imb-ooo/ \\;; exit $rc",
+      "side": "linux",
+      "suites": [
+        "spike-lockstep"
+      ],
+      "core_file": "rv64_core.sv",
+      "metrics": {
+        "count": 563860
+      },
+      "summary": "PASS: 563860 records of 2 runs",
+      "log": "build/suite/20261122-115955/spike-dhry-multicycle.log",
+      "note": "RTL trace vs Spike record by record (pc, insn, register write, store address/data/width, final trap)",
+      "expect": "same as baseline"
+    },
+    "spike-rvt-ooo-fpu": {
+      "status": "PASS",
+      "rc": 0,
+      "seconds": 89.1,
+      "command": "NB=\"$HOME/.cache/rv64-suite\"; find \"$NB\" -mindepth 1 -maxdepth 1 -name \"run-*\" -mmin +720 -exec rm -rf {} + 2>/dev/null; NS=\"$NB\"/run-6e76def9c712d229; mkdir -p \"$NS\"/build/suite/20261122-115955/spike-rvt-ooo-fpu; timeout -k 10 300 python3 -B sim/cpu/spike_lockstep.py rvt rv64uf rv64ud --fpu --core ooo --sim verilator; rc=$?; mkdir -p build/suite/20261122-115955/spike-rvt-ooo-fpu && find \"$NS\"/build/suite/20261122-115955/spike-rvt-ooo-fpu -maxdepth 1 -type f \\( -name '*.json' -o -name '*.log' -o -name '*.txt' -o -name '*.md' \\) -size -8M -exec cp -p {} build/suite/20261122-115955/spike-rvt-ooo-fpu/ \\;; exit $rc",
+      "side": "linux",
+      "suites": [
+        "spike-lockstep"
+      ],
+      "core_file": "rv64_ooo.sv",
+      "metrics": {
+        "count": 4454
+      },
+      "summary": "PASS: 4454 records of 23 runs",
+      "log": "build/suite/20261122-115955/spike-rvt-ooo-fpu.log",
+      "note": "RTL trace vs Spike record by record (pc, insn, register write, store address/data/width, final trap)",
+      "expect": "same as baseline"
+    },
+    "spike-rt-pieces-ooo-fpu": {
+      "status": "PASS",
+      "rc": 0,
+      "seconds": 76.3,
+      "command": "NB=\"$HOME/.cache/rv64-suite\"; find \"$NB\" -mindepth 1 -maxdepth 1 -name \"run-*\" -mmin +720 -exec rm -rf {} + 2>/dev/null; NS=\"$NB\"/run-6e76def9c712d229; mkdir -p \"$NS\"/build/suite/bench/rt-g16s2i32-pt16x12x4-rv64imfdb; if ! cmp -s build/suite/bench/rt-g16s2i32-pt16x12x4-rv64imfdb/build.json \"$NS\"/build/suite/bench/rt-g16s2i32-pt16x12x4-rv64imfdb/build.json 2>/dev/null; then rm -rf \"$NS\"/build/suite/bench/rt-g16s2i32-pt16x12x4-rv64imfdb && mkdir -p \"$NS\"/build/suite/bench/rt-g16s2i32-pt16x12x4-rv64imfdb && cp -a build/suite/bench/rt-g16s2i32-pt16x12x4-rv64imfdb/. \"$NS\"/build/suite/bench/rt-g16s2i32-pt16x12x4-rv64imfdb/; fi; timeout -k 10 300 python3 -B sim/cpu/spike_lockstep.py pieces --fpu --core ooo --sim verilator --pieces 3 --window 200000 --out-dir \"$NS\"/build/suite/bench/rt-g16s2i32-pt16x12x4-rv64imfdb; rc=$?; mkdir -p build/suite/bench/rt-g16s2i32-pt16x12x4-rv64imfdb && find \"$NS\"/build/suite/bench/rt-g16s2i32-pt16x12x4-rv64imfdb -maxdepth 1 -type f \\( -name '*.json' -o -name '*.log' -o -name '*.txt' -o -name '*.md' \\) -size -8M -exec cp -p {} build/suite/bench/rt-g16s2i32-pt16x12x4-rv64imfdb/ \\;; exit $rc",
+      "side": "linux",
+      "suites": [
+        "spike-lockstep"
+      ],
+      "core_file": "rv64_ooo.sv",
+      "metrics": {
+        "count": 600000
+      },
+      "summary": "PASS: 600000 records of 3 runs",
+      "log": "build/suite/20261122-115955/spike-rt-pieces-ooo-fpu.log",
+      "note": "3 rv_iss checkpoint windows of 200k instructions, restored by the stub on the core",
+      "expect": "same as baseline"
+    },
+    "spike-js-pieces-ooo-fpu": {
+      "status": "PASS",
+      "rc": 0,
+      "seconds": 68.1,
+      "command": "NB=\"$HOME/.cache/rv64-suite\"; find \"$NB\" -mindepth 1 -maxdepth 1 -name \"run-*\" -mmin +720 -exec rm -rf {} + 2>/dev/null; NS=\"$NB\"/run-6e76def9c712d229; mkdir -p \"$NS\"/build/suite/bench/js-s1-rv64imfdb; if ! cmp -s build/suite/bench/js-s1-rv64imfdb/build.json \"$NS\"/build/suite/bench/js-s1-rv64imfdb/build.json 2>/dev/null; then rm -rf \"$NS\"/build/suite/bench/js-s1-rv64imfdb && mkdir -p \"$NS\"/build/suite/bench/js-s1-rv64imfdb && cp -a build/suite/bench/js-s1-rv64imfdb/. \"$NS\"/build/suite/bench/js-s1-rv64imfdb/; fi; timeout -k 10 300 python3 -B sim/cpu/spike_lockstep.py pieces --fpu --core ooo --sim verilator --pieces 3 --window 200000 --out-dir \"$NS\"/build/suite/bench/js-s1-rv64imfdb; rc=$?; mkdir -p build/suite/bench/js-s1-rv64imfdb && find \"$NS\"/build/suite/bench/js-s1-rv64imfdb -maxdepth 1 -type f \\( -name '*.json' -o -name '*.log' -o -name '*.txt' -o -name '*.md' \\) -size -8M -exec cp -p {} build/suite/bench/js-s1-rv64imfdb/ \\;; exit $rc",
+      "side": "linux",
+      "suites": [
+        "spike-lockstep"
+      ],
+      "core_file": "rv64_ooo.sv",
+      "metrics": {
+        "count": 600000
+      },
+      "summary": "PASS: 600000 records of 3 runs",
+      "log": "build/suite/20261122-115955/spike-js-pieces-ooo-fpu.log",
+      "note": "3 rv_iss checkpoint windows of 200k instructions, restored by the stub on the core",
+      "expect": "same as baseline"
+    },
+    "spike-selftest": {
+      "status": "PASS",
+      "rc": 0,
+      "seconds": 0.4,
+      "command": "NB=\"$HOME/.cache/rv64-suite\"; find \"$NB\" -mindepth 1 -maxdepth 1 -name \"run-*\" -mmin +720 -exec rm -rf {} + 2>/dev/null; NS=\"$NB\"/run-6e76def9c712d229; mkdir -p \"$NS\"/build/suite/20261122-115955/spike-selftest; timeout -k 10 300 python3 -B sim/cpu/spike_lockstep.py self-test; rc=$?; mkdir -p build/suite/20261122-115955/spike-selftest && find \"$NS\"/build/suite/20261122-115955/spike-selftest -maxdepth 1 -type f \\( -name '*.json' -o -name '*.log' -o -name '*.txt' -o -name '*.md' \\) -size -8M -exec cp -p {} build/suite/20261122-115955/spike-selftest/ \\;; exit $rc",
+      "side": "linux",
+      "suites": [
+        "spike-lockstep"
+      ],
+      "core_file": null,
+      "metrics": {
+        "count": 13
+      },
+      "summary": "PASS: spike-lockstep self-test, 13 checks",
+      "log": "build/suite/20261122-115955/spike-selftest.log",
+      "note": "",
+      "expect": "same as baseline"
+    },
+    "spike-negative-xor-or": {
+      "status": "PASS",
+      "rc": 1,
+      "seconds": 85.4,
+      "command": "NB=\"$HOME/.cache/rv64-suite\"; find \"$NB\" -mindepth 1 -maxdepth 1 -name \"run-*\" -mmin +720 -exec rm -rf {} + 2>/dev/null; NS=\"$NB\"/run-6e76def9c712d229; mkdir -p \"$NS\"/build/suite/20261122-115955/spike-negative-xor-or; timeout -k 10 300 python3 -B sim/cpu/spike_lockstep.py rvt rv64ui --core ooo --sim verilator --core-source build/suite/20261122-115955/spike-negative-xor-or-mutant.sv; rc=$?; mkdir -p build/suite/20261122-115955/spike-negative-xor-or && find \"$NS\"/build/suite/20261122-115955/spike-negative-xor-or -maxdepth 1 -type f \\( -name '*.json' -o -name '*.log' -o -name '*.txt' -o -name '*.md' \\) -size -8M -exec cp -p {} build/suite/20261122-115955/spike-negative-xor-or/ \\;; exit $rc",
+      "side": "linux",
+      "suites": [
+        "spike-lockstep"
+      ],
+      "core_file": "spike-negative-xor-or-mutant.sv",
+      "metrics": {
+        "rejected": 1
+      },
+      "summary": "mutant rejected as expected: FAIL rv64ui-xor (stall 0): differs at record 8: spike 0x0000000000000020 (0x00c5c733) x14=0xf00ff00f; rtl 0x000000000000",
+      "log": "build/suite/20261122-115955/spike-negative-xor-or.log",
+      "note": "passes only if the lockstep FAILS on the mutant core, at an XOR",
+      "expect": "same as baseline"
+    },
+    "spike-s1-multicycle": {
+      "status": "PASS",
+      "rc": 0,
+      "seconds": 54.3,
+      "command": "NB=\"$HOME/.cache/rv64-suite\"; find \"$NB\" -mindepth 1 -maxdepth 1 -name \"run-*\" -mmin +720 -exec rm -rf {} + 2>/dev/null; NS=\"$NB\"/run-6e76def9c712d229; mkdir -p \"$NS\"/build/suite/20261122-115955/spike-s1-multicycle; timeout -k 10 300 python3 -B sim/cpu/spike_lockstep.py penv rv64mi rv64ui rv64um rv64uzba rv64uzbb rv64uzbs --asm sim/cpu/sys/tests/s1_directed.S --model rtl --core multicycle --rtl-priv --priv m --isa rv64im_zba_zbb_zbs_zicsr_zifencei --sim verilator; rc=$?; mkdir -p build/suite/20261122-115955/spike-s1-multicycle && find \"$NS\"/build/suite/20261122-115955/spike-s1-multicycle -maxdepth 1 -type f \\( -name '*.json' -o -name '*.log' -o -name '*.txt' -o -name '*.md' \\) -size -8M -exec cp -p {} build/suite/20261122-115955/spike-s1-multicycle/ \\;; exit $rc",
+      "side": "linux",
+      "suites": [
+        "spike-lockstep"
+      ],
+      "core_file": "rv64_core.sv",
+      "metrics": {
+        "count": 46059
+      },
+      "summary": "PASS: 46059 records of 125 runs",
+      "log": "build/suite/20261122-115955/spike-s1-multicycle.log",
+      "note": "RV64_PRIV multicycle vs Spike, every record; pmpaddr and ma_data fail identically on Spike"
+    },
+    "spike-s1-negative-csr-mret-mpie": {
+      "status": "PASS",
+      "rc": 1,
+      "seconds": 12.2,
+      "command": "NB=\"$HOME/.cache/rv64-suite\"; find \"$NB\" -mindepth 1 -maxdepth 1 -name \"run-*\" -mmin +720 -exec rm -rf {} + 2>/dev/null; NS=\"$NB\"/run-6e76def9c712d229; mkdir -p \"$NS\"/build/suite/20261122-115955/spike-s1-negative-csr-mret-mpie; timeout -k 10 300 python3 -B sim/cpu/spike_lockstep.py penv rv64mi --asm sim/cpu/sys/tests/s1_directed.S --model rtl --core multicycle --rtl-priv --priv m --isa rv64im_zba_zbb_zbs_zicsr_zifencei --sim verilator --mutant csr-mret-mpie; rc=$?; mkdir -p build/suite/20261122-115955/spike-s1-negative-csr-mret-mpie && find \"$NS\"/build/suite/20261122-115955/spike-s1-negative-csr-mret-mpie -maxdepth 1 -type f \\( -name '*.json' -o -name '*.log' -o -name '*.txt' -o -name '*.md' \\) -size -8M -exec cp -p {} build/suite/20261122-115955/spike-s1-negative-csr-mret-mpie/ \\;; exit $rc",
+      "side": "linux",
+      "suites": [
+        "spike-lockstep"
+      ],
+      "core_file": "rv64_core.sv",
+      "metrics": {
+        "rejected": 1
+      },
+      "summary": "mutant rejected as expected: FAIL rv64mi-csr: differs at record 71: spike",
+      "log": "build/suite/20261122-115955/spike-s1-negative-csr-mret-mpie.log",
+      "note": "passes only if the lockstep FAILS on the csr-mret-mpie mutant"
+    },
+    "spike-s1-negative-csr-mtvec-mode": {
+      "status": "PASS",
+      "rc": 1,
+      "seconds": 11.0,
+      "command": "NB=\"$HOME/.cache/rv64-suite\"; find \"$NB\" -mindepth 1 -maxdepth 1 -name \"run-*\" -mmin +720 -exec rm -rf {} + 2>/dev/null; NS=\"$NB\"/run-6e76def9c712d229; mkdir -p \"$NS\"/build/suite/20261122-115955/spike-s1-negative-csr-mtvec-mode; timeout -k 10 300 python3 -B sim/cpu/spike_lockstep.py penv rv64mi --asm sim/cpu/sys/tests/s1_directed.S --model rtl --core multicycle --rtl-priv --priv m --isa rv64im_zba_zbb_zbs_zicsr_zifencei --sim verilator --mutant csr-mtvec-mode; rc=$?; mkdir -p build/suite/20261122-115955/spike-s1-negative-csr-mtvec-mode && find \"$NS\"/build/suite/20261122-115955/spike-s1-negative-csr-mtvec-mode -maxdepth 1 -type f \\( -name '*.json' -o -name '*.log' -o -name '*.txt' -o -name '*.md' \\) -size -8M -exec cp -p {} build/suite/20261122-115955/spike-s1-negative-csr-mtvec-mode/ \\;; exit $rc",
+      "side": "linux",
+      "suites": [
+        "spike-lockstep"
+      ],
+      "core_file": "rv64_core.sv",
+      "metrics": {
+        "rejected": 1
+      },
+      "summary": "mutant rejected as expected: FAIL s1_directed: differs at record 8: spike",
+      "log": "build/suite/20261122-115955/spike-s1-negative-csr-mtvec-mode.log",
+      "note": "passes only if the lockstep FAILS on the csr-mtvec-mode mutant"
+    },
+    "spike-s1-negative-csr-trap-mepc": {
+      "status": "PASS",
+      "rc": 1,
+      "seconds": 12.4,
+      "command": "NB=\"$HOME/.cache/rv64-suite\"; find \"$NB\" -mindepth 1 -maxdepth 1 -name \"run-*\" -mmin +720 -exec rm -rf {} + 2>/dev/null; NS=\"$NB\"/run-6e76def9c712d229; mkdir -p \"$NS\"/build/suite/20261122-115955/spike-s1-negative-csr-trap-mepc; timeout -k 10 300 python3 -B sim/cpu/spike_lockstep.py penv rv64mi --asm sim/cpu/sys/tests/s1_directed.S --model rtl --core multicycle --rtl-priv --priv m --isa rv64im_zba_zbb_zbs_zicsr_zifencei --sim verilator --mutant csr-trap-mepc; rc=$?; mkdir -p build/suite/20261122-115955/spike-s1-negative-csr-trap-mepc && find \"$NS\"/build/suite/20261122-115955/spike-s1-negative-csr-trap-mepc -maxdepth 1 -type f \\( -name '*.json' -o -name '*.log' -o -name '*.txt' -o -name '*.md' \\) -size -8M -exec cp -p {} build/suite/20261122-115955/spike-s1-negative-csr-trap-mepc/ \\;; exit $rc",
+      "side": "linux",
+      "suites": [
+        "spike-lockstep"
+      ],
+      "core_file": "rv64_core.sv",
+      "metrics": {
+        "rejected": 1
+      },
+      "summary": "mutant rejected as expected: FAIL rv64mi-illegal: differs at record 84: spike",
+      "log": "build/suite/20261122-115955/spike-s1-negative-csr-trap-mepc.log",
+      "note": "passes only if the lockstep FAILS on the csr-trap-mepc mutant"
+    },
+    "spike-s1-negative-csr-minstret-write": {
+      "status": "PASS",
+      "rc": 1,
+      "seconds": 11.0,
+      "command": "NB=\"$HOME/.cache/rv64-suite\"; find \"$NB\" -mindepth 1 -maxdepth 1 -name \"run-*\" -mmin +720 -exec rm -rf {} + 2>/dev/null; NS=\"$NB\"/run-6e76def9c712d229; mkdir -p \"$NS\"/build/suite/20261122-115955/spike-s1-negative-csr-minstret-write; timeout -k 10 300 python3 -B sim/cpu/spike_lockstep.py penv rv64mi --asm sim/cpu/sys/tests/s1_directed.S --model rtl --core multicycle --rtl-priv --priv m --isa rv64im_zba_zbb_zbs_zicsr_zifencei --sim verilator --mutant csr-minstret-write; rc=$?; mkdir -p build/suite/20261122-115955/spike-s1-negative-csr-minstret-write && find \"$NS\"/build/suite/20261122-115955/spike-s1-negative-csr-minstret-write -maxdepth 1 -type f \\( -name '*.json' -o -name '*.log' -o -name '*.txt' -o -name '*.md' \\) -size -8M -exec cp -p {} build/suite/20261122-115955/spike-s1-negative-csr-minstret-write/ \\;; exit $rc",
+      "side": "linux",
+      "suites": [
+        "spike-lockstep"
+      ],
+      "core_file": "rv64_core.sv",
+      "metrics": {
+        "rejected": 1
+      },
+      "summary": "mutant rejected as expected: FAIL rv64mi-instret_overflow: differs at record 75: spike",
+      "log": "build/suite/20261122-115955/spike-s1-negative-csr-minstret-write.log",
+      "note": "passes only if the lockstep FAILS on the csr-minstret-write mutant"
+    },
+    "spike-s1-negative-core-ebreak-tval": {
+      "status": "PASS",
+      "rc": 1,
+      "seconds": 10.9,
+      "command": "NB=\"$HOME/.cache/rv64-suite\"; find \"$NB\" -mindepth 1 -maxdepth 1 -name \"run-*\" -mmin +720 -exec rm -rf {} + 2>/dev/null; NS=\"$NB\"/run-6e76def9c712d229; mkdir -p \"$NS\"/build/suite/20261122-115955/spike-s1-negative-core-ebreak-tval; timeout -k 10 300 python3 -B sim/cpu/spike_lockstep.py penv rv64mi --asm sim/cpu/sys/tests/s1_directed.S --model rtl --core multicycle --rtl-priv --priv m --isa rv64im_zba_zbb_zbs_zicsr_zifencei --sim verilator --mutant core-ebreak-tval; rc=$?; mkdir -p build/suite/20261122-115955/spike-s1-negative-core-ebreak-tval && find \"$NS\"/build/suite/20261122-115955/spike-s1-negative-core-ebreak-tval -maxdepth 1 -type f \\( -name '*.json' -o -name '*.log' -o -name '*.txt' -o -name '*.md' \\) -size -8M -exec cp -p {} build/suite/20261122-115955/spike-s1-negative-core-ebreak-tval/ \\;; exit $rc",
+      "side": "linux",
+      "suites": [
+        "spike-lockstep"
+      ],
+      "core_file": "rv64_core.sv",
+      "metrics": {
+        "rejected": 1
+      },
+      "summary": "mutant rejected as expected: FAIL s1_directed: differs at record 232: spike",
+      "log": "build/suite/20261122-115955/spike-s1-negative-core-ebreak-tval.log",
+      "note": "passes only if the lockstep FAILS on the core-ebreak-tval mutant"
+    },
+    "spike-s1-negative-core-pair-store-epc": {
+      "status": "PASS",
+      "rc": 1,
+      "seconds": 10.6,
+      "command": "NB=\"$HOME/.cache/rv64-suite\"; find \"$NB\" -mindepth 1 -maxdepth 1 -name \"run-*\" -mmin +720 -exec rm -rf {} + 2>/dev/null; NS=\"$NB\"/run-6e76def9c712d229; mkdir -p \"$NS\"/build/suite/20261122-115955/spike-s1-negative-core-pair-store-epc; timeout -k 10 300 python3 -B sim/cpu/spike_lockstep.py penv rv64mi --asm sim/cpu/sys/tests/s1_directed.S --model rtl --core multicycle --rtl-priv --priv m --isa rv64im_zba_zbb_zbs_zicsr_zifencei --sim verilator --mutant core-pair-store-epc; rc=$?; mkdir -p build/suite/20261122-115955/spike-s1-negative-core-pair-store-epc && find \"$NS\"/build/suite/20261122-115955/spike-s1-negative-core-pair-store-epc -maxdepth 1 -type f \\( -name '*.json' -o -name '*.log' -o -name '*.txt' -o -name '*.md' \\) -size -8M -exec cp -p {} build/suite/20261122-115955/spike-s1-negative-core-pair-store-epc/ \\;; exit $rc",
+      "side": "linux",
+      "suites": [
+        "spike-lockstep"
+      ],
+      "core_file": "rv64_core.sv",
+      "metrics": {
+        "rejected": 1
+      },
+      "summary": "mutant rejected as expected: FAIL s1_directed: differs at record 359: spike",
+      "log": "build/suite/20261122-115955/spike-s1-negative-core-pair-store-epc.log",
+      "note": "passes only if the lockstep FAILS on the core-pair-store-epc mutant"
+    }
+  },
+  "results_file": "build/suite/20261122-115955/results.json"
+}

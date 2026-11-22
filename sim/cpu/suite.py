@@ -2,7 +2,7 @@
 
     python -B sim/cpu/suite.py --list                          # suites, presets, steps
     python -B sim/cpu/suite.py release-patch --core-source cand.sv --dry-run
-    python -B sim/cpu/suite.py release-patch --core-source cand.sv --expect sim/cpu/baselines/0.19.4-release-patch.json
+    python -B sim/cpu/suite.py release-patch --core-source cand.sv --expect sim/cpu/baselines/0.21.0-release-patch.json
     python -B sim/cpu/suite.py isa fpu --cache-sizes default,2,8 --only 'isa-*'
     python -B sim/cpu/suite.py icarus-full --jobs 3 --devlog-row
 
@@ -946,7 +946,7 @@ icarus, verilator, fpu, shard, build, piece, python, writes-docs, the core name)
 examples:
   python -B sim/cpu/suite.py --list
   python -B sim/cpu/suite.py release-patch --core-source build/x/cand.sv --dry-run
-  python -B sim/cpu/suite.py release-patch --core-source build/x/cand.sv --expect sim/cpu/baselines/0.19.4-release-patch.json
+  python -B sim/cpu/suite.py release-patch --core-source build/x/cand.sv --expect sim/cpu/baselines/0.21.0-release-patch.json
   python -B sim/cpu/suite.py icarus-full --only 'full-pipe,full-multicycle' --jobs 2
   python -B sim/cpu/suite.py isa --core ooo,pipe --cache-sizes default,2,64 --sim icarus
   python -B sim/cpu/suite.py bench --fpu --only 'bench-js*' --devlog-row

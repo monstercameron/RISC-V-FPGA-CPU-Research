@@ -83,11 +83,57 @@ so 1.30 may overstate a scalar workload such as LZMA).
 | `7z b -md22` compress, MIPS/MHz | 1.91 | 1.30 (GB6/GHz) | **2.48** (9,920 MIPS at 4 GHz) | 2.50 |
 | `7z b -md22` decompress, MIPS/MHz | 1.93 | 1.30 | **2.51** (10,040 MIPS at 4 GHz) | 2.50 |
 | d22 kernel compress, MIPS/MHz | 1.55 | 1.30 | **2.02** | 2.03 |
-| d22 kernel decompress, MIPS/MHz | 1.68 | 1.30 | **2.18** | 2.18 |
+| d22 kernel decompress, MIPS/MHz | 1.68 | 1.30 | **2.18** (kernel before the 2026-11-22 CRC change; **2.47** after it, provisional, see below) | 2.18 |
 
 **The headline does not change materially.** The M6 bridge gives 9,920 / 10,040 MIPS at 4 GHz, within 1% of the
 10,000 MIPS goal; the d22 kernel goals move by under 1% (2.03 to 2.02 compress, 2.18 to 2.18 decompress). The
 0.16.0 deciding-configuration run (2.187 / 2.322) is 108% / 107% of the new goal.
+
+### Decompression goals after the CRC change (2026-11-22, provisional)
+
+On 2026-11-22 the user approved matching 7-Zip's decompression CRC ("Yes, match 7-Zip"). Since then the kernel
+decodes in 1 MiB output steps and CRCs each step inside the timed region with slicing-by-12, as `7z b` does
+([lzma-benchmark.md](lzma-benchmark.md), "Known departures"). Before the change it ran one byte-table CRC pass over
+the whole output after decoding. That pass was 13% (d22) and 17% (d12) of the X925's decompress time, and 24% of
+our core's d22 decompress clocks at a 4 MiB L2. Compression code is unchanged, so the compress goals stay.
+
+**No quiet window.** The laptop was re-measured on vCPU 19 on 2026-11-22 in two windows, 05:29-05:34 and
+05:52-05:57 (the second on the final code). Other agents' simulations kept the 1-minute load average at
+11.3-14.0 on 20 vCPUs throughout. The add-chain clock read 3.44-3.80 GHz and `7zz b -mmt1 -md22` measured
+3.15-3.77 GHz (quiet: 4.2-4.3). In those windows `7zz b` rated 1.42-1.52 / 1.84-1.90 per MHz against 1.91 / 1.93
+quiet, so the loaded absolutes are not used.
+
+Method: the old and new kernels ran interleaved, 5 runs each, each run ramped by its own untimed fifth of the
+passes. Each quiet 2026-11-21 reference is scaled by the paired new/old ratio, taken in the statistic that
+reference used (d22: minimum of 15 passes; d12: median of 30,000 passes).
+
+| | Paired new/old decompress ratio, median of 5 runs [range] | Laptop kernel per clock, old -> new | Goal, old -> new |
+|---|---:|---:|---:|
+| d22 kernel (M6 bridge 1.30) | 1.129 [1.083-1.190] | 1.68 -> 1.68 x 1.129 = **1.90** | 1.68 x 1.30 = 2.18 -> 1.90 x 1.30 = **2.47** [2.37-2.60] |
+| d12 kernel (`7z b` ratio, 10,000 MIPS at 4 GHz) | 1.183 [1.162-1.216] | 2.586 -> 2.586 x 1.183 = **3.06** | 2.5 x 2.586 / 1.93 = 3.35 -> 2.5 x 3.06 / 1.93 = **3.96** [3.89-4.07] |
+
+- The first window, on an earlier build of the change, gave 1.171 [1.139-1.192] (d22) and 1.176 [1.101-1.208]
+  (d12). That build had the same decode code but built its tables before compression.
+- Compression, whose code is unchanged, moved 1.01-1.05x in medians over the same runs, and 0.88-1.10x in single
+  d22 runs. That is the noise floor of these windows.
+- The corrected d22 kernel now rates 1.90 / 1.93 = 0.98x the laptop's real `7z b -md22` decompression per clock,
+  against 0.87x before. The kernel now calibrates almost one to one, as expected once the same work is timed.
+- **These goals are provisional** until a quiet-machine re-measure.
+
+Measured detail and commands: DEVLOG.md 2026-11-22 (backend bench package).
+
+**Deciding run on the new bench (simulation, 2026-11-22, cpu-v0.18.0 and cpu-v0.16.0).** d22, the deciding
+configuration at a 4 MiB L2, 60 sampled pieces per phase per core (backend `pkg/d22agg.py`; DEVLOG 08:07 and
+08:55 to 10:47 rows). Ratings are 7-Zip commands per clock.
+
+| Core | Compress MIPS/MHz (95% CI, low end) | Share of 2.02 | Decompress MIPS/MHz (95% CI, low end) | Share of 2.47 |
+|---|---:|---:|---:|---:|
+| cpu-v0.18.0 | 2.211 (±6.7%, 2.072) | 109% | 2.975 (±3.0%, 2.887) | 120% |
+| cpu-v0.16.0 | 2.184 (±6.8%, 2.044) | 108% | 2.950 (±3.1%, 2.862) | 119% |
+
+On cpu-v0.18.0 both phase goals are met in the point estimate and at the low end; the two-phase average is 2.593
+MIPS/MHz, 10,372 MIPS at 4 GHz (low ends 2.48, 9,918). The decompress goal is provisional (above). Later
+versions were not measured at d22; 0.19.x is bit-exact to 0.18.0 at default through 0.19.3.
 
 **Sensitivity row, not the goal (low confidence): bridge (b).** Apple M1's 7-cpu.com 7-Zip 16.04 ratings
 (2.22 / 2.52 per MHz) scaled by the Geekbench 6 per-clock gain M1 to M6 (about 731 to 983 per GHz, M1 figure
@@ -171,7 +217,8 @@ finish: 4 KiB dictionary (the LZMA minimum), 4,160 bytes of data, 2,220 bytes pa
 per data byte) divided by clocks, so they are per MHz and independent of clock rate. Because the small
 dictionary fits in cache, the kernel rates a real CPU far higher than `7z b` does: on the X925 the same
 kernel gives 8.34 / 2.59 MIPS/MHz against 1.91 / 1.93 from `7z b -md22` (compression 4.4x, decompression
-1.34x). The second `-md22` row of the native run (8,267 / 8,290) would move the kernel goal to about
+1.34x; the decompression figures here predate the 2026-11-22 CRC change, after which the d12 decompress goal is
+3.96, provisional, see "Decompression goals after the CRC change"). The second `-md22` row of the native run (8,267 / 8,290) would move the kernel goal to about
 10.59 / 3.28, so the goal carries a few percent of calibration uncertainty. Compare our cores with the native figure for the same kernel, not with the `7z b` tables above.
 
 | Core (architecture 0.14.6 RTL, rv64imb, clang -O2) | Compress MIPS/MHz | Decompress MIPS/MHz | Compress / decompress IPC |

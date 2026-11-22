@@ -11,8 +11,10 @@
  *   - stream callbacks that behave like Bench.cpp's: the input stream copies
  *     from the data buffer, the output stream copies the packed bytes and
  *     updates their CRC (CheckCrc_Enc), and the decoder's output is CRC-checked
- *     (k_CheckCrcMode_Always);
- *   - the unmodified LZMA SDK decoder, asked to finish exactly at the end.
+ *     (k_CheckCrcMode_Always) step by step as it is written, with a slicing-by-12 CRC;
+ *   - the unmodified LZMA SDK decoder, run in 1 MiB output steps like 7-Zip's
+ *     LzmaDecoder.cpp and asked to finish exactly at the end.
+ * Known departures from Bench.cpp are listed in cpu/lzma-benchmark.md.
  * Phase markers (lzma_bench.h) let the testbench time compression and
  * decompression separately. Results go to the benchmark mailbox:
  *   word 2   magic "LZMABNCH"      word 9   decoder result (SRes)
@@ -57,8 +59,20 @@ static void arena_free(ISzAllocPtr p, void *address) {
 
 static const ISzAlloc arena = {arena_alloc, arena_free};
 
-/* ---- CRC-32, table-driven, one byte per step. ---- */
+/* ---- CRC-32 (reflected polynomial 0xEDB88320). ----
+ * lzma_crc_update: table-driven, one byte per step (data CRC and the packed stream).
+ * lzma_crc_update12: slicing-by-12, the algorithm 7-Zip's CrcUpdate uses on a CPU without a
+ * CRC instruction such as RISC-V (7-Zip 26.06 C/7zCrc.c line 29: 12 tables by default;
+ * C/7zCrcOpt.c lines 46-100, CrcUpdateT12). Written here from the CRC definition, not copied:
+ * table k maps a byte to its CRC contribution k byte positions further on, so
+ * crc_slice[k][i] = (crc_slice[k-1][i] >> 8) ^ crc_slice[0][crc_slice[k-1][i] & 0xFF].
+ * The twelve tables are built untimed (crc_slice_init(), after compression and before the
+ * decoder's timed region), as 7-Zip builds them once at start-up (CrcGenerateTable, C/7zCrc.c
+ * lines 307-327). They live in the arena and are built after compression so that everything up
+ * to the end of compression executes the same instructions as before the change (2026-11-22),
+ * which keeps the sampled compress pieces on the same windows. */
 static UInt32 crc_table[256];
+static UInt32 (*crc_slice)[256];
 
 void lzma_crc_init(void) {
     for (UInt32 i = 0; i < 256; i++) {
@@ -70,6 +84,41 @@ void lzma_crc_init(void) {
 
 UInt32 lzma_crc_update(UInt32 crc, const Byte *data, size_t size) {
     for (size_t i = 0; i < size; i++) crc = crc_table[(crc ^ data[i]) & 0xFF] ^ (crc >> 8);
+    return crc;
+}
+
+#if !defined(__BYTE_ORDER__) || __BYTE_ORDER__ != __ORDER_LITTLE_ENDIAN__
+#error "lzma_crc_update12 reads little-endian 32-bit words (RV64 and the aarch64/x86-64 native builds)"
+#endif
+/* One aligned 32-bit load (p is 4-byte aligned here), like 7-Zip's GetUi32a. */
+static UInt32 load_le32(const Byte *p) {
+    UInt32 w;
+    __builtin_memcpy(&w, __builtin_assume_aligned(p, 4), 4);
+    return w;
+}
+
+static int crc_slice_init(ISzAllocPtr alloc) {
+    crc_slice = (UInt32 (*)[256])ISzAlloc_Alloc(alloc, 12 * 256 * sizeof(UInt32));
+    if (!crc_slice) return 0;
+    for (unsigned i = 0; i < 256; i++) crc_slice[0][i] = crc_table[i];
+    for (unsigned k = 1; k < 12; k++)
+        for (unsigned i = 0; i < 256; i++)
+            crc_slice[k][i] = (crc_slice[k - 1][i] >> 8) ^ crc_table[crc_slice[k - 1][i] & 0xFF];
+    return 1;
+}
+
+/* Bytes one at a time up to a 4-byte boundary, then 12 bytes (three 32-bit words) per step,
+ * then the remaining bytes one at a time; the same split as CrcUpdateT12. */
+static UInt32 lzma_crc_update12(UInt32 crc, const Byte *data, size_t size) {
+    const Byte *p = data;
+    for (; size && ((__UINTPTR_TYPE__)p & 3) != 0; size--, p++) crc = crc_table[(crc ^ *p) & 0xFF] ^ (crc >> 8);
+    for (; size >= 12; size -= 12, p += 12) {
+        const UInt32 a = load_le32(p) ^ crc, b = load_le32(p + 4), c = load_le32(p + 8);
+        crc = crc_slice[11][a & 0xFF] ^ crc_slice[10][(a >> 8) & 0xFF] ^ crc_slice[9][(a >> 16) & 0xFF] ^ crc_slice[8][a >> 24] ^
+              crc_slice[7][b & 0xFF] ^ crc_slice[6][(b >> 8) & 0xFF] ^ crc_slice[5][(b >> 16) & 0xFF] ^ crc_slice[4][b >> 24] ^
+              crc_slice[3][c & 0xFF] ^ crc_slice[2][(c >> 8) & 0xFF] ^ crc_slice[1][(c >> 16) & 0xFF] ^ crc_slice[0][c >> 24];
+    }
+    for (; size; size--, p++) crc = crc_table[(crc ^ *p) & 0xFF] ^ (crc >> 8);
     return crc;
 }
 
@@ -172,10 +221,12 @@ void lzma_bench_pass(LzmaBenchResult *result) {
     }
 
     /* Decompression: SetDecoderProperties2() allocates (not timed), then one
-     * CEncoderInfo::Decode() iteration: init, decode to the end, CRC. */
+     * CEncoderInfo::Decode() iteration: init, then decode in output steps, each CRC'd as it
+     * is written (below). */
     CLzmaDec dec;
     LzmaDec_CONSTRUCT(&dec)
     res = LzmaDec_AllocateProbs(&dec, header, LZMA_PROPS_SIZE, &arena);
+    if (res == SZ_OK && !crc_slice_init(&arena)) res = SZ_ERROR_MEM;
     if (res != SZ_OK) {
         result->dec_result = (UInt32)res;
         return;
@@ -185,10 +236,30 @@ void lzma_bench_pass(LzmaBenchResult *result) {
     lzma_bench_mark(LZMA_MARK_DEC_CALL);
     LzmaDec_Init(&dec);
     lzma_bench_mark(LZMA_MARK_DEC_KERNEL);
-    SizeT in_used = out_pos;
-    ELzmaStatus status;
-    res = LzmaDec_DecodeToDic(&dec, LZMA_BENCH_DATA_SIZE, packed_buf, &in_used, LZMA_FINISH_END, &status);
-    UInt32 output_crc = lzma_crc_update(0xFFFFFFFFu, output_buf, dec.dicPos) ^ 0xFFFFFFFFu;
+    /* As 7-Zip's LZMA decoder (CPP/7zip/Compress/LzmaDecoder.cpp, CodeSpec, lines 119-182):
+     * each LzmaDec_DecodeToDic call decodes at most _outStep = 1 MiB (line 32) past the last
+     * write (lines 139-141), the last one with LZMA_FINISH_END; then the step is written
+     * (WriteStream, line 178) to the benchmark's CCrcOutStream, which CRCs it as it arrives
+     * (CPP/7zip/UI/Common/Bench.cpp lines 382-390, timed with the decode: lines 2105-2159). */
+    SizeT in_left = out_pos;
+    const Byte *in_next = packed_buf;
+    ELzmaStatus status = LZMA_STATUS_NOT_SPECIFIED;
+    UInt32 output_crc = 0xFFFFFFFFu;
+    res = SZ_OK;
+    for (SizeT wr = 0; wr < LZMA_BENCH_DATA_SIZE;) {
+        const SizeT step = (SizeT)1 << 20;
+        const SizeT limit = LZMA_BENCH_DATA_SIZE - wr > step ? wr + step : LZMA_BENCH_DATA_SIZE;
+        SizeT in_now = in_left;
+        res = LzmaDec_DecodeToDic(&dec, limit, in_next, &in_now,
+                                  limit == LZMA_BENCH_DATA_SIZE ? LZMA_FINISH_END : LZMA_FINISH_ANY, &status);
+        in_next += in_now;
+        in_left -= in_now;
+        output_crc = lzma_crc_update12(output_crc, output_buf + wr, dec.dicPos - wr);
+        if (res != SZ_OK || dec.dicPos == wr) break;
+        wr = dec.dicPos;
+    }
+    output_crc ^= 0xFFFFFFFFu;
+    const SizeT in_used = out_pos - in_left;
     lzma_bench_mark(2);
 
     result->dec_result = (UInt32)res;

@@ -27,7 +27,7 @@ Every tracked script and testbench under `sim/cpu/`, grouped by job. Each Python
 | [check_soc_memory.py](check_soc_memory.py) | Directed checks of the SoC memory model (L2, memory latency, split reads) |
 | [check_btb_reach.py](check_btb_reach.py) | Branch-target-buffer reach check (PC-relative targets, since 0.15.5) |
 | [tb_core.sv](tb_core.sv), [tb_reset.sv](tb_reset.sv), [tb_soc.sv](tb_soc.sv), [tb_soclat.sv](tb_soclat.sv) | Testbenches: traced core with fault injection, reset during a stalled store, RAM wrapper, SoC read latency |
-| [baselines/](baselines/0.19.4-release-patch.json) | Expected counts and clocks for `suite.py --expect` |
+| [baselines/](baselines/0.21.0-release-patch.json) | Expected counts and clocks for `suite.py --expect` |
 
 ## Lessons, demo and visualizer
 

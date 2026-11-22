@@ -71,7 +71,7 @@ REQUIRED = MAINTAINED_DOCS + (
     'sim/cpu/bench/mm/mm_kernels.c', 'sim/cpu/bench/mm/mm_runtime.c', 'sim/cpu/bench/mm/mm_native.c',
     'sim/cpu/bench/mm/mm_gen.c', 'sim/cpu/bench/mm/mm_export.sh', 'sim/cpu/bench/mm/mm_laptop.c',
     'sim/cpu/bench/mm/mm_laptop.sh', 'sim/cpu/bench/mm/mm_laptop_summary.py',
-    'sim/cpu/suite.py', 'sim/cpu/suite_manifest.py', 'sim/cpu/baselines/0.17.2-release-patch.json', 'sim/cpu/baselines/0.19.4-release-patch.json',
+    'sim/cpu/suite.py', 'sim/cpu/suite_manifest.py', 'sim/cpu/baselines/0.17.2-release-patch.json', 'sim/cpu/baselines/0.19.4-release-patch.json', 'sim/cpu/baselines/0.21.0-release-patch.json',
     'sim/cpu/fetch_riscv_tests.sh', 'sim/cpu/riscv_tests/run_riscv_tests.py', 'sim/cpu/riscv_tests/riscv-tests.lock',
     'sim/cpu/riscv_tests/env/riscv_test.h', 'sim/cpu/riscv_tests/env/link.ld',
     'cpu/research/performance-targets.md', 'cpu/research/standards.md', 'cpu/research/isa-roadmap.md',
