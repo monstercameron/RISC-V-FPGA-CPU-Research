@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Original CPU foundation, wide out-of-order implementation (architecture 0.17.0).
+// Original CPU foundation, wide out-of-order implementation (architecture 0.17.1).
 // RV64IM + B execution (RV64F and D with define RV64_OOO_FPU, default off),
 // serialized FENCE.I, terminal EEI. Same module name and
 // contract as rv64_core.sv and rv64_pipe.sv, plus a wider retirement trace (rt_*);
@@ -153,7 +153,9 @@ module rv64_core #(
     localparam integer N_FMISC = FPU ? 2 : 0;  // FADD, min/max, compare, class, sign injection, conversions, moves; the first starts divide/sqrt
     localparam integer N_FP = N_FMA + N_FMISC;
     localparam integer P_FP = N_ALU + N_LD + N_ST;
-    localparam integer FMA_LAT = 4, FADD_LAT = 3, FCVT_LAT = 3, FMISC_LAT = 2;   // behavioural assumptions
+    // FP latencies (MUL_LAT convention), 0.17.1: FADD 2 / FMUL 3 / FMA 4 as Lion Cove and Zen 5
+    // (uops.info: ADDSD/SS, MULSD/SS, VFMADD231SD/SS); FADD 3 and FMUL = FMA 4 until 0.17.0.
+    localparam integer FMA_LAT = 4, FMUL_LAT = 3, FADD_LAT = 2, FCVT_LAT = 3, FMISC_LAT = 2;   // behavioural assumptions
     localparam integer FDIV_S = 11, FDIV_D = 13, FSQRT_S = 12, FSQRT_D = 18;
     // Divide/sqrt initiation intervals (clocks between starts; uops.info measured throughput of
     // DIVSS/DIVSD/SQRTSS/SQRTSD on Alder Lake-P and Zen 4). Behavioural assumption.
@@ -2115,7 +2117,7 @@ module rv64_core #(
                                 flat = ex_fop[p] == FOP_SQRT ? (ex_fsz[p] ? FSQRT_D : FSQRT_S) : (ex_fsz[p] ? FDIV_D : FDIV_S);
                                 fd_gap = (ex_fop[p] == FOP_SQRT ? (ex_fsz[p] ? FSQRT_II_D : FSQRT_II_S) : (ex_fsz[p] ? FDIV_II_D : FDIV_II_S)) - 1;
                             end else
-                                flat = ex_funit[p] == 2'd0 ? FMA_LAT : ex_funit[p] == 2'd1 ? FADD_LAT :
+                                flat = ex_funit[p] == 2'd0 ? (ex_fop[p] == FOP_MUL ? FMUL_LAT : FMA_LAT) : ex_funit[p] == 2'd1 ? FADD_LAT :
                                        (ex_fop[p] >= FOP_CVT_W && ex_fop[p] <= FOP_CVT_DS) ? FCVT_LAT : FMISC_LAT;
                             for (k = 0; k < FQ_N; k = k + 1) if (!fq_valid[k] && !placed) begin
                                 placed = 1; fq_valid[k] = 1; fq_cnt[k] = flat - 2; fq_rob[k] = x_rob; fq_pdst[k] = ex_pdst[p];

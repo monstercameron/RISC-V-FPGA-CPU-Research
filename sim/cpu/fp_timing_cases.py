@@ -10,7 +10,7 @@ caches or bus waits the programs still run and are compared, but not timed.
 """
 import re
 
-FMA_LAT, FADD_LAT, FMISC_LAT, FCVT_LAT = 4, 3, 2, 3
+FMA_LAT, FMUL_LAT, FADD_LAT, FMISC_LAT, FCVT_LAT = 4, 3, 2, 2, 3   # 0.17.1: FADD 2, FMUL 3 (Lion Cove, Zen 5)
 FDIV_S, FDIV_D, FSQRT_S, FSQRT_D = 11, 13, 12, 18
 FDIV_II_S, FDIV_II_D, FSQRT_II_S, FSQRT_II_D = 3, 4, 4, 6   # handoff-fp-div.py
 
@@ -22,7 +22,8 @@ def _ops(T):
     setup = [opfp(0b1101001, 2, 2, 0, 1), opfp(0b1101001, 2, 2, 0, 2), opfp(0b1101001, 2, 1, 0, 3)]
     chains = {   # name: (prelude, step, clocks per step)
         'fmadd_d': ([], [fma(3, 2, 1, 1)], FMA_LAT),
-        'fmul_d': ([], [opfp(0b0001001, 2, 1, 0, 1)], FMA_LAT),
+        'fmul_d': ([], [opfp(0b0001001, 2, 1, 0, 1)], FMUL_LAT),
+        'fmul_s': ([opfp(0b0100000, 1, 1, 0, 1), opfp(0b0100000, 1, 2, 0, 2)], [opfp(0b0001000, 2, 1, 0, 1)], FMUL_LAT),
         'fadd_d': ([], [opfp(0b0000001, 2, 1, 0, 1)], FADD_LAT),
         'fsgnjn_d': ([], [opfp(0b0010001, 1, 1, 1, 1)], FMISC_LAT),
         'fcvt_sd_ds': ([], [opfp(0b0100000, 1, 1, 0, 1), opfp(0b0100001, 0, 1, 0, 1)], 2 * FCVT_LAT),
