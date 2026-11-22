@@ -30,7 +30,25 @@ module rv64_bram_soc #(
     parameter integer N_MISS = 1,
     // 1: a write that misses the L2 also starts a DRAM fill of its line (reads of that line wait
     // for it); 0 (default, as 0.15.0): the posted write allocates the line with no fill.
-    parameter integer WRITE_FILL = 0
+    parameter integer WRITE_FILL = 0,
+    // L2 stream prefetcher (bandwidth engineer, docket item 11 / prefetch research D1; L2_PF 0, the default,
+    // is off and leaves the SoC unchanged). L2_PF stream trackers are trained on every read that looks up the
+    // L2 (instruction and data): a read within 16 lines of a tracker's last line, in its direction, advances it,
+    // and two steps in the same direction confirm the stream. On each read that advances a confirmed stream, the
+    // next L2_PF_DEG lines after the tracker's frontier, up to L2_PF_DIST lines past the read, are looked up (no
+    // replacement update; a present line only advances the frontier); an absent one joins a 16-entry prefetch
+    // queue. Each clock the oldest queued line starts a DRAM fill exactly like a demand miss (mem_start: a
+    // MEM_GAP slot and the DRAM latency), but only when the DRAM slot is idle (no start booked for a later
+    // clock; demands start as they arrive, so they always win the slot), fewer than L2_PF_N prefetch fills are
+    // on their way, and the line is still absent. It is installed most recently used with its arrival clock
+    // (l2_ready), never replacing a line whose fill is still arriving. Nothing is sent to the core: a later
+    // read hits the L2, waiting for the fill if it is still arriving. Stated, not charged: up to L2_PF_DEG extra
+    // L2 tag lookups per read, and one per clock for the queue, beyond the one lookup per request. A demand
+    // that arrives while a prefetch holds the current DRAM slot waits for the next one (non-preemptive DRAM).
+    parameter integer L2_PF = 0,
+    parameter integer L2_PF_DIST = 16,
+    parameter integer L2_PF_DEG = 4,
+    parameter integer L2_PF_N = 16
 ) (
     input wire clk,
     input wire reset, // already synchronized to clk; resets core AND adapter
@@ -55,6 +73,10 @@ module rv64_bram_soc #(
                  L2_LINES * L2_LINE != L2_KIB * 1024 || L2_SETS < 1 || L2_SETS * L2_WAYS != L2_LINES))) begin : bad_memory_model
         initial $fatal(1, "memory model: 1 <= MEM_LAT <= 1048576; with an L2: 1 <= L2_LAT < MEM_LAT, line a power of two >= 8, L2_KIB*1024 an exact multiple of L2_LINE*L2_WAYS");
     end endgenerate
+    generate if (L2_PF < 0 || L2_PF > 16 || (L2_PF != 0 && (L2_KIB == 0 || L2_PF_DIST < 1 || L2_PF_DIST > 64 ||
+                 L2_PF_DEG < 1 || L2_PF_DEG > 8 || L2_PF_N < 1 || L2_PF_N > 64))) begin : bad_l2_prefetch
+        initial $fatal(1, "L2 prefetcher: L2_PF 0 to 16; when on, an L2, L2_PF_DIST 1 to 64, L2_PF_DEG 1 to 8, L2_PF_N 1 to 64");
+    end endgenerate
     // Tags-only L2: line address and last use per line, least recently used replaced (64-bit use
     // stamps: they would wrap only after 2^64 accesses).
     reg [63:0] l2_tag [0:L2_N-1];
@@ -65,6 +87,48 @@ module rv64_bram_soc #(
     reg [63:0] now, mem_next;         // clocks since reset; earliest next DRAM start
     reg [63:0] l2_lat_v;           // clocks to a read's answer (64-bit, so a long DRAM backlog no longer wraps)
     integer l2_rd_hit = 0, l2_rd_miss = 0, l2_wr_hit = 0, l2_wr_miss = 0;   // statistics for probes
+    // L2 stream prefetcher state (L2_PF != 0). Trackers: valid, last line, direction (+1, -1 or 0 while
+    // untrained), confidence 0-3, frontier (the last line prefetched or found present), use stamp. pf_fly holds
+    // the arrival clocks of the prefetch fills in flight.
+    localparam integer PF_T = L2_PF > 0 ? L2_PF : 1;
+    localparam integer PF_F = L2_PF > 0 ? L2_PF_N : 1;
+    localparam integer PF_WIN = 16;
+    reg [PF_T-1:0] pf_ok;
+    reg [63:0] pf_last [0:PF_T-1];
+    reg [63:0] pf_front [0:PF_T-1];
+    reg [63:0] pf_stamp [0:PF_T-1];
+    integer pf_dir [0:PF_T-1];
+    integer pf_conf [0:PF_T-1];
+    reg [63:0] pf_fly [0:PF_F-1];
+    reg [63:0] pf_clock;
+    reg [L2_N-1:0] l2_pfb;            // brought in by a prefetch and not yet read by a demand read
+    localparam integer PF_Q = 16;     // prefetch queue entries
+    reg [63:0] pfq [0:PF_Q-1];
+    integer pfq_n;
+    function automatic pf_queued(input [63:0] line);
+        integer q;
+        begin
+            pf_queued = 0;
+            for (q = 0; q < PF_Q; q = q + 1) if (q < pfq_n && pfq[q] == line) pf_queued = 1;
+        end
+    endfunction
+    // A demand access to a queued line removes it from the queue.
+    task automatic pf_cancel(input [63:0] line);
+        integer q, o;
+        begin
+            o = 0;
+            for (q = 0; q < PF_Q; q = q + 1) if (q < pfq_n && pfq[q] != line) begin pfq[o] = pfq[q]; o = o + 1; end
+            pfq_n = o;
+        end
+    endtask
+    // Statistics: fills issued; lookups that found the line present; prefetched lines whose first access was a
+    // demand read (late: it arrived after now + L2_LAT, so the read waited) or a write; prefetched lines evicted
+    // before any access; candidates dropped because the queue was full (full, candidates), clocks the queue
+    // head waited for a busy DRAM slot or the in-flight limit (busy, clocks), and queued lines dropped because
+    // every way of their set was still arriving (pending, candidates). A queued line that a demand access
+    // touches leaves the queue.
+    reg [63:0] l2_pf_issue = 0, l2_pf_present = 0, l2_pf_used = 0, l2_pf_late = 0, l2_pf_wfirst = 0, l2_pf_evict = 0;
+    reg [63:0] l2_pf_full = 0, l2_pf_busy = 0, l2_pf_pend = 0;
     reg rd_busy;                // a read is waiting for its latency
     reg [63:0] rd_cnt;
     integer l2_w;
@@ -113,21 +177,120 @@ module rv64_bram_soc #(
             base = (line % L2_SETS) * L2_WAYS;
             hit = 0; v = -1; lat = 0;
             l2_clock = l2_clock + 1;
+            if (L2_PF != 0) pf_cancel(line);
             for (w = 0; w < L2_WAYS; w = w + 1)
                 if (l2_valid[base + w] && l2_tag[base + w] == line) begin
                     hit = 1; l2_use[base + w] = l2_clock;
                     lat = l2_ready[base + w] > now + L2_LAT ? l2_ready[base + w] - now : L2_LAT;
+                    if (L2_PF != 0 && l2_pfb[base + w]) begin
+                        l2_pfb[base + w] = 0;
+                        if (!is_read) l2_pf_wfirst = l2_pf_wfirst + 1;
+                        else begin
+                            l2_pf_used = l2_pf_used + 1;
+                            if (l2_ready[base + w] > now + L2_LAT) l2_pf_late = l2_pf_late + 1;
+                        end
+                    end
                 end
             if (!hit) begin
                 for (w = 0; w < L2_WAYS; w = w + 1) if (v < 0 && !l2_valid[base + w]) v = w;
+                // with the prefetcher on, prefer the least recently used way whose fill has arrived
+                if (v < 0 && L2_PF != 0)
+                    for (w = 0; w < L2_WAYS; w = w + 1)
+                        if (l2_ready[base + w] <= now && (v < 0 || l2_use[base + w] < l2_use[base + v])) v = w;
                 if (v < 0) begin
                     v = 0;
                     for (w = 1; w < L2_WAYS; w = w + 1) if (l2_use[base + w] < l2_use[base + v]) v = w;
+                end
+                if (L2_PF != 0) begin
+                    if (l2_valid[base + v] && l2_pfb[base + v]) l2_pf_evict = l2_pf_evict + 1;
+                    l2_pfb[base + v] = 0;
                 end
                 l2_valid[base + v] = 1; l2_tag[base + v] = line; l2_use[base + v] = l2_clock;
                 if (is_read) begin mem_start(lat); l2_ready[base + v] = now + lat; end
                 else if (WRITE_FILL != 0) begin mem_start(lat); l2_ready[base + v] = now + lat; lat = 0; end
                 else begin lat = 0; l2_ready[base + v] = now; end   // a posted write allocates without a fill
+            end
+        end
+    endtask
+    // Prefetcher: train on the line of a read that looked up the L2, then issue for a confirmed stream.
+    task automatic pf_access(input [63:0] line);
+        integer t, m, v, k, w, base;
+        reg signed [63:0] d, bd;
+        reg [63:0] cand, lim;
+        reg present, stop;
+        begin
+            m = -1; bd = 0; pf_clock = pf_clock + 1;
+            for (t = 0; t < PF_T; t = t + 1) if (pf_ok[t]) begin
+                d = $signed(line - pf_last[t]);
+                if (d >= -PF_WIN && d <= PF_WIN && (pf_dir[t] == 0 || d == 0 || (d > 0) == (pf_dir[t] > 0)) &&
+                    (m < 0 || (d < 0 ? -d : d) < (bd < 0 ? -bd : bd))) begin m = t; bd = d; end
+            end
+            if (m < 0) begin
+                v = 0;
+                for (t = 0; t < PF_T; t = t + 1) if (!pf_ok[t] && pf_ok[v]) v = t;
+                for (t = 0; t < PF_T; t = t + 1) if (pf_ok[t] && pf_ok[v] && pf_stamp[t] < pf_stamp[v]) v = t;
+                pf_ok[v] = 1; pf_last[v] = line; pf_front[v] = line; pf_dir[v] = 0; pf_conf[v] = 0; pf_stamp[v] = pf_clock;
+            end else begin
+                pf_stamp[m] = pf_clock;
+                if (bd != 0) begin
+                    if (pf_dir[m] == 0) begin pf_dir[m] = bd > 0 ? 1 : -1; pf_conf[m] = 1; end
+                    else if (pf_conf[m] < 3) pf_conf[m] = pf_conf[m] + 1;
+                    pf_last[m] = line;
+                    if (pf_dir[m] > 0 ? $signed(pf_front[m] - line) < 0 : $signed(pf_front[m] - line) > 0) pf_front[m] = line;
+                    // Issue: up to L2_PF_DEG lookups, walking the frontier toward L2_PF_DIST lines past this read.
+                    if (pf_conf[m] >= 2) begin
+                        k = 0; stop = 0;
+                        lim = pf_dir[m] > 0 ? line + L2_PF_DIST : line - L2_PF_DIST;
+                        while (!stop && k < L2_PF_DEG && pf_front[m] != lim) begin
+                            cand = pf_dir[m] > 0 ? pf_front[m] + 64'd1 : pf_front[m] - 64'd1;
+                            if ((cand << L2_OFF) >= RAM_WORDS * 64'd8 || ((cand << L2_OFF) >> L2_OFF) != cand) stop = 1;   // past the RAM
+                            else begin
+                                base = (cand % L2_SETS) * L2_WAYS; present = 0;
+                                for (w = 0; w < L2_WAYS; w = w + 1) if (l2_valid[base + w] && l2_tag[base + w] == cand) present = 1;
+                                k = k + 1;
+                                if (present) begin pf_front[m] = cand; l2_pf_present = l2_pf_present + 1; end
+                                else if (pf_queued(cand)) pf_front[m] = cand;
+                                else if (pfq_n >= PF_Q) begin l2_pf_full = l2_pf_full + 1; stop = 1; end
+                                else begin pfq[pfq_n] = cand; pfq_n = pfq_n + 1; pf_front[m] = cand; end
+                            end
+                        end
+                    end
+                end
+            end
+        end
+    endtask
+    // One queue step per clock, after this clock's demand requests: the oldest queued line starts its fill
+    // when the DRAM slot is idle and fewer than L2_PF_N prefetch fills are in flight.
+    task automatic pf_step;
+        integer t, n, f, w, base, vv;
+        reg [63:0] pl;
+        reg present;
+        begin
+            n = 0; f = 0;
+            for (t = PF_F - 1; t >= 0; t = t - 1) if (pf_fly[t] > now) n = n + 1; else f = t;
+            if (pfq_n > 0) begin
+                if (mem_next > now || n >= L2_PF_N) l2_pf_busy = l2_pf_busy + 1;
+                else begin
+                    base = (pfq[0] % L2_SETS) * L2_WAYS; present = 0;
+                    for (w = 0; w < L2_WAYS; w = w + 1) if (l2_valid[base + w] && l2_tag[base + w] == pfq[0]) present = 1;
+                    // the victim: an invalid way, else the least recently used way whose fill has arrived
+                    vv = -1;
+                    for (w = 0; w < L2_WAYS; w = w + 1) if (vv < 0 && !l2_valid[base + w]) vv = w;
+                    if (vv < 0)
+                        for (w = 0; w < L2_WAYS; w = w + 1)
+                            if (l2_ready[base + w] <= now && (vv < 0 || l2_use[base + w] < l2_use[base + vv])) vv = w;
+                    if (present) l2_pf_present = l2_pf_present + 1;
+                    else if (vv < 0) l2_pf_pend = l2_pf_pend + 1;
+                    else begin
+                        if (l2_valid[base + vv] && l2_pfb[base + vv]) l2_pf_evict = l2_pf_evict + 1;
+                        l2_clock = l2_clock + 1;
+                        l2_valid[base + vv] = 1; l2_tag[base + vv] = pfq[0]; l2_use[base + vv] = l2_clock;
+                        mem_start(pl); l2_ready[base + vv] = now + pl; l2_pfb[base + vv] = 1;
+                        pf_fly[f] = now + pl; l2_pf_issue = l2_pf_issue + 1;
+                    end
+                    for (t = 0; t < PF_Q - 1; t = t + 1) pfq[t] = pfq[t + 1];
+                    pfq_n = pfq_n - 1;
+                end
             end
         end
     endtask
@@ -172,6 +335,12 @@ module rv64_bram_soc #(
             read_ready<=0; read_error<=0; rdata<=0; rd_busy=0; rd_cnt=0; l2_valid=0; l2_clock=0;
             now=0; mem_next=0; sp_v=0; sp_next=0; rsp_valid<=0; rsp_error<=0; rsp_tag<=0; rsp_data<=0;
             l2_rd_hit=0; l2_rd_miss=0; l2_wr_hit=0; l2_wr_miss=0;
+            if (L2_PF != 0) begin
+                pf_ok=0; pf_clock=0; l2_pfb=0; pfq_n=0;
+                for (sp_k=0; sp_k<PF_F; sp_k=sp_k+1) pf_fly[sp_k]=0;
+                l2_pf_issue=0; l2_pf_present=0; l2_pf_used=0; l2_pf_late=0; l2_pf_wfirst=0; l2_pf_evict=0;
+                l2_pf_full=0; l2_pf_busy=0; l2_pf_pend=0;
+            end
         end else begin
             read_ready<=0;
             // A read answers lat clocks after it is first presented; the request is held
@@ -183,6 +352,7 @@ module rv64_bram_soc #(
                 if (L2_KIB != 0 && !outside_ram) begin
                     l2_touch(addr, 1'b1, l2_h, l2_lat_v);
                     if (l2_h) l2_rd_hit = l2_rd_hit + 1; else l2_rd_miss = l2_rd_miss + 1;
+                    if (L2_PF != 0) pf_access(addr >> L2_OFF);
                 end else if (!outside_ram) mem_start(l2_lat_v);
                 l2_v = outside_ram ? MEM_LAT : l2_lat_v;
                 if (l2_v <= 1) begin
@@ -208,6 +378,7 @@ module rv64_bram_soc #(
                 if (L2_KIB != 0 && !outside_ram) begin
                     l2_touch(addr, 1'b1, l2_h, l2_lat_v);
                     if (l2_h) l2_rd_hit = l2_rd_hit + 1; else l2_rd_miss = l2_rd_miss + 1;
+                    if (L2_PF != 0) pf_access(addr >> L2_OFF);
                 end else if (!outside_ram) mem_start(l2_lat_v);
                 sp_v[sp_free] = 1; sp_tag[sp_free] = tag; sp_addr[sp_free] = addr; sp_seq[sp_free] = sp_next; sp_next = sp_next + 1;
                 sp_cnt[sp_free] = outside_ram ? MEM_LAT : l2_lat_v;
@@ -239,6 +410,8 @@ module rv64_bram_soc #(
                 if (xok1) begin l2_touch(xaddr[127:64], 1'b0, l2_h, l2_lat_v); if (l2_h) l2_wr_hit = l2_wr_hit + 1; else l2_wr_miss = l2_wr_miss + 1; end
 `endif
             end
+            // the prefetch queue step comes after every demand request of this clock (reads and writes)
+            if (L2_PF != 0) pf_step;
             if (write_request && !outside_ram)
                 for (lane=0;lane<8;lane=lane+1)
                     if (wstrb[lane]) ram[index][8*lane+:8]<=wdata[8*lane+:8];

@@ -348,7 +348,7 @@ def run(args, root, out, build, snap, rtl, core_file, command, sha, sim, caches)
             'core': args.core,
             'core_source': args.core_source or core_file,
             'cache_beats': {'icache': caches['ICACHE_BEATS'], 'dcache': caches['DCACHE_BEATS']},
-            'memory_model': {k.lower(): caches.get(k, d) for k, d in (('L2_KIB', 0), ('L2_WAYS', 8), ('L2_LINE', 64), ('L2_LAT', 12), ('MEM_LAT', 1), ('N_MISS', 1), ('MEM_GAP', 0), ('WRITE_FILL', 0))} |
+            'memory_model': {k.lower(): caches.get(k, d) for k, d in (('L2_KIB', 0), ('L2_WAYS', 8), ('L2_LINE', 64), ('L2_LAT', 12), ('MEM_LAT', 1), ('N_MISS', 1), ('MEM_GAP', 0), ('WRITE_FILL', 0), ('L2_PF', 0), ('L2_PF_DIST', 16), ('L2_PF_DEG', 4), ('L2_PF_N', 16))} |
                             {'ld_lat': getattr(args, 'ld_lat', None), 'l0_n': getattr(args, 'l0', None),
                              'l0_lat': getattr(args, 'l0_lat', None), 'fpu': getattr(args, 'fpu', False), 'dline': getattr(args, 'dline', 8),
                              'vector': getattr(args, 'vector', False),
@@ -813,7 +813,7 @@ def run_iss(args, root, out, build, snap, rtl, core_file, command, sha, sim, cac
             'class': {'multicycle': 'multicycle', 'pipe': 'pipelined', 'ooo': 'out-of-order'}[args.core],
             'core': args.core, 'core_source': args.core_source or core_file,
             'cache_beats': {'icache': caches['ICACHE_BEATS'], 'dcache': caches['DCACHE_BEATS']},
-            'memory_model': {k.lower(): caches.get(k, d) for k, d in (('L2_KIB', 0), ('L2_WAYS', 8), ('L2_LINE', 64), ('L2_LAT', 12), ('MEM_LAT', 1), ('N_MISS', 1), ('MEM_GAP', 0), ('WRITE_FILL', 0))} |
+            'memory_model': {k.lower(): caches.get(k, d) for k, d in (('L2_KIB', 0), ('L2_WAYS', 8), ('L2_LINE', 64), ('L2_LAT', 12), ('MEM_LAT', 1), ('N_MISS', 1), ('MEM_GAP', 0), ('WRITE_FILL', 0), ('L2_PF', 0), ('L2_PF_DIST', 16), ('L2_PF_DEG', 4), ('L2_PF_N', 16))} |
                             {'ld_lat': getattr(args, 'ld_lat', None), 'l0_n': getattr(args, 'l0', None),
                              'l0_lat': getattr(args, 'l0_lat', None), 'fpu': getattr(args, 'fpu', False), 'dline': getattr(args, 'dline', 8),
                              'vector': getattr(args, 'vector', False),

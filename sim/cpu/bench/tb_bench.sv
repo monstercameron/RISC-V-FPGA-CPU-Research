@@ -15,13 +15,16 @@
 module tb_bench #(parameter integer RAM_WORDS = 8192, parameter integer ICACHE_BEATS = 512,
                   parameter integer DCACHE_BEATS = 512, parameter integer L2_KIB = 0, parameter integer L2_WAYS = 8,
                   parameter integer L2_LINE = 64, parameter integer L2_LAT = 12, parameter integer MEM_LAT = 1,
-                  parameter integer MEM_GAP = 0, parameter integer WRITE_FILL = 0, parameter integer N_MISS = 1);
+                  parameter integer MEM_GAP = 0, parameter integer WRITE_FILL = 0, parameter integer N_MISS = 1,
+                  parameter integer L2_PF = 0, parameter integer L2_PF_DIST = 16, parameter integer L2_PF_DEG = 4,
+                  parameter integer L2_PF_N = 16);
     reg clk=0,reset=1;
     always #5 clk=~clk;
     wire trapped,retired,retired2,retired3;
     wire [63:0] pc,cause,tval,rpc;
     rv64_bram_soc #(.RAM_WORDS(RAM_WORDS),.ICACHE_BEATS(ICACHE_BEATS),.DCACHE_BEATS(DCACHE_BEATS),.L2_KIB(L2_KIB),
-        .L2_WAYS(L2_WAYS),.L2_LINE(L2_LINE),.L2_LAT(L2_LAT),.MEM_LAT(MEM_LAT),.MEM_GAP(MEM_GAP),.WRITE_FILL(WRITE_FILL),.N_MISS(N_MISS)) dut(.clk(clk),.reset(reset),.trapped(trapped),
+        .L2_WAYS(L2_WAYS),.L2_LINE(L2_LINE),.L2_LAT(L2_LAT),.MEM_LAT(MEM_LAT),.MEM_GAP(MEM_GAP),.WRITE_FILL(WRITE_FILL),.N_MISS(N_MISS),
+        .L2_PF(L2_PF),.L2_PF_DIST(L2_PF_DIST),.L2_PF_DEG(L2_PF_DEG),.L2_PF_N(L2_PF_N)) dut(.clk(clk),.reset(reset),.trapped(trapped),
         .trap_pc(pc),.trap_cause(cause),.trap_tval(tval),.retire_valid(retired),.retire_pc(rpc),.retire2_valid(retired2),
         .retire3_valid(retired3));
 
@@ -39,6 +42,13 @@ module tb_bench #(parameter integer RAM_WORDS = 8192, parameter integer ICACHE_B
     longint cycles=0,retirements=0,max_cycles=50000000;
     longint start_cycle=-1,start_retired=-1,stop_cycle=-1,stop_retired=-1;
     longint sample_from=-1,sample_to=-1,sample_cycle=-1,sample_retired=-1;
+    // L2 prefetcher counters (SoC L2_PF != 0), printed at the end and with every lap so a runner can take
+    // per-call differences.
+    function automatic string pf_counters(input integer dummy);
+        pf_counters = $sformatf("issued=%0d present=%0d used=%0d late=%0d write_first=%0d evicted_unused=%0d full=%0d busy=%0d pending=%0d rd_hit=%0d rd_miss=%0d",
+            dut.l2_pf_issue,dut.l2_pf_present,dut.l2_pf_used,dut.l2_pf_late,dut.l2_pf_wfirst,dut.l2_pf_evict,
+            dut.l2_pf_full,dut.l2_pf_busy,dut.l2_pf_pend,dut.l2_rd_hit,dut.l2_rd_miss);
+    endfunction
     // Clocks spent in each core state since the previous retirement.
     integer in_fetch=0,in_execute=0,in_memory=0,w;
     initial begin
@@ -162,6 +172,7 @@ module tb_bench #(parameter integer RAM_WORDS = 8192, parameter integer ICACHE_B
                 // Lap markers (16-255, used by the LZMA benchmark to split its phases):
                 // reported with the same sampling as the region, which they do not change.
                 $display("LAP %0d cycles=%0d retirements=%0d",dut.ram[index],cycles,retirements);
+                if (L2_PF != 0) $display("L2PFLAP %0d %0s",dut.ram[index],pf_counters(0));
                 laps=laps+1;
             end else $fatal(1,"unexpected marker value %0h",dut.ram[index]);
             marker=dut.ram[index];
@@ -175,6 +186,7 @@ module tb_bench #(parameter integer RAM_WORDS = 8192, parameter integer ICACHE_B
             if (laps>0) $display("EDGES start_cycle=%0d start_retired=%0d stop_cycle=%0d stop_retired=%0d",
                 start_cycle,start_retired,stop_cycle,stop_retired);
             for (i=1;i<32;i=i+1) $display("MAILBOX %0d %016h",i,dut.ram[index+i]);
+            if (L2_PF != 0) $display("L2PF %0s",pf_counters(0));
             if (profile_fd!=0) $fclose(profile_fd);
             $finish;
         end

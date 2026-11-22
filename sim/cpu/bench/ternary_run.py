@@ -313,7 +313,7 @@ def run(args, root, out, build, snap, rtl, core_file, command, sha, sim, caches)
             k['weights_per_clock'] = k['weights'] / k['clocks']
             k['instructions_per_weight'] = k['retired_instructions'] / k['weights']
     memory_model = {k.lower(): caches.get(k, d) for k, d in (('L2_KIB', 0), ('L2_WAYS', 8), ('L2_LINE', 64),
-                    ('L2_LAT', 12), ('MEM_LAT', 1), ('N_MISS', 1), ('MEM_GAP', 0), ('WRITE_FILL', 0))}
+                    ('L2_LAT', 12), ('MEM_LAT', 1), ('N_MISS', 1), ('MEM_GAP', 0), ('WRITE_FILL', 0), ('L2_PF', 0), ('L2_PF_DIST', 16), ('L2_PF_DEG', 4), ('L2_PF_N', 16))}
     report = {
         'status': 'PASS',
         'benchmark': f'Ternary-weight GEMV, shape {ex["shape"]}: {ex["weights"]:,} weights in {len(layers)} layers',

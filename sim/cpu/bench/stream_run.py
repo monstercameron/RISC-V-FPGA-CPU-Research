@@ -108,7 +108,7 @@ def run(args, root, out, build, snap, rtl, core_file, command, sha, sim, caches)
             entry['clocks_per_load'] = clocks / c['loads']
         report_calls[c['name']] = entry
     memory_model = {k.lower(): caches.get(k, d) for k, d in (('L2_KIB', 0), ('L2_WAYS', 8), ('L2_LINE', 64),
-                    ('L2_LAT', 12), ('MEM_LAT', 1), ('N_MISS', 1), ('MEM_GAP', 0), ('WRITE_FILL', 0))}
+                    ('L2_LAT', 12), ('MEM_LAT', 1), ('N_MISS', 1), ('MEM_GAP', 0), ('WRITE_FILL', 0), ('L2_PF', 0), ('L2_PF_DIST', 16), ('L2_PF_DEG', 4), ('L2_PF_N', 16))}
     memory_model.update({k.lower(): v for k, v in caches.items() if k.startswith('L2_PF')})
     report = {
         'status': 'PASS', 'benchmark': 'STREAM-like bandwidth probe', 'label': LABEL,

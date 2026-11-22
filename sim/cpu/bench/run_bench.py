@@ -111,6 +111,10 @@ def main():
     memory.add_argument('--l2-lat', type=int, default=12, help='Clocks for a read that hits the L2')
     memory.add_argument('--mem-lat', type=int, default=1, help='Clocks for a read from memory (an L2 miss, or every read without an L2)')
     memory.add_argument('--mem-gap', type=int, default=0, help='Clocks between DRAM line starts (SoC MEM_GAP, 0.16.0; 0 = unlimited bandwidth)')
+    memory.add_argument('--l2-pf', type=int, default=0, help='L2 stream prefetcher trackers (SoC L2_PF; 0 = off)')
+    memory.add_argument('--l2-pf-dist', type=int, default=16, help='Lines a confirmed stream prefetches ahead (SoC L2_PF_DIST)')
+    memory.add_argument('--l2-pf-deg', type=int, default=4, help='Candidate tag lookups per advancing read (SoC L2_PF_DEG)')
+    memory.add_argument('--l2-pf-n', type=int, default=16, help='Most prefetch fills in flight (SoC L2_PF_N)')
     memory.add_argument('--write-fill', type=int, choices=(0, 1), default=0,
                         help='1: a write that misses the L2 starts a fill of its line (SoC WRITE_FILL, 0.16.0)')
     knobs = parser.add_argument_group('out-of-order core knobs (compile-time defines; defaults keep the released core)')
@@ -246,10 +250,11 @@ def main():
     # SoC memory-model parameters are passed only when they differ from the SoC defaults, so a
     # default run builds exactly the same simulator as before they existed.
     memory_defaults = {'L2_KIB': 0, 'L2_WAYS': 8, 'L2_LINE': 64, 'L2_LAT': 12, 'MEM_LAT': 1, 'N_MISS': 1,
-                       'MEM_GAP': 0, 'WRITE_FILL': 0}
+                       'MEM_GAP': 0, 'WRITE_FILL': 0, 'L2_PF': 0, 'L2_PF_DIST': 16, 'L2_PF_DEG': 4, 'L2_PF_N': 16}
     memory_model = {'L2_KIB': args.l2_kib, 'L2_WAYS': args.l2_ways, 'L2_LINE': args.l2_line,
                     'L2_LAT': args.l2_lat, 'MEM_LAT': args.mem_lat, 'N_MISS': args.n_miss,
-                    'MEM_GAP': args.mem_gap, 'WRITE_FILL': args.write_fill}
+                    'MEM_GAP': args.mem_gap, 'WRITE_FILL': args.write_fill,
+                    'L2_PF': args.l2_pf, 'L2_PF_DIST': args.l2_pf_dist, 'L2_PF_DEG': args.l2_pf_deg, 'L2_PF_N': args.l2_pf_n}
     caches.update({k: v for k, v in memory_model.items() if v != memory_defaults[k]})
     rtl = [snap / core_file, snap / 'rtl/cpu/rv64_bram_soc.sv']
     if args.benchmark == 'lzma':
