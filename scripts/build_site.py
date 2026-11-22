@@ -518,6 +518,12 @@ WORKS = [
      "with unit-stride, strided and whole-register memory, element-precise faults, and every single-precision vector instruction of the contract. "
      "Dhrystone and 7-Zip clocks equal the baseline, with and without the unit; no performance claim is made.",
      dict(marks=["RVV subset, option off by default", "vector memory with element-precise faults"])),
+    # Figures from the 0.19.0 history row. The wider lines are an option off by default, so the drawing adds a mark only.
+    ("0.19.0", "Les Lignes",
+     "Data-cache lines of 16, 32 or 64 bytes, as an option; the default 8-byte line and its clocks are unchanged. "
+     "On the candidate, Dhrystone runs 15,669 to 15,644 clocks at 64-byte lines (4 KiB caches, four misses in flight); "
+     "with the 7-Zip d12 kernel at slow memory (MEM_LAT 350), decompression falls 2.2% and compression rises 0.65%, a regression not yet explained.",
+     dict(marks=["wider data-cache lines, option off by default"])),
 ]
 
 ERAS = [
@@ -532,6 +538,7 @@ ERAS = [
     ("IX", "Salle IX", "Les Lettres en Vol", "Mendings for the branch buffer, a near memory and a ledger of waiting loads, six tables of long memory, then several reads in flight at once, a weld that spans two clocks, and loads that sleep until their answer comes.", "0.15.3", "0.16.2"),
     ("X", "Salle X", "La Virgule Flottante", "Numbers that float: single and double precision arrive in the out-of-order core, built in only on request, then add, multiply, divide and root at the latencies of Lion Cove and Zen 5.", "0.17.0", "0.17.4"),
     ("XI", "Salle XI", "Les Vecteurs", "Vectors as an option: a first subset of the RISC-V vector extension, executed in order at the head of the reorder buffer, with the rest of the instructions still to come.", "0.18.0", "0.18.0"),
+    ("XII", "Salle XII", "Les Lignes", "Wider lines for the data cache, as an option: a miss fills a longer line, answered one beat at a time, the critical beat first.", "0.19.0", "0.19.0"),
 ]
 
 

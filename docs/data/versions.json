@@ -6974,5 +6974,191 @@
   "dmips_fast": null,
   "ref_run": null,
   "art": "art/v0.18.0.svg"
+ },
+ {
+  "no": 66,
+  "version": "0.19.0",
+  "title": "Les Lignes",
+  "caption": "Data-cache lines of 16, 32 or 64 bytes, as an option; the default 8-byte line and its clocks are unchanged. On the candidate, Dhrystone runs 15,669 to 15,644 clocks at 64-byte lines (4 KiB caches, four misses in flight); with the 7-Zip d12 kernel at slow memory (MEM_LAT 350), decompression falls 2.2% and compression rises 0.65%, a regression not yet explained.",
+  "date": "2026-11-22",
+  "date_fr": "22 novembre 2026",
+  "kind": "ooo",
+  "status": "tagged",
+  "tag": "cpu-v0.19.0",
+  "register": "Data-cache lines (middle engineer): define RV64_OOO_DLINE 8 (default, unchanged) / 16 / 32 / 64 with N_MISS >= 2; bus contract: core output mem_len[2:0] (present only with the define) and line reads answered critical beat first, wrapping, one beat per answer (section 3); SoC and tb_core line answers (tb_core +fault_kind=5 one-shot read fault); test_cpu.py --dline, four line cases with --n-miss > 1 and line_fault_once_after_store with --dline > 8; run_bench.py --dline. The vector engine's element accesses follow the line rules. Default build: suite.py release-minor fpu vector against 0.17.2-release-patch.json 39 of 39 steps pass (lzma-64k after a rerun: a corrupted trace line, I/O), every compared number the same as the baseline. Reviewed twice by Codex (the 0.17.2 base, then the rebased diff); the critical-beat fault fix is checked by the fault-once case and an old-behaviour mutant. Measured on this candidate, DLINE 8 -> 64, Verilator, clang 23.1.5 images: Dhrystone (4 KiB caches, N_MISS 4) 15,669 -> 15,644 and 10,083 -> 10,062 cycles; 7-Zip d12 at LD 4, L0 16, L2 4 MiB / 20, MEM_LAT 350: N_MISS 4 compress 604,496 -> 608,404 clocks (+0.65%, a regression; not yet explained, a likely cause is that a line takes 8 of the one-per-clock answers) and decompress 229,974 -> 224,821 (-2.24%), N_MISS 2 623,198 -> 624,118 (+0.15%) and 232,104 -> 227,661 (-1.91%); ray tracing (hard-float, full mode, N_MISS 4) at those latencies P 3.531 -> 3.706 rays/kclk (-4.70% clocks), S 1.907 -> 1.963 (-2.87%), any-hit 1.900 -> 1.949 (-2.52%), RT-P 375.1 -> 378.4 paths/Mclk (-0.87%), and with flat memory within +-0.17%. The +25% on secondary rays from the SIMD engineer's vector model (gathers, 64 B lines) is not reproduced on scalar code. Coordinator check on main (06:15 to 06:30): suite.py release-patch fpu vector --core-source build/cpu/ooo-debug/coord/cand0190d.sv --expect sim/cpu/baselines/0.17.2-release-patch.json --jobs 2 16 of 16 steps PASS, every compared number the same as the baseline (Dhrystone 15,706 / 10,127, 7-Zip d12 384,788 / 133,243 and 974,219 / 153,238 at 4 KiB); test_cpu.py --core ooo --sim verilator --dline 64 --n-miss 4 811 runs PASS.",
+  "breaking": "No (default build unchanged; mem_len exists only with RV64_OOO_DLINE)",
+  "units": [
+   [
+    "Organisation",
+    "Out of order (rtl/cpu/rv64_ooo.sv)"
+   ],
+   [
+    "Fetch / rename / retire",
+    "32 / 32 / 32 per clock"
+   ],
+   [
+    "Reorder buffer",
+    "512 entries"
+   ],
+   [
+    "Physical registers",
+    "544"
+   ],
+   [
+    "Issue queue",
+    "128 entries"
+   ],
+   [
+    "ALUs",
+    "8, of which 4 full (branch, multiply, divide)"
+   ],
+   [
+    "Memory ports",
+    "4 load, 3 store-address"
+   ],
+   [
+    "Branch target buffer",
+    "1,024 entries, with return stack; hits used only for branch, JAL and JALR; targets as signed PC-relative offsets (±2 GiB)"
+   ],
+   [
+    "Caches",
+    "128 KiB instruction, 128 KiB data, two-way data cache"
+   ],
+   [
+    "Taken transfers per fetch",
+    "4"
+   ],
+   [
+    "Loop predictor",
+    "1,024 entries"
+   ],
+   [
+    "Branch bias",
+    "a branch that has gone one way at least 4 times with no exit is predicted that way"
+   ],
+   [
+    "Instruction fusion",
+    "a simple integer producer and the next instruction reading it, also across rename groups (one pending producer held into the next clock)"
+   ],
+   [
+    "Store writes",
+    "paired on the bus"
+   ],
+   [
+    "Value prediction",
+    "loads, multiplies, divides"
+   ],
+   [
+    "Fetch predecode",
+    "direct jumps, calls, returns, backward branches"
+   ],
+   [
+    "Global-history predictor",
+    "6 tagged tables, histories 4 to 128, about 22.4 KiB in all; aging covers every entry"
+   ],
+   [
+    "Prediction confidence",
+    "32 equal results to predict, doubled per wrong prediction up to 64"
+   ],
+   [
+    "Multiply latency",
+    "2 clocks (behavioural; DSP timing unproven)"
+   ],
+   [
+    "Load-to-use latency",
+    "a knob, RV64_OOO_LD_LAT, default 1 clock"
+   ],
+   [
+    "Memory hierarchy",
+    "optional SoC L2 and memory latency (L2_KIB, L2_WAYS, L2_LINE, L2_LAT, MEM_LAT); defaults keep timing"
+   ],
+   [
+    "Recent-beat buffer",
+    "a knob, RV64_OOO_L0_N (default 0, off), latency RV64_OOO_L0_LAT (default 2)"
+   ],
+   [
+    "Load-wait table",
+    "4,096 entries, cleared every 65,536 clocks"
+   ],
+   [
+    "Data misses in flight",
+    "N_MISS 1 to 8 (default 1); split reads with tags on mem_tag, rsp_valid, rsp_tag, rsp_data, rsp_error; younger missed loads sleep until their beat's answer (wake on fill)"
+   ],
+   [
+    "Floating point",
+    "RV64F and RV64D behind the define RV64_OOO_FPU, default off: four FP ports (two FMA, two misc), pipelined divide and square root, a 64-entry rename map (x and f) on one physical register file, fflags at retirement"
+   ],
+   [
+    "FP latencies, clocks",
+    "add 2, multiply 3, fused multiply-add 4; divide 7 / 10 and square root 10 / 15 (single / double), a single divide every 2 clocks"
+   ]
+  ],
+  "marks": [
+   "a one-beat fetch buffer",
+   "requests issue from EXECUTE",
+   "writes acknowledged in the same clock",
+   "second slot across beats",
+   "second data-cache port",
+   "jump in the second slot",
+   "slot-to-slot forwarding",
+   "branch folding",
+   "registered multiplier",
+   "fetch queue and X stage",
+   "store-to-load forwarding",
+   "stores finish at retirement",
+   "cross-beat fetch",
+   "instruction fusion",
+   "1,024-entry predictors",
+   "fixed-direction bias",
+   "sixteen lanes",
+   "one rule for stores and retirement",
+   "four taken turns",
+   "folded at rename",
+   "four stores a write",
+   "four loads, three stores a clock",
+   "512 in flight",
+   "thirty-two retire",
+   "thirty-two lanes",
+   "mended after review",
+   "constants and branches decided at rename",
+   "64-entry return stack",
+   "front-end depth dial",
+   "four branch-capable ports",
+   "two-clock multiply",
+   "the offset clock paid",
+   "return stack restored whole",
+   "load-latency dial",
+   "displaced returns",
+   "offset clock after slow loads",
+   "fetch in the recovery clock",
+   "second level and distant memory",
+   "value prediction earns trust",
+   "global-history predictor",
+   "BTB hits for transfers only",
+   "recent-beat buffer dial",
+   "PC-relative targets",
+   "load-wait table",
+   "six tagged tables",
+   "several reads in flight",
+   "split read channel",
+   "fusion across rename groups",
+   "wake on fill",
+   "F and D, off by default",
+   "fflags at retirement",
+   "add in two, multiply in three",
+   "divide and root at Lion Cove's pace",
+   "cleanup, bit-exact",
+   "a squashed divide frees the unit",
+   "RVV subset, option off by default",
+   "vector memory with element-precise faults",
+   "wider data-cache lines, option off by default"
+  ],
+  "width": 32,
+  "alus": 8,
+  "dmips_ref": null,
+  "clocks_ref": null,
+  "dmips_fast": null,
+  "ref_run": null,
+  "art": "art/v0.19.0.svg"
  }
 ]
