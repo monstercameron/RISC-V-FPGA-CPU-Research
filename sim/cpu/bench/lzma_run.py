@@ -596,7 +596,6 @@ def run_iss(args, root, out, build, snap, rtl, core_file, command, sha, sim, cac
     for old in ckdir.glob('*'):
         old.unlink()
     stub = mailbox - build['stack_reserve_bytes']
-    replayed_phases = set()
 
     def time_piece(p):
         output = simulate([*timing_sim, f'+image_bin={p["be"]}', f'+mailbox={mailbox:x}',
@@ -651,7 +650,54 @@ def run_iss(args, root, out, build, snap, rtl, core_file, command, sha, sim, cac
             raise AssertionError(f'checkpoint {p["index"]} does not reproduce the rv_iss run')
         p['functional_replay'] = 'PASS'
 
-    state, position = None, 0
+    # The first planned piece of each phase is replayed on rv_iss (when this invocation runs it).
+    first_of_phase = {min(p['index'] for p in plan if p['phase'] == name) for name in phases if
+                      any(p['phase'] == name for p in plan)}
+    fields = ('index', 'phase', 'begin', 'end', 'checkpoint', 'skip', 'window', 'clocks', 'window_retired',
+              'window_overrun', 'resume_pc', 'stub_instructions', 'functional_replay')
+    record_path = piece_dir / f'{subset.replace(":", "-")}.json' if subset and not merged else None
+
+    def save_record(done):
+        # After every batch, so a run stopped by its time limit keeps the pieces it finished.
+        piece_dir.mkdir(exist_ok=True)
+        record = {'key': key, 'pieces': [{k: q.get(k) for k in fields if k in q} for q in done],
+                  'differential': differential, 'simulations': simulations}
+        record_path.write_text(json.dumps(record, indent=1) + '\n', encoding='utf-8')
+
+    def prepare(p):
+        regs, memory, pc, index = bench_checkpoint.read_iss_state(p['state'])
+        if index != p['checkpoint']:
+            raise AssertionError('rv_iss state at the wrong instruction')
+        if index == 0:  # a warm-up reaching back to reset: the program image itself, no stub
+            image, info = bytes(memory), {'resume_pc': 0, 'resume_instruction': 0, 'stub_address': None,
+                                          'stack_pointer': 0, 'stub_instructions': 0, 'stub_pcs': []}
+        else:
+            image, info = bench_checkpoint.build_from_state(regs, memory, pc, index, stub,
+                                                            patches=[(mailbox, bytes(8))])
+        del memory
+        p.update(info)
+        p['replay'] = p['index'] in first_of_phase
+        # The byte image (tb_core, rv_iss replay) only when this piece is checked or replayed.
+        p['be'], p['le'] = bench_checkpoint.write_binaries(image, ckdir, f'piece{p["index"]:04d}',
+                                                           little=bool(p.get('check') or p['replay']))
+        del image
+        p['skip'] = p['begin'] - p['checkpoint']
+        p['window'] = (p['stub_instructions'] + p['skip'], p['stub_instructions'] + p['skip'] + p['end'] - p['begin'])
+
+    def piece_job(p):
+        prepare(p)
+        if mode == 'sampled':
+            time_piece(p)
+        if p.get('check'):
+            check_piece(p)
+        if p['replay']:
+            replay(p)
+        for name in ('be', 'le'):
+            if p[name] is not None:
+                p[name].unlink()
+        p['be'] = p['le'] = None
+
+    state, position, done = None, 0, []
     for start in range(0, len(work), jobs):
         batch = work[start:start + jobs]
         targets = sorted({p['checkpoint'] for p in batch})
@@ -662,49 +708,27 @@ def run_iss(args, root, out, build, snap, rtl, core_file, command, sha, sim, cac
             state.unlink()
         for p in batch:
             p['state'] = ckdir / f'state-{p["checkpoint"]}.state'
-            regs, memory, pc, index = bench_checkpoint.read_iss_state(p['state'])
-            if index != p['checkpoint']:
-                raise AssertionError('rv_iss state at the wrong instruction')
-            if index == 0:  # a warm-up reaching back to reset: the program image itself, no stub
-                image, info = bytes(memory), {'resume_pc': 0, 'resume_instruction': 0, 'stub_address': None,
-                                              'stack_pointer': 0, 'stub_instructions': 0, 'stub_pcs': []}
-            else:
-                image, info = bench_checkpoint.build_from_state(regs, memory, pc, index, stub,
-                                                                patches=[(mailbox, bytes(8))])
-            del memory
-            p.update(info)
-            p['be'], p['le'] = bench_checkpoint.write_binaries(image, ckdir, f'piece{p["index"]:04d}')
-            del image
-            p['skip'] = p['begin'] - p['checkpoint']
-            p['window'] = (p['stub_instructions'] + p['skip'], p['stub_instructions'] + p['skip'] + p['end'] - p['begin'])
-        tasks = [(time_piece, p) for p in batch if mode == 'sampled'] + [(check_piece, p) for p in batch if p.get('check')]
-        tasks += [(replay, p) for p in batch if p['phase'] not in replayed_phases]
-        replayed_phases |= {p['phase'] for p in batch}
         with ThreadPoolExecutor(max_workers=jobs) as pool:
-            list(pool.map(lambda task: task[0](task[1]), tasks))
+            list(pool.map(piece_job, batch))
         keep = ckdir / f'state-{targets[-1]}.state'
         for p in batch:
-            for name in ('be', 'le'):
-                p[name].unlink()
             if p['state'] != keep and p['state'].exists():
                 p['state'].unlink()
         state = keep
         position = targets[-1]
+        done += batch
+        if record_path:
+            save_record(done)
         print(f'  pieces {start + 1}-{start + len(batch)} of {len(work)} done (rv_iss at {position:,})', flush=True)
     if state and state.exists():
         state.unlink()
-    if subset and not merged:
-        piece_dir.mkdir(exist_ok=True)
-        fields = ('index', 'phase', 'begin', 'end', 'checkpoint', 'skip', 'window', 'clocks', 'window_retired',
-                  'window_overrun', 'resume_pc', 'stub_instructions', 'functional_replay')
-        record = {'key': key, 'pieces': [{k: p.get(k) for k in fields if k in p} for p in work],
-                  'differential': differential, 'simulations': simulations}
-        (piece_dir / f'{subset.replace(":", "-")}.json').write_text(json.dumps(record, indent=1) + '\n', encoding='utf-8')
+    if record_path:
+        save_record(done)
         for p in work:
             print(f'piece {p["index"]} ({p["phase"]}, instructions {p["begin"]:,}-{p["end"]:,}): '
                   f'{p.get("clocks")} clocks')
-        print(f'Saved {piece_dir.relative_to(root).as_posix()}/{subset.replace(":", "-")}.json; '
-              f'plan has {len(plan)} pieces; report with --pieces merge')
+        print(f'Saved {record_path.relative_to(root).as_posix()}; plan has {len(plan)} pieces; '
+              f'report with --pieces merge')
         return
 
     if mode == 'sampled':

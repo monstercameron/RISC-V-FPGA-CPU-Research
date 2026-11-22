@@ -165,9 +165,10 @@ def read_iss_state(path):
     return regs, memory, pc, index
 
 
-def write_binaries(memory, directory, stem):
-    """Binary images for +image_bin: <stem>-be.bin (tb_bench, big-endian 64-bit words) and
-    <stem>-le.bin (tb_core, bytes). Each file is read back like write_images()."""
+def write_binaries(memory, directory, stem, little=True):
+    """Binary images for +image_bin: <stem>-be.bin (tb_bench, big-endian 64-bit words) and,
+    with little, <stem>-le.bin (tb_core, bytes; otherwise None is returned for it). Each file
+    is read back like write_images()."""
     import array
     directory = Path(directory)
     words = array.array('Q')
@@ -176,7 +177,9 @@ def write_binaries(memory, directory, stem):
     words.frombytes(bytes(memory))
     if sys.byteorder == 'little':
         words.byteswap()
-    paths = {directory / f'{stem}-be.bin': words.tobytes(), directory / f'{stem}-le.bin': bytes(memory)}
+    paths = {directory / f'{stem}-be.bin': words.tobytes()}
+    if little:
+        paths[directory / f'{stem}-le.bin'] = bytes(memory)
     for path, blob in paths.items():
         for _ in range(3):
             path.write_bytes(blob)
@@ -184,7 +187,7 @@ def write_binaries(memory, directory, stem):
                 break
         else:
             raise OSError(f'{path} does not read back as written')
-    return tuple(paths)
+    return tuple(paths) if little else (next(iter(paths)), None)
 
 
 def write_images(memory, directory, stem):
