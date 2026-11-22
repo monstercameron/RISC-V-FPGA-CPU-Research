@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Original CPU foundation, wide out-of-order implementation (architecture 0.15.2).
+// Original CPU foundation, wide out-of-order implementation (architecture 0.15.3).
 // RV64IM + B execution, serialized FENCE.I, terminal EEI. Same module name and
 // contract as rv64_core.sv and rv64_pipe.sv, plus a wider retirement trace (rt_*);
 // build with one of the three files. Architecture version: cpu/VERSION,
@@ -1671,7 +1671,8 @@ module rv64_core #(
                     else if (TG_N != 0 && op == 7'h63 && g_cb >= TG_PG) stop = 1;   // TG_PG conditional branches per group
                     else begin
                         bi = npc[2 +: BTB_BITS];
-                        fdone = btb_valid[bi] && btb_tag[bi] == npc[2+BTB_BITS +: BTB_TAG];
+                        fdone = btb_valid[bi] && btb_tag[bi] == npc[2+BTB_BITS +: BTB_TAG] &&
+                                (op == 7'h63 || op == 7'h6f || op == 7'h67);   // predecode: control transfers only
                         tkp = fdone && (btb_ret[bi] || btb_ctr[bi][1]);
                         tgt = btb_ret[bi] ? ((gras[cur_sp] + (op == 7'h67 ? {{52{wi[31]}},wi[31:20]} : 64'd0)) & ~64'd1)
                                           : {npc[63:32], btb_target[bi], 2'b00};

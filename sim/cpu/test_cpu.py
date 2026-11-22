@@ -207,6 +207,32 @@ def gh_predictor_cases(i_type, r_type, store, branch, jal, MASK):
     yield 'tq_full_store', p, 0, MASK
 
 
+# Frontend hand-off 14 (Codex 1724-2): a stale BTB entry after FENCE.I must not redirect a non-branch.
+def btb_stale_cases(i_type, r_type, store, branch, jal, MASK):
+    p = [i_type(0x13, 10, 0, 0, 3), i_type(0x13, 11, 0, 0, 0),         # 0: x10 = 3; 4: x11 = 0 (pass)
+         branch(0, 0, 0, 8), 0x00000013,                                # 8: L: beq x0,x0 -> 16; 12: nop
+         i_type(0x13, 10, 0, 10, -1), branch(1, 10, 0, -12),            # 16: x10 -= 1; 20: bne -> 8
+         branch(1, 11, 0, 28),                                          # 24: bne x11,x0 -> 52 (done)
+         i_type(0x13, 5, 0, 0, 0x13), store(2, 0, 5, 8),                # 28: x5 = nop; 32: sw x5, 8(x0)
+         0x0000100f,                                                    # 36: fence.i
+         i_type(0x13, 10, 0, 0, 20), i_type(0x13, 11, 0, 0, 1),         # 40: x10 = 20; 44: x11 = 1
+         jal(0, -40),                                                   # 48: j 8
+         0x100073, jal(0, 0)]                                           # 52: ebreak; 56: j .
+    yield 'btb_stale_after_fencei', p, 0, MASK
+
+COUNT_DECL = "    integer max_retired=0,image_bin=0;\n"
+COUNT_ADD = """    integer max_retired=0,image_bin=0;
+    // hand-off 14 test: redirects and mispredicts of the instruction at 8 while it is a nop
+    integer s_mp=0;
+    always @(negedge clk) if (!reset && dut.d_redirect && dut.rb_pc[dut.rb_tail-1]==64'd8 && dut.rb_insn[dut.rb_tail-1]==32'h13) s_mp=s_mp+1;
+    always @(negedge clk) if (!reset && dut.mp_any && dut.rb_pc[dut.b_rob]==64'd8 && dut.rb_insn[dut.b_rob]==32'h13) s_mp=s_mp+1;
+"""
+DONE = 'fault_lane4=%0d",\n'
+DONE_NEW = 'fault_lane4=%0d s_mp=%0d",\n'
+DONE_ARGS = 'fault_lane2,fault_lane3,fault_lane4);'
+DONE_ARGS_NEW = 'fault_lane2,fault_lane3,fault_lane4,s_mp);'
+
+
 def cases():
     p = prefix()
     for op in (0x33, 0x3b):
@@ -849,6 +875,7 @@ def cases():
     yield 'ret_displacement', ret_displacement_program(), 0, MASK
     yield from rc_fetch_cases(i_type, r_type, store, branch, jal, MASK)
     yield from gh_predictor_cases(i_type, r_type, store, branch, jal, MASK)
+    yield from btb_stale_cases(i_type, r_type, store, branch, jal, MASK)
     # Value-prediction confidence (middle hand-off 11): one load PC sees runs of 11 equal
     # values (an 8-result confidence predicts and then misses at every change); then a load
     # that returns the same value 450 times becomes predicted, its value changes under it
