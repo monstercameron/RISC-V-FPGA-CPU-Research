@@ -39,6 +39,10 @@ SUITES = {
                    'needs sim/cpu/fetch_riscv_tests.sh once',
     'negative': 'Negative control: a mutated copy of the core must FAIL test_cpu with a trace mismatch',
     'repo': 'scripts/check_repo.py and scripts/build_site.py (rewrites docs/)',
+    'spike-lockstep': 'RTL retirement traces of all three cores against Spike --log-commits (sim/cpu/spike_lockstep.py): '
+                      'riscv-tests user set, Dhrystone and LZMA d12 whole, rt and js checkpoint pieces, and a mutated '
+                      'core that must be caught; the C2 external-model gate for user mode. Needs Spike '
+                      '(sim/cpu/sys/build_spike.sh)',
     'sys': 'rv_iss --sys (cpu/PRIV-CONTRACT.md draft): riscv-tests p env incl. rv64mi/si/ua/uc, OpenSBI + Linux + '
            'busybox boot to the shell with a checkpoint round trip, and the commit-log comparison with Spike; '
            'needs sim/cpu/sys/build_all.sh outputs in build/third-party/linux-lab/out and build_spike.sh',
@@ -46,8 +50,8 @@ SUITES = {
 # Presets expand to suites. release-patch is build/cpu/ooo-debug/coord/vcheck.sh;
 # release-minor adds the full Icarus run (full_check.sh).
 PRESETS = {
-    'release-patch': ['isa', 'bench-smoke'],
-    'release-minor': ['isa', 'bench-smoke', 'icarus-full'],
+    'release-patch': ['isa', 'bench-smoke', 'spike-lockstep'],
+    'release-minor': ['isa', 'bench-smoke', 'icarus-full', 'spike-lockstep'],
 }
 DEFAULT_CACHE_SIZES = ('default', '2')   # tb_core's 512 beats (4 KiB) and 2-beat (1-line) L1s
 # Icarus runs of test_cpu that do not fit in 300 s, split into shards (test_cpu balances them by golden-model length).
@@ -276,6 +280,56 @@ def riscv_tests(ctx):
                                                 *cache_args(size), *RVT_INT], 150, core=core, sim='icarus')
 
 
+SL = 'sim/cpu/spike_lockstep.py'
+SL_INT = ('rv64ui', 'rv64um', 'rv64uzba', 'rv64uzbb', 'rv64uzbs')
+SL_NOTE = 'RTL trace vs Spike record by record (pc, insn, register write, store address/data/width, final trap)'
+
+
+def spike_lockstep(ctx):
+    s = ('spike-lockstep',)
+    pat = r'count:^PASS: (\d+) records of \d+ runs'
+    # Measured 2026-11-22 (WSL, Verilator, load about 15): riscv-tests 80-115 s per core and cache size, F/D 30 s;
+    # Dhrystone 4-12 s per run; LZMA d12 whole (4.18M instructions) 15-40 s; rt/js pieces 3 x 200k 15-30 s.
+    for core in ('ooo', 'pipe', 'multicycle'):
+        cand = core == 'ooo'
+        tags = ('spike', core, 'verilator')
+        kw = dict(core=core, candidate=cand, sim='verilator', note=SL_NOTE)
+        for size in ctx.cache_sizes:
+            tag = cache_tag(size)
+            yield Step(f'spike-rvt-{core}{tag}', s, SL, ['rvt', *SL_INT, '--core', core, '--sim', 'verilator',
+                                                         *cache_args(size)], pat, tags=tags, out_arg=None, est=150, **kw)
+            # LZMA d12: whole with the default caches at wait pattern 0; with small caches (232 s whole on the
+            # out-of-order core, too close to the limit) its first 1.5M instructions at wait pattern 7
+            small = [] if size == 'default' else ['--max', '1500000']
+            yield Step(f'spike-lzma-{core}{tag}', s, SL, ['image', '--core', core, '--sim', 'verilator',
+                                                          '--stalls', '0' if size == 'default' else '7', *small,
+                                                          *cache_args(size)],
+                       pat, tags=tags, bench=LZMA_D12, out_arg='--out-dir:bench', lock=LZMA_D12.name, est=60, **kw)
+        yield Step(f'spike-dhry-{core}', s, SL, ['image', '--core', core, '--sim', 'verilator', '--stalls', '0,7'],
+                   pat, tags=tags, bench=DHRY_REF, out_arg='--out-dir:bench', lock=DHRY_REF.name, est=30, **kw)
+    yield Step('spike-rvt-ooo-fpu', s, SL, ['rvt', 'rv64uf', 'rv64ud', '--fpu', '--core', 'ooo', '--sim', 'verilator'],
+               pat, tags=('spike', 'ooo', 'fpu'), core='ooo', candidate=True,
+               sim='verilator', out_arg=None, when='core-has-fpu', est=90, note=SL_NOTE)
+    for kind, _plain, fd, *_ in BENCH_RUNS:
+        if kind not in ('rt', 'js'):
+            continue
+        yield Step(f'spike-{kind}-pieces-ooo-fpu', s, SL, ['pieces', '--fpu', '--core', 'ooo', '--sim', 'verilator',
+                                                           '--pieces', '3', '--window', '200000'],
+                   pat, tags=('spike', 'ooo', 'fpu', 'piece'), core='ooo',
+                   candidate=True, sim='verilator', bench=fd, out_arg='--out-dir:bench', lock=fd.name,
+                   when=f'core-has-fpu & bench-exists:{kind}', est=90,
+                   note='3 rv_iss checkpoint windows of 200k instructions, restored by the stub on the core')
+    yield Step('spike-selftest', s, SL, ['self-test'], r'count:^PASS: spike-lockstep self-test, (\d+) checks',
+               tags=('spike', 'python', 'negative'), out_arg=None, est=5)
+    # Negative control: the suite's XOR->OR mutant of the core must be caught by a register-value difference in
+    # rv64ui/xor (an infrastructure failure does not count).
+    yield Step('spike-negative-xor-or', s, SL, ['rvt', 'rv64ui', '--core', 'ooo', '--sim', 'verilator'], 'unittest',
+               tags=('spike', 'negative', 'ooo'), core='ooo', candidate=True, sim='verilator', out_arg=None,
+               expect_fail=r'^FAIL rv64ui-xor \(stall \d+\): differs at record \d+: spike \S+ \(0x[0-9a-f]{8}\) x\d+=\S+; rtl \S+ \(0x[0-9a-f]{8}\) x\d+=',
+               mutate=('4: r = x ^ y;', '4: r = x | y;'), est=60,
+               note='passes only if the lockstep FAILS on the mutant core, at an XOR')
+
+
 def sys_mode(ctx):
     yield Step('sys-riscv-tests', ('sys',), 'sim/cpu/sys/riscv_tests.py', [],
                r'count:^PASS: (\d+) riscv-tests pass', tags=('python', 'sys'), out_arg=None, est=60, lock='sys-tests',
@@ -303,4 +357,5 @@ def repo(ctx):
 
 GENERATORS = {'unit': unit, 'isa': isa, 'fpu': fpu, 'vector': vector, 'bitmanip': bitmanip,
               'bench-smoke': bench_smoke, 'bench': bench, 'icarus-full': icarus_full, 'soc': soc,
-              'riscv-tests': riscv_tests, 'negative': negative, 'repo': repo, 'sys': sys_mode}
+              'riscv-tests': riscv_tests, 'negative': negative, 'repo': repo, 'sys': sys_mode,
+              'spike-lockstep': spike_lockstep}
