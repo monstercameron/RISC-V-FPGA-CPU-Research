@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Original CPU foundation, wide out-of-order implementation (architecture 0.14.13).
+// Original CPU foundation, wide out-of-order implementation (architecture 0.15.1).
 // RV64IM + B execution, serialized FENCE.I, terminal EEI. Same module name and
 // contract as rv64_core.sv and rv64_pipe.sv, plus a wider retirement trace (rt_*);
 // build with one of the three files. Architecture version: cpu/VERSION,
@@ -574,11 +574,17 @@ module rv64_core #(
     localparam integer VP_BITS = 8;
     localparam integer VP_N = 1 << VP_BITS;
     localparam integer VP_TAG = 10;
-    localparam [2:0] VP_CONF = 3'd7;
+    localparam integer VP_CONF = 31;
+    localparam integer VP_PEN = 1;
     reg [VP_N-1:0] vp_valid;
     reg [VP_TAG-1:0] vp_tag [0:VP_N-1];
     reg [63:0] vp_val [0:VP_N-1];
-    reg [2:0] vp_conf [0:VP_N-1];
+    reg [5:0] vp_conf [0:VP_N-1];
+    reg [1:0] vp_strk [0:VP_N-1];
+    function automatic integer vp_thr(input [1:0] s);
+        integer x;
+        begin x = (VP_CONF + 1) << (VP_PEN ? s : 0); vp_thr = (x > 64 ? 64 : x) - 1; end
+    endfunction
     reg [ROB_N-1:0] rb_vp, rb_vpbad;
     reg [63:0] rb_vpv [0:ROB_N-1];
     reg [VP_BITS-1:0] vpi;
@@ -1037,8 +1043,10 @@ module rv64_core #(
                 if (rb_writes[e] && (rb_load[e] || ((rb_insn[e][6:0] == 7'h33 || rb_insn[e][6:0] == 7'h3b) && rb_insn[e][31:25] == 7'h01))) begin
                     vpi = rb_pc[e][2 +: VP_BITS];
                     if (vp_valid[vpi] && vp_tag[vpi] == rb_pc[e][2+VP_BITS +: VP_TAG] && vp_val[vpi] == rb_value[e]) begin
-                        if (vp_conf[vpi] != VP_CONF) vp_conf[vpi] = vp_conf[vpi] + 1;
+                        if (vp_conf[vpi] != 63) vp_conf[vpi] = vp_conf[vpi] + 1;
                     end else begin
+                        if (!(vp_valid[vpi] && vp_tag[vpi] == rb_pc[e][2+VP_BITS +: VP_TAG])) vp_strk[vpi] = 0;
+                        else if (rb_vp[e] && rb_vpbad[e] && vp_strk[vpi] != 3) vp_strk[vpi] = vp_strk[vpi] + 1;
                         vp_valid[vpi] = 1; vp_tag[vpi] = rb_pc[e][2+VP_BITS +: VP_TAG]; vp_val[vpi] = rb_value[e]; vp_conf[vpi] = 0;
                     end
                 end
@@ -1450,7 +1458,7 @@ module rv64_core #(
                             vpi = wpc[2 +: VP_BITS];
                             rb_vp[e] = 0; rb_vpbad[e] = 0;
                             if (writes_ && (op == 7'h03 || ((op == 7'h33 || op == 7'h3b) && wi[31:25] == 7'h01)) &&
-                                vp_valid[vpi] && vp_tag[vpi] == wpc[2+VP_BITS +: VP_TAG] && vp_conf[vpi] == VP_CONF) begin
+                                vp_valid[vpi] && vp_tag[vpi] == wpc[2+VP_BITS +: VP_TAG] && vp_conf[vpi] >= vp_thr(vp_strk[vpi])) begin
                                 rb_vp[e] = 1; rb_vpv[e] = vp_val[vpi];
                                 prf[fp] = vp_val[vpi]; prf_written[fp] = 1; prf_ready[fp] = 1; prf_late[fp] = 1;
                             end

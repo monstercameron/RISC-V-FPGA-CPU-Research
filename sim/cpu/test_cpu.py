@@ -801,6 +801,24 @@ def cases():
     yield 'ras_wrong_path_call', p, 0, MASK
     yield 'ret_displacement', ret_displacement_program(), 0, MASK
     yield from rc_fetch_cases(i_type, r_type, store, branch, jal, MASK)
+    # Value-prediction confidence (middle hand-off 11): one load PC sees runs of 11 equal
+    # values (an 8-result confidence predicts and then misses at every change); then a load
+    # that returns the same value 450 times becomes predicted, its value changes under it
+    # (a store in the loop), and it keeps running with a raised requirement.
+    vals = [2, 1, 3, 4]                                                       # x2=1, x1=0, x3=MASK, x4=2^63
+    p = prefix() + [i_type(0x13, 20, 0, 30, 0x400)]
+    p += [store(3, 20, vals[n // 11], 8 * n) for n in range(44)]
+    p += [i_type(0x13, 26, 0, 0, 44),                                        # x26 = 44
+          i_type(3, 21, 3, 20, 0), r_type(0x33, 22, 0, 22, 21),              # loop A: ld x21; x22 += x21
+          r_type(0x33, 23, 0, 21, 21, 1), r_type(0x33, 24, 0, 24, 23),       # x24 += x21*x21
+          i_type(0x13, 20, 0, 20, 8), i_type(0x13, 26, 0, 26, -1), branch(1, 26, 0, -24)]
+    p += [i_type(0x13, 26, 0, 0, 600), store(3, 30, 0, 0x3f0),               # loop B: 600 iterations, word = 0
+          i_type(3, 25, 3, 30, 0x3f0), r_type(0x33, 27, 0, 27, 25),          # ld x25 (predicted after 32)
+          i_type(0x13, 28, 0, 0, 150), branch(1, 26, 28, 8),                 # at x26 == 150:
+          store(3, 30, 3, 0x3f0),                                            #   the word becomes MASK
+          i_type(0x13, 26, 0, 26, -1), branch(1, 26, 0, -24),
+          r_type(0x33, 29, 0, 22, 27), store(3, 30, 29, 0x3f8), store(3, 30, 24, 0x3e8), 0x100073]
+    yield 'vp_confidence_runs', p, 0, MASK
 
 # Wall-clock guard per simulation. Real hangs end at tb_core's cycle limit; this only backs it
 # up, so Icarus (100-400x slower than Verilator) gets more time: under Icarus with 2-line caches
