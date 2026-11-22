@@ -45,7 +45,7 @@ LABEL = 'Ternary-weight GEMV benchmark (scalar i2, lut5w, bs8 and a stream probe
 
 # Goals, set 2026-11-22 03:37 ("M6 everywhere"); estimates, not M6 measurements (Apple publishes no M6 data).
 # Scalar kernels: 1.30 x the laptop's weights per clock (Geekbench 6 single-core per GHz, M6 983 / X925 755;
-# build/research/performance-targets.md; no FP/integer-specific bridge exists), laptop rows of
+# cpu/research/performance-targets.md; no FP/integer-specific bridge exists), laptop rows of
 # cpu/ternary-benchmark-targets.md: T-small resident, T-2B4T cold (DRAM). Streaming bandwidth: Apple
 # single-core DRAM 20-32 B/clk (M4 Max ~92 GB/s forum, unverified; M1 Max 102 GB/s AnandTech), not M6.
 GOAL_WEIGHTS_PER_CLOCK = {'small': {'i2': 1.28, 'lut5w': 4.03, 'bs8': 4.04},

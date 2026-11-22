@@ -1,10 +1,10 @@
 # To do
 
-Working list for the custom CPU, in priority order. The [architecture document](cpu/architecture.md) owns the C0-C7 gates and the RVA23 ledger; the [review rubric](cpu/review-rubric.md) owns what counts as evidence. This list tracks the work in between. Tick an item only when its "done when" evidence exists, and link that evidence.
+Working list for the custom CPU, in priority order. The [architecture document](architecture.md) owns the C0-C7 gates and the RVA23 ledger; the [review rubric](review-rubric.md) owns what counts as evidence. This list tracks the work in between. Tick an item only when its "done when" evidence exists, and link that evidence.
 
 Last updated November 20, 2026.
 
-> **Status note (2026-11-22).** This list has not been revised since architecture 0.4.0. Since then the project added the pipelined (0.8.0) and out-of-order (0.9.0) cores, B (0.6.0), an SoC memory model (0.15.0), split reads (0.16.0), the F/D option (0.17.0), Verilator runs, Yosys depth and Fmax estimates (`sim/cpu/synth_depth.py`, `synth_fmax.py`), a TestFloat 3e FP oracle and the `sim/cpu/suite.py` front end, and the optimization goal moved to a 10,000 MIPS 7-Zip rating at 4 GHz. Unticked items below may be partly done; check [DEVLOG.md](DEVLOG.md) and the [architecture history](cpu/architecture.md#history) before starting one, and tick an item only with its evidence linked.
+> **Status note (2026-11-22).** This list has not been revised since architecture 0.4.0. Since then the project added the pipelined (0.8.0) and out-of-order (0.9.0) cores, B (0.6.0), an SoC memory model (0.15.0), split reads (0.16.0), the F/D option (0.17.0), Verilator runs, Yosys depth and Fmax estimates (`sim/cpu/synth_depth.py`, `synth_fmax.py`), a TestFloat 3e FP oracle and the `sim/cpu/suite.py` front end, and the optimization goal moved to a 10,000 MIPS 7-Zip rating at 4 GHz. Unticked items below may be partly done; check [DEVLOG.md](../DEVLOG.md) and the [architecture history](architecture.md#history) before starting one, and tick an item only with its evidence linked.
 
 ## Now: make the C0 core measurable and independently checked
 
@@ -13,7 +13,7 @@ Last updated November 20, 2026.
 - [ ] **Wider random programs.** The random generator draws only register and immediate arithmetic. Add loads, stores, branches and jumps with bounded targets. Rubric R3.4.
 - [ ] **Lint.** Add a Verilator lint run with no unwaived warnings. Rubric HG7, R8.1.
 - [ ] **First synthesis.** Run Yosys on the core and RAM wrapper for a candidate exact part. Done when block RAM inference and a LUT/flip-flop count are recorded. Rubric HG7, R5.1, R5.2.
-- [x] **Tag the first architecture version.** Annotated tag `cpu-v0.1.0` on commit `0483d99`, where the 0.1.0 RTL first landed; pushed November 20, 2026. Versioning rules: [cpu/architecture.md](cpu/architecture.md) section 9.
+- [x] **Tag the first architecture version.** Annotated tag `cpu-v0.1.0` on commit `0483d99`, where the 0.1.0 RTL first landed; pushed November 20, 2026. Versioning rules: [cpu/architecture.md](architecture.md) section 9.
 - [ ] **Known-issue list.** Start one so reviews can check for open correctness defects. Rubric HG6.
 - [ ] **Commit or discard the regenerated visualizer records.** `cpu/programs-verification.json` and `cpu/visualizer-verification.json` were rebuilt locally on November 20, 2026, last on architecture 0.4.0 after its visualizer testbench fix, and are uncommitted.
 
@@ -23,10 +23,10 @@ Targets: **CoreMark** (primary, the number people compare cores by) and **Dhryst
 
 Shared groundwork:
 
-- [x] **Benchmark markers.** The program writes start and stop markers to a mailbox word; [tb_bench.sv](sim/cpu/bench/tb_bench.sv) counts clocks and retired instructions between them. Replaces hardware counters until Zicntr arrives in C1. Done November 20, 2026.
-- [x] **Larger memory for benchmarks.** The RAM wrapper's `RAM_WORDS`, a new `MEM_BYTES` parameter in [tb_core.sv](sim/cpu/tb_core.sv) and a generated linker script set the size; the reference model already follows the image size. The main regression in [test_cpu.py](sim/cpu/test_cpu.py) stays at 16 KiB on purpose, because its unmapped-address tests rely on that boundary. Done November 20, 2026.
-- [x] **Small runtime.** [start.S](sim/cpu/bench/start.S) with `.bss` clearing, and [runtime.c](sim/cpu/bench/runtime.c) with `memcpy`/`memset`/`strcpy`/`strcmp` and software multiply and divide. Done November 20, 2026.
-- [ ] **Licensing.** Add each benchmark's upstream license, provenance and source revision to [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md) and `licenses/` before committing its source. Done for Dhrystone; CoreMark still needs it.
+- [x] **Benchmark markers.** The program writes start and stop markers to a mailbox word; [tb_bench.sv](../sim/cpu/bench/tb_bench.sv) counts clocks and retired instructions between them. Replaces hardware counters until Zicntr arrives in C1. Done November 20, 2026.
+- [x] **Larger memory for benchmarks.** The RAM wrapper's `RAM_WORDS`, a new `MEM_BYTES` parameter in [tb_core.sv](../sim/cpu/tb_core.sv) and a generated linker script set the size; the reference model already follows the image size. The main regression in [test_cpu.py](../sim/cpu/test_cpu.py) stays at 16 KiB on purpose, because its unmapped-address tests rely on that boundary. Done November 20, 2026.
+- [x] **Small runtime.** [start.S](../sim/cpu/bench/start.S) with `.bss` clearing, and [runtime.c](../sim/cpu/bench/runtime.c) with `memcpy`/`memset`/`strcpy`/`strcmp` and software multiply and divide. Done November 20, 2026.
+- [ ] **Licensing.** Add each benchmark's upstream license, provenance and source revision to [THIRD_PARTY_NOTICES.md](../THIRD_PARTY_NOTICES.md) and `licenses/` before committing its source. Done for Dhrystone; CoreMark still needs it.
 
 CoreMark:
 
@@ -38,21 +38,21 @@ CoreMark:
 
 Dhrystone:
 
-First result: **0.260 DMIPS/MHz**, non-compliant simulation run, November 20, 2026. See [cpu/dhrystone.md](cpu/dhrystone.md).
+First result: **0.260 DMIPS/MHz**, non-compliant simulation run, November 20, 2026. See [cpu/dhrystone.md](dhrystone.md).
 
 - [x] **Port Dhrystone.** The riscv-tests edition (version string 2.2, the same benchmark loop as 2.1), unmodified, with a port layer for timing and result capture. Done November 20, 2026.
 - [x] **Guard against compiler distortion.** Each file compiled separately at `-O2`, no link-time optimization, `-fno-inline` on the upstream files; every command recorded. Done November 20, 2026.
 - [x] **Validate.** All 17 reachable final values match Dhrystone's expected values, and the retirement trace matches the reference model with 0 and 7 wait cycles. The benchmark's local variables are not reachable and are not checked. Done November 20, 2026.
 - [x] **Runs in CI.** A CI job builds with Ubuntu's clang and runs the checks on every push.
-- [ ] **Report beside CoreMark.** DMIPS per MHz (runs x 1,000,000 / (clocks x 1,757)) is recorded in [cpu/dhrystone-results.json](cpu/dhrystone-results.json). Done when it is published next to a CoreMark result, never on its own. Rubric section 9.
+- [ ] **Report beside CoreMark.** DMIPS per MHz (runs x 1,000,000 / (clocks x 1,757)) is recorded in [cpu/dhrystone-results.json](dhrystone-results.json). Done when it is published next to a CoreMark result, never on its own. Rubric section 9.
 - [x] **Hardware multiply and divide.** Architecture 0.4.0 adds M; the `rv64im` build runs 555.7 clocks per run against 600.8 for `rv64i`, 1.08x. Done November 20, 2026.
 
-Optimizations the Dhrystone profile points to, measured on every run (see [cpu/dhrystone.md](cpu/dhrystone.md)):
+Optimizations the Dhrystone profile points to, measured on every run (see [cpu/dhrystone.md](dhrystone.md)):
 
 - [x] **Fetch buffer.** Architecture 0.1.1: 2,188.2 to 1,706.2 clocks per run (1.28x), as estimated. Superseded by the instruction cache in 0.2.0.
-- [x] **Instruction cache, loads and stores from EXECUTE, same-clock writes, data cache.** Architectures 0.2.0 to 0.3.0: down to 600.8 clocks per run, CPI 1.001. See the [optimization history](cpu/dhrystone.md#optimization-history).
+- [x] **Instruction cache, loads and stores from EXECUTE, same-clock writes, data cache.** Architectures 0.2.0 to 0.3.0: down to 600.8 clocks per run, CPI 1.001. See the [optimization history](dhrystone.md#optimization-history).
 - [ ] **Overlap fetch with execute.** No longer worth doing for Dhrystone: with the instruction cache, fetch is 0.1% of clocks. Revisit with a slow-memory model or code larger than the cache.
-- [x] **Limited dual issue.** Architectures 0.5.0 to 0.5.5: a second instruction per clock, including loads, stores, branches, jumps, forwarding and branch folding; Dhrystone `rv64im` 555.7 to 287.8 clocks per run. See the [optimization history](cpu/dhrystone.md#optimization-history).
+- [x] **Limited dual issue.** Architectures 0.5.0 to 0.5.5: a second instruction per clock, including loads, stores, branches, jumps, forwarding and branch folding; Dhrystone `rv64im` 555.7 to 287.8 clocks per run. See the [optimization history](dhrystone.md#optimization-history).
 - [ ] **Measure logic depth before going wider.** Dual issue, forwarding and folding lengthen the clock. Record the longest path in LUT levels for each version (`sim/cpu/synth_depth.py`) and report it beside DMIPS/MHz; a gain that costs more in clock than it saves in clocks is not real.
 - [ ] **Three-wide issue.** Modelled at about 2.7 DMIPS/MHz (reference runtime) with one level of forwarding. Only after the depth measurement, and after an external model is in the regression.
 - [ ] **Synthesize the caches.** The cache lookups use the just-computed next PC and data address in the same clock; check their timing on a real part before relying on these clock counts.
@@ -105,7 +105,7 @@ Results:
 
 RV64GC is RV64IMAFDC plus Zicsr and Zifencei. It is the usual baseline for general-purpose 64-bit RISC-V software, including Linux distributions and large runtimes such as V8. Reaching it means passing C1 through C4, in this order:
 
-- [x] **I**: base integer, done in C0. Local simulation evidence only: [verification record](cpu/verification.json).
+- [x] **I**: base integer, done in C0. Local simulation evidence only: [verification record](verification.json).
 - [x] **Zifencei**: `fence.i`, done in C0, including a self-modifying-code test. Same evidence.
 - [ ] **Zicsr**: C1, above.
 - [ ] **M** (C2): implemented in architecture 0.4.0, with divide-by-zero, overflow and high-product cases matching the project reference model. Done when they also match an external model.

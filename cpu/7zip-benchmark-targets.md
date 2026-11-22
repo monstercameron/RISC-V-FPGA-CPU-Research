@@ -71,7 +71,7 @@ simulation of a scaled kernel, with those caveats.
 The user decided "M6 everywhere": every goal is referenced to Apple's M6 core per clock, single thread. Apple
 publishes no M6 microarchitecture, SPEC or 7-Zip figures, so each M6 goal here is a **bridge, an estimate and not
 a measurement**: the laptop's measured per-clock figure on our identical workload times a published M6 / X925
-per-clock ratio on the closest public benchmark. Source: `build/research/performance-targets.md` (ignored, not committed; Notebookcheck M6, RTX Spark and Dimensity analyses, fetched 2026-11-22).
+per-clock ratio on the closest public benchmark. Source: [research/performance-targets.md](research/performance-targets.md) (Notebookcheck M6, RTX Spark and Dimensity analyses, fetched 2026-11-22).
 
 **Bridge (a), the goal:** Geekbench 6.7 single-core per GHz, M6 4,698 / 4.78 GHz = 983 against the laptop's
 Cortex-X925 3,096 / 4.1 GHz = 755 (both Notebookcheck), ratio **1.30** (1.26 if M6 ran 4.93 GHz). Uncertainty about

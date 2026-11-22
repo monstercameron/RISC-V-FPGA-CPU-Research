@@ -1,6 +1,6 @@
 # RVA23 assembly examples
 
-Companion to the [operation mapping](../llm-rva23-mapping.md). Original MIT-licensed examples, checked with LLVM 23.1.3 on October 23, 2026. These are relocatable assembly objects, not a bootable program, complete model, driver or qualified numerical implementation.
+Companion to the [operation mapping](../llm-accelerator/plan/llm-rva23-mapping.md). Original MIT-licensed examples, checked with LLVM 23.1.3 on October 23, 2026. These are relocatable assembly objects, not a bootable program, complete model, driver or qualified numerical implementation.
 
 | Source | Callable examples / purpose | ISA target |
 |---|---|---|
@@ -44,7 +44,7 @@ LLVM accepts profile names in `-march`; this selects instruction availability, n
 - GEMV input is BF16 `W[K][M]`, x[K]; output is FP32 y[M]. Each vector lane accumulates one output in increasing K. These examples stop **before bias addition and BF16 output rounding**. They therefore demonstrate the projection's inner recurrence, not its complete graph boundary. W and x remain unchanged; y must not overlap either.
 - The illustrative K-major weight view differs from checkpoint output-first tensors and does not amend the existing hashed packed layout. Production needs a bounded, versioned tile packer consistent with the layout contract. Repacking may stream small tiles; never allocate the entire model in FP32. Benchmark the layout before selecting it.
 - Delta row updates consume a delta already computed from the complete decayed-state prediction. They cannot be interleaved with unfinished prediction reads. Exact old/new aliasing is allowed, other overlap is not. Readout follows the complete update and uses the new state.
-- `try_submit_command` assumes a trusted caller holds the driver lock and has completed session, registration, upload/seal, descriptor validation and OS DMA synchronization. It uses aligned 32-bit mailbox accesses under an equivalent platform I/O mapping. Real OS ports use their prescribed MMIO accessors. Return 0 means a doorbell was issued; terminal completion, weight servicing, cancellation and quarantine are still required by the [ABI](../abi-v1.md) and [adapter](../adapter-v1.md).
+- `try_submit_command` assumes a trusted caller holds the driver lock and has completed session, registration, upload/seal, descriptor validation and OS DMA synchronization. It uses aligned 32-bit mailbox accesses under an equivalent platform I/O mapping. Real OS ports use their prescribed MMIO accessors. Return 0 means a doorbell was issued; terminal completion, weight servicing, cancellation and quarantine are still required by the [ABI](../llm-accelerator/plan/abi-v1.md) and [adapter](../llm-accelerator/plan/adapter-v1.md).
 
 ## Verification still required
 

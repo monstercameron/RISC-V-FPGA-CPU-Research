@@ -17,7 +17,7 @@ Run `bash sim/starter/run.sh` with Icarus when changing the historical CPU start
 - Separate assumptions, calculated bounds, synthetic checks, native-model results and physical measurements. Give units, exact workload, source revision and tool versions.
 - Cite primary documentation. Date prices and availability. Preserve attribution and license notices for imported code, RTL and specifications.
 - Root plans/helpers are maintained; `llm-accelerator/planning-evidence/` contains historical snapshots. Update a snapshot only as an intentional, documented evidence revision.
-- `reference-source-lock.json` and `qualification-fixtures.json` are byte-locked. Do not reformat them or replace expected digests to make a failure disappear. An intentional update needs a version/reason, immutable provenance, independent review and corresponding checker anchors. Preserve previous failures and review identities.
+- `llm-accelerator/plan/reference-source-lock.json` and `llm-accelerator/plan/qualification-fixtures.json` are byte-locked. Do not reformat them or replace expected digests to make a failure disappear. An intentional update needs a version/reason, immutable provenance, independent review and corresponding checker anchors. Preserve previous failures and review identities.
 - Changes to arithmetic order, constants, layouts, ABI or fidelity bounds require an explicit versioned decision. Calibration can tighten existing fidelity ceilings; it cannot silently relax them.
 - The critic's reviewed hashes identify a historical review. A later design change requires new evidence before inheriting that review's score.
 

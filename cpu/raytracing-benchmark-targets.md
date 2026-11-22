@@ -81,7 +81,7 @@ publishes no M6 microarchitecture or ray-tracing figures, so each goal is a **br
 measurement**: the laptop's per-clock figure on our identical workload (the tables above, unchanged) times the
 **Cinebench 2024 single-core per-clock ratio M6 / X925 = 1.44** (M6 221 / 4.78 GHz = 46.2 against the laptop's
 131 / 4.1 GHz = 32.0, both Notebookcheck; 1.40 if M6 ran 4.93 GHz). Source:
-`build/research/performance-targets.md` (ignored, not committed; Notebookcheck M6, RTX Spark and Dimensity analyses, fetched 2026-11-22). Cinebench 2024 is a SIMD path tracer, so it matches this workload better than Geekbench; the uncertainty
+[research/performance-targets.md](research/performance-targets.md) (Notebookcheck M6, RTX Spark and Dimensity analyses, fetched 2026-11-22). Cinebench 2024 is a SIMD path tracer, so it matches this workload better than Geekbench; the uncertainty
 is about +-6% (clocks) plus the workload mismatch. The new goals are about 4% **looser** than the previous 1.5x.
 
 | Metric | Laptop per clock (measured) | Bridge ratio | **M6-referenced goal** | Previous goal (laptop + 50%) |

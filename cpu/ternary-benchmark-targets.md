@@ -17,7 +17,7 @@ formats follow published ideas; nothing is copied.
 | Model shape | BitNet b1.58 2B4T (arXiv 2504.12285; hidden 2560, FFN 6912) | MIT (weights not used) |
 
 Weights are **synthetic** (a hash gives each trit, uniform in -1, 0, +1) and activations are hashed int8
-in [-127, 127]. No model weights or binaries are downloaded. Details: `build/research/bitnet-ternary.md`.
+in [-127, 127]. No model weights or binaries are downloaded. Details: [research/bitnet-ternary.md](research/bitnet-ternary.md).
 
 ## Workloads
 
@@ -98,7 +98,7 @@ kernels equals the reference (0 mismatches). Raw: `ternary-laptop/laptop.json`.
 
 The user decided "M6 everywhere": goals are referenced to Apple's M6 core per clock, single thread. Apple
 publishes no M6 microarchitecture, so every goal here is a **bridge or a different-chip figure, an estimate and
-not a measurement**. Source: `build/research/performance-targets.md` (ignored, not committed; Notebookcheck M6 and RTX Spark analyses, fetched 2026-11-22).
+not a measurement**. Source: [research/performance-targets.md](research/performance-targets.md) (Notebookcheck M6 and RTX Spark analyses, fetched 2026-11-22).
 
 **Scalar kernels: 1.30 x the laptop's weights per clock** (laptop table above, unchanged), the Geekbench 6
 single-core per-clock ratio M6 / X925 (983 / 755; Notebookcheck). The report has no integer-kernel-specific

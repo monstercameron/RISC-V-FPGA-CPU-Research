@@ -18,7 +18,7 @@ trim_trailing_whitespace = false
 indent_style = tab
 
 # Do not autoformat identity-locked sources, fixtures or upstream notices.
-[{reference-sources/**,llm-accelerator/planning-evidence/**,licenses/**,sim/starter/vendor/**,sim/cpu/bench/vendor/**,qualification-fixtures.json,reference-source-lock.json}]
+[{reference-sources/**,llm-accelerator/planning-evidence/**,licenses/**,sim/starter/vendor/**,sim/cpu/bench/vendor/**,llm-accelerator/plan/qualification-fixtures.json,llm-accelerator/plan/reference-source-lock.json}]
 charset = unset
 end_of_line = unset
 insert_final_newline = false

@@ -1,7 +1,6 @@
 # mm benchmark (matrix multiplication and LLM-style kernels): laptop reference and baseline
 
-Built on 2026-11-22 from the research report `build/research/riscv-matrix.md` (ignored, not
-committed), section 4. **Goal: the Apple M6 reference, set 2026-11-22 03:37 (an estimate; see "Goal (Apple M6 reference)").** This page records the workload, the checks, a
+Built on 2026-11-22 from the research report [research/riscv-matrix.md](research/riscv-matrix.md), section 4. **Goal: the Apple M6 reference, set 2026-11-22 03:37 (an estimate; see "Goal (Apple M6 reference)").** This page records the workload, the checks, a
 laptop reference measured the way the other targets pages measure theirs, and the baseline of our
 core. The goal section below holds the target the user set.
 
@@ -132,7 +131,7 @@ was measured. There is no Q4_0 SIMD kernel yet.
 
 The user decided "M6 everywhere": goals are referenced to Apple's M6 core per clock, single thread. Apple
 publishes no M6 microarchitecture or matrix figures, so each goal is a **bridge or a different-chip figure, an
-estimate and not a measurement**. Source: `build/research/performance-targets.md` (ignored, not committed; Notebookcheck M6 and RTX Spark analyses, fetched 2026-11-22).
+estimate and not a measurement**. Source: [research/performance-targets.md](research/performance-targets.md) (Notebookcheck M6 and RTX Spark analyses, fetched 2026-11-22).
 
 **Scalar kernels: 1.30 x the laptop's MAC/clk** (the table above, unchanged), the Geekbench 6 single-core
 per-clock ratio M6 / X925 (983 / 755; M6 4,698 at 4.78 GHz, laptop 3,096 at 4.1 GHz, Notebookcheck). The report

@@ -50,7 +50,7 @@ LABEL = ('Ray-tracing benchmark (RT-T TinyBVH-derived traversal, RT-P smallpt), 
 # clocks or paths per million clocks, scalar build and best SIMD build; laptop work per ray and per path.
 # Goals since 2026-11-22 03:37 (user: "M6 everywhere"): 1.44 x the laptop per clock, the Cinebench 2024
 # single-core per-clock ratio Apple M6 / Cortex-X925 (221 / 4.78 GHz vs 131 / 4.1 GHz, Notebookcheck;
-# build/research/performance-targets.md). An ESTIMATE bridged from the laptop, not an M6 measurement (Apple
+# cpu/research/performance-targets.md). An ESTIMATE bridged from the laptop, not an M6 measurement (Apple
 # publishes no M6 microarchitecture); about +-6% from the two clocks plus workload mismatch. Previous goals
 # were 1.5 x the laptop (6.17 / 2.24 / 2.70 / 563 scalar; SIMD 18.2 / 9.0 / 4.63). SIMD laptop figures are
 # the laptop's best kernels (16-ray NEON packets 12.1, SVE2 ray streams 6.00 rays/kclk).

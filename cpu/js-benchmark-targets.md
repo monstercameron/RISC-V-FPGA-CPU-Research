@@ -4,8 +4,7 @@ Set on 2026-11-22 as the project's next benchmark series, after Dhrystone, 7-Zip
 JavaScript and web-page code are now a first-class target. The goal the user first set was **the user's laptop
 + 50% per clock** (since 2026-11-22 03:37 it is the Apple M6 reference, 1.30x the laptop; see "Goal (Apple M6 reference)"), the rule used for the 7-Zip and ray-tracing goals: for every kernel, and for the suite
 as a geometric mean, our core must do the same work in at most 1/1.5 of the laptop's clocks. The
-research behind this page (engines, weaknesses, plan) is `build/research/js-engines.md` (ignored, not
-committed).
+research behind this page (engines, weaknesses, plan) is [research/js-engines.md](research/js-engines.md).
 
 Everything here is simulation (rubric evidence class E1) or a native laptop measurement. Nothing is a
 hardware result of our core, and no clock frequency is claimed.
@@ -103,7 +102,7 @@ publishes no M6 microarchitecture or JavaScript figures (no Speedometer or JetSt
 the X925), so the goal is a **bridge, an estimate and not a measurement**: the laptop's measured cycles above
 divided by the **Geekbench 6 single-core per-clock ratio M6 / X925 = 1.30** (M6 4,698 / 4.78 GHz = 983 against
 the laptop's 3,096 / 4.1 GHz = 755, both Notebookcheck; 1.26 at 4.93 GHz). Source:
-`build/research/performance-targets.md` (ignored, not committed; Notebookcheck M6, RTX Spark and Dimensity analyses, fetched 2026-11-22). Geekbench 6 contains browser-style tests but also SME-assisted ones the X925 cannot run, so this ratio
+[research/performance-targets.md](research/performance-targets.md) (Notebookcheck M6, RTX Spark and Dimensity analyses, fetched 2026-11-22). Geekbench 6 contains browser-style tests but also SME-assisted ones the X925 cannot run, so this ratio
 may overstate an interpreter workload; uncertainty about +-6% plus workload mismatch. The goal is **15% looser**
 than the previous 1.5x (suite 32.38M clocks against 28.06M). The same factor applies to every kernel and to the
 geometric mean (goal geomean 1.30x the laptop per clock, previously 1.5x). "IPC at goal" uses the hard-float
@@ -246,7 +245,7 @@ digits, is the result. This row is closer to the laptop's real memory system tha
   the laptop has real L2, L3 and DRAM latencies. The flat figures flatter our core; the
   deciding-configuration row is the fairer one.
 - **Interpreter only:** no JIT. V8, JavaScriptCore, Node and Bun need A, C, an OS and an MMU that the
-  core does not have (`build/research/js-engines.md`); their JIT tiers would change the instruction mix
+  core does not have ([research/js-engines.md](research/js-engines.md)); their JIT tiers would change the instruction mix
   completely.
 - **Sampling:** kernel clocks are estimates from sampled pieces; dom, regex, sha256 and funcs have wide
   intervals because their phases differ (build, query, serialise). A whole-program run is about 550M

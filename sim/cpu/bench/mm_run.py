@@ -43,7 +43,7 @@ COLS = {'G1': 64, 'G2': 64, 'G3': 64, 'V1': 2048, 'V3': 2048, 'V4': 1024, 'V1b':
 # without the auto-vectoriser, one Cortex-X925 core (small profile, 2026-11-22 03:04; V1b from the full profile).
 LAPTOP = {'G1': 0.636, 'G2': 0.499, 'G3': 0.898, 'V1': 0.870, 'V3': 0.753, 'V4': 0.519, 'V1b': 0.881}
 # Goal, set 2026-11-22 03:37 ("M6 everywhere"): 1.30 x the laptop per clock = Geekbench 6 single-core per GHz,
-# Apple M6 983 / Cortex-X925 755 (build/research/performance-targets.md). An ESTIMATE bridged from the laptop,
+# Apple M6 983 / Cortex-X925 755 (cpu/research/performance-targets.md). An ESTIMATE bridged from the laptop,
 # not an M6 measurement; the report has no FP-specific Apple bridge, so the FP kernels use it too. Previously
 # no goal. SIMD and matrix peak goals (M4 SME 512 int8 / 256 FP32 MAC/clk; M6 unpublished) are not scored here:
 # this runner times scalar C only.

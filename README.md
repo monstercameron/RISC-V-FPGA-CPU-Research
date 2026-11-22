@@ -1,32 +1,43 @@
 # FPGA CPU Research
 
-**CPU core first.** Architecture version: [cpu/VERSION](cpu/VERSION) ([semantic versioning and history](cpu/architecture.md#9-versioning)). We are building an original 64-bit RISC-V processor for an FPGA, with RVA23U64 as the long-term ISA target. Three original implementations share one contract ([architecture section 1](cpu/architecture.md#1-target-and-first-implementation)): the multicycle core `rv64_core.sv` (the reference design), the four-stage pipelined core `rv64_pipe.sv` (since 0.8.0) and the out-of-order core `rv64_ooo.sv` (since 0.9.0), which is the one being optimized. All run `rv64im_zba_zbb_zbs_zifencei` with instruction and data caches, serialized FENCE.I and a terminal laboratory trap interface. The out-of-order core adds RV64F and RV64D as a build option, `RV64_OOO_FPU`, off by default (since 0.17.0). There are no A, C or V extensions, no privileged architecture and no MMU yet.
+[![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+[![Evidence: simulation only](https://img.shields.io/badge/evidence-simulation%20only-lightgrey.svg)](cpu/architecture.md)
 
-Start with the [interactive CPU infographic](cpu/core-explainer.html), the [CPU quick start](cpu/README.md), and the [architecture and staged RVA23 checklist](cpu/architecture.md).
+An original 64-bit RISC-V processor for an FPGA, written in SystemVerilog and developed in simulation against a sequential golden model. Three implementations share one architecture contract, and the long-term target is the RVA23U64 profile, reached in stages. The earlier LLM-accelerator research for the same board is preserved under [llm-accelerator/](llm-accelerator/plan/README.md) as future work.
 
-Gallery and journal (generated drawings and simulated results): https://monstercameron.github.io/RISC-V-FPGA-CPU-Research/
+**Status (simulation only).** Architecture version: see [cpu/VERSION](cpu/VERSION), currently 0.18.0 ([semantic versioning and history](cpu/architecture.md#9-versioning)). Not RVA23, not a Linux-capable CPU, not an ISA certification and not a physical FPGA result: no board run, board timing or hardware measurement is claimed.
 
-**Current evidence (simulation only).** The [architecture version history](cpu/architecture.md#history) records each release's regression; for 0.17.4 it gives `test_cpu.py --fpu` 681 of 681 runs passing at both cache sizes, with the FPU-off build bit-exact against 0.17.3 (393 of 393). The last logged Dhrystone run (0.15.1, out-of-order core, `rv64imb`) gives 18.17 DMIPS/MHz with the reference runtime and 27.98 with the labelled fast runtime; the timing probe in the history has stayed within 0.5% of it through 0.17.4 (15,706 and 10,127 clocks) ([Dhrystone page](cpu/dhrystone.md)). The current optimization goal is a 10,000 MIPS single-thread 7-Zip rating at 4 GHz ([7-Zip targets](cpu/7zip-benchmark-targets.md)). None of this is RVA23, a Linux-capable CPU, an ISA certification or a physical FPGA result. The compact [verification record](cpu/verification.json) is still the architecture 0.4.0 one.
+## What the cores implement
 
-Study the core with [seven selectable C programs](cpu/programs.md), from 1 + 1 to sorting and CRC32. The connected visualizer includes C/assembly/binary views, study questions, hardware checkpoints and verified outputs.
+The contract is [cpu/architecture.md](cpu/architecture.md) ([section 1](cpu/architecture.md#1-target-and-first-implementation)).
 
-You can [view and edit program inputs](cpu/inputs.md), then compile and run them from the visualizer.
+| Core | RTL | Since |
+|---|---|---|
+| Multicycle (the reference design) | [rv64_core.sv](rtl/cpu/rv64_core.sv) | 0.1.0 |
+| Four-stage pipelined | [rv64_pipe.sv](rtl/cpu/rv64_pipe.sv) | 0.8.0 |
+| Out-of-order (the one being optimized) | [rv64_ooo.sv](rtl/cpu/rv64_ooo.sv) | 0.9.0 |
 
-## Run the custom CPU
+All three run `rv64im_zba_zbb_zbs_zifencei` with instruction and data caches, serialized FENCE.I and a terminal laboratory trap interface. The out-of-order core also has two build options, both off by default: RV64F and RV64D (`RV64_OOO_FPU`, since 0.17.0) and a **subset** of the V extension (`RV64_OOO_V`, since 0.18.0, contract [cpu/RVV-CONTRACT.md](cpu/RVV-CONTRACT.md); integer, mask-logical, permute, integer-reduction and indexed instructions still trap). There is no A or C extension, no privileged architecture and no MMU yet.
 
-From the repository root on the existing Windows workstation:
+## Benchmarks and goals
 
-```powershell
-.\sim\cpu\run.ps1
-```
+- **Current goal:** a 10,000 MIPS single-thread 7-Zip rating at 4 GHz ([7-Zip targets](cpu/7zip-benchmark-targets.md)). Every benchmark goal is an Apple M6 per-clock reference set on 2026-11-22; each is an estimate bridged from laptop measurements, not an M6 measurement.
+- **Last logged Dhrystone** (0.15.1, out-of-order core, `rv64imb`): 18.17 DMIPS/MHz with the reference runtime and 27.98 with the labelled fast runtime; the timing probe has stayed within 0.5% of it through 0.17.4 ([Dhrystone page](cpu/dhrystone.md)).
+- **Regression:** each release records its counts in the [architecture history](cpu/architecture.md#history); for 0.18.0 that is `suite.py release-minor fpu vector` with 39 of 39 steps passing.
+- Other targets: [ray tracing](cpu/raytracing-benchmark-targets.md), [JavaScript](cpu/js-benchmark-targets.md), [matrix kernels](cpu/mm-benchmark-targets.md), [ternary GEMV](cpu/ternary-benchmark-targets.md) and the [LZMA kernel](cpu/lzma-benchmark.md). Their sources are in [cpu/research/](cpu/research/README.md).
 
-Or in Ubuntu/WSL with Python 3.11+ and Icarus installed:
+## Quick start
+
+Python 3.11+ and Icarus Verilog are required (Verilator and an LLVM RISC-V toolchain are optional). From the repository root, in Ubuntu/WSL or on Windows:
 
 ```sh
-bash sim/cpu/run.sh
+python -B sim/cpu/suite.py --list                  # every suite, preset and step
+python -B sim/cpu/suite.py unit --jobs 1           # the default multicycle regression
+python -B sim/cpu/suite.py release-patch --dry-run # the commands a patch release runs
+python -B scripts/check_repo.py                    # repository, link and licence checks
 ```
 
-The default suite downloads nothing and needs no FPGA or cross compiler. It runs `sim/cpu/test_cpu.py` on the multicycle core: generated differential programs under three memory wait patterns, checked against the sequential reference model, plus reset and synchronous-RAM checks. `--core pipe` or `--core ooo` selects another core, `--sim verilator` the faster simulator and `--fpu` the out-of-order FP option; `--help` lists the rest. Optional LLVM-compiled firmware is described in the CPU quick start. Generated traces and reports go under `build/cpu/`.
+Nothing is downloaded and no FPGA is needed. `.\sim\cpu\run.ps1` or `bash sim/cpu/run.sh` run the default suite directly. The [CPU quick start](cpu/README.md) and the [tools index](sim/cpu/README.md) cover the rest; generated output goes under `build/`.
 
 ### Test and benchmark suites (one front end)
 
@@ -48,53 +59,46 @@ To build and run the Dhrystone benchmark with the installed LLVM, see [the Dhrys
 .\sim\cpu\bench\run_dhrystone.ps1
 ```
 
-Repository and preserved accelerator-planning checks remain available:
+## Gallery and journal
 
-```sh
-python -B scripts/check_repo.py
-```
+Generated drawings of every version and the simulated results: <https://monstercameron.github.io/RISC-V-FPGA-CPU-Research/> (built from `docs/` by `scripts/build_site.py`). Also see the [interactive core infographic](cpu/core-explainer.html), [seven selectable C programs](cpu/programs.md) and [editable program inputs](cpu/inputs.md).
 
 ## Read the project
 
 | Document | Purpose |
 |---|---|
-| [Interactive core infographic](cpu/core-explainer.html) | Plain-language component tour and instruction walkthrough |
 | [CPU quick start](cpu/README.md) | Files, commands, tested behavior and current limits |
-| [CPU architecture](cpu/architecture.md) | Datapath, memory/trap contracts, RVA23 obligations and C0-C7 stages |
-| [Dhrystone result](cpu/dhrystone.md) | Benchmark results from 0.260 DMIPS/MHz (0.1.0) to 18.17 (0.15.1, out-of-order), how they were checked and how to rerun them |
-| Benchmark targets: [7-Zip](cpu/7zip-benchmark-targets.md) ([kernel](cpu/lzma-benchmark.md)), [ray tracing](cpu/raytracing-benchmark-targets.md), [JavaScript](cpu/js-benchmark-targets.md), [matrix kernels](cpu/mm-benchmark-targets.md), [ternary GEMV](cpu/ternary-benchmark-targets.md) | Reference measurements, goals (Apple M6 per clock since 2026-11-22) and our simulated results |
-| [CPU tools index](sim/cpu/README.md) | Every test, benchmark and helper script under `sim/cpu/`, with its entry point |
+| [CPU architecture](cpu/architecture.md) | Datapath, memory/trap contracts, RVA23 obligations, C0-C7 stages and version history |
 | [CPU review rubric](cpu/review-rubric.md) | Gates, scores and evidence needed before calling the CPU good or performant |
-| [To do](TODO.md) | CPU work list and the RV64GC milestone (last revised 2026-11-20; DEVLOG.md has the current work) |
-| [Development log](DEVLOG.md) | Dated record of sessions, commits and findings |
-| CPU RTL: [multicycle](rtl/cpu/rv64_core.sv), [pipelined](rtl/cpu/rv64_pipe.sv), [out-of-order](rtl/cpu/rv64_ooo.sv) / [RAM wrapper and SoC memory model](rtl/cpu/rv64_bram_soc.sv) | Original SystemVerilog implementation |
-| [LLM operations to RVA23](llm-rva23-mapping.md) / [assembly examples](isa/README.md) | Future workload mapping and optional BF16 instruction examples |
-| [Earlier accelerator plan](plan.md) / [memory plan](memory-plan.md) | Preserved LLM architecture and bandwidth research |
-| [Accelerator contract](implementation-contract.md), [ABI](abi-v1.md), [adapter](adapter-v1.md) | Normative for that accelerator design, not the current CPU bus |
-| [FPGA analysis](fpga-resource-and-board-analysis.md) | Dated board research and conditional hardware choices |
-| [Gap audit](plan-gap-audit.md) / [prior review](refinement-review.md) | Historical accelerator review; its score does not apply to this new CPU |
-| [Research](research.md) | Original tool/ISA/FPGA investigations |
+| [CPU tools index](sim/cpu/README.md) | Every test, benchmark and helper script under `sim/cpu/` |
+| [To do](cpu/TODO.md) | CPU work list and RV64GC milestone (last revised 2026-11-20; DEVLOG.md has the current work) |
+| [Development log](DEVLOG.md) | Dated record of sessions, commits and findings; per-commit run records are in `devlog/` |
+| [Research reports](cpu/research/README.md) | Standards, ISA roadmap, test inventory and the performance-target sources |
+| [LLM accelerator files](llm-accelerator/plan/README.md) | Preserved plan, contracts ([implementation](llm-accelerator/plan/implementation-contract.md), [ABI](llm-accelerator/plan/abi-v1.md), [adapter](llm-accelerator/plan/adapter-v1.md)), reviews and checkers; [operations to RVA23](llm-accelerator/plan/llm-rva23-mapping.md) and [assembly examples](isa/README.md) |
+| [FPGA analysis](llm-accelerator/plan/fpga-resource-and-board-analysis.md) | Dated board research and conditional hardware choices |
 
 ## Repository layout
 
 ```text
-cpu/                              Architecture contract, benchmark pages and targets, infographic, result records
-rtl/cpu/                          Original RV64 cores (multicycle, pipelined, out-of-order) and the RAM/SoC wrapper
-sim/cpu/                          Differential tests, golden models, suite.py front end, benchmarks (bench/)
-isa/                              Future RVA23 floating/vector assembly examples
-scripts/                          Repository checks (check_repo.py) and the site generator (build_site.py)
-docs/                             Generated GitHub Pages gallery and journal (do not edit by hand)
-devlog/                           Per-commit run records linked from DEVLOG.md
-sim/starter/                      Historical third-party PicoRV32 smoke simulation
-fpga/                             Future exact-board constraints and build scripts
-reference-sources/                Frozen LLM sources and metadata
-notes/, references/               Qwen compute notes; the RVA23 profile PDF
-llm-accelerator/planning-evidence/ Historical accelerator analysis snapshots
-licenses/                         Upstream licenses and provenance
-.github/                          CI, issue forms and pull-request template
+README.md, LICENSE, THIRD_PARTY_NOTICES.md, CONTRIBUTING.md, SECURITY.md,
+CHANGELOG.md, AGENTS.md, DEVLOG.md   Front matter, rules and the development log
+cpu/                  Architecture contract, benchmark pages and targets, result records, infographic
+cpu/research/         Research reports cited by the targets pages and plans
+rtl/cpu/              Original RV64 cores (multicycle, pipelined, out-of-order) and the RAM/SoC wrapper
+sim/cpu/              Differential tests, golden models, suite.py front end, benchmarks (bench/)
+sim/starter/          Historical third-party PicoRV32 smoke simulation (its own START-HERE.md)
+isa/                  RVA23 floating/vector assembly examples for the future accelerator
+fpga/                 Future exact-board constraints and build scripts
+scripts/              Repository checks (check_repo.py) and the site generator (build_site.py)
+docs/                 Generated GitHub Pages gallery and journal (do not edit by hand)
+devlog/               Per-commit run records linked from DEVLOG.md
+llm-accelerator/      Preserved LLM-accelerator research: plan/ (plans, contracts, checkers, locks)
+                      and planning-evidence/ (historical snapshots)
+reference-sources/    Frozen Qwen/Transformers sources and metadata (byte-locked)
+notes/, references/   Qwen compute notes; the RVA23 profile PDF
+licenses/             Upstream licence texts and provenance.json
+.github/              CI, issue forms and pull-request template
 ```
-
-The historical PicoRV32 starter still runs with `bash sim/starter/run.sh`; it is separate from our custom RV64 implementation. The previous complete Qwen3.8-27B text/vision accelerator remains research and a possible future workload. No full-model run is claimed by the CPU tests.
 
 ## Development constraints
 
@@ -107,4 +111,4 @@ See [CONTRIBUTING.md](CONTRIBUTING.md), [SECURITY.md](SECURITY.md) and [CHANGELO
 
 ## License
 
-Original work is available under the [MIT License](LICENSE). Bundled Transformers/Qwen material, PicoRV32, the RISC-V specification and the benchmark sources (Dhrystone, the 7-Zip LZMA SDK, LLVM compiler-rt, TinyBVH-derived code, smallpt, QuickJS-ng, Berkeley SoftFloat/TestFloat) retain upstream terms; see [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
+Original work is released under the [MIT License](LICENSE). Third-party material keeps its upstream terms: [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md) lists each bundled or fetched component with its licence, and the licence texts and their SHA-256 identities are in [licenses/](licenses/README.md). Bundled Transformers/Qwen material, PicoRV32, the RISC-V specification and the benchmark sources (Dhrystone, the 7-Zip LZMA SDK, LLVM compiler-rt, TinyBVH-derived code, smallpt, QuickJS-ng, Berkeley SoftFloat/TestFloat) are not under the MIT licence.

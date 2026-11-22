@@ -4,7 +4,7 @@ Research date: October 23, 2026. This is a companion mapping for the project's p
 
 **The main mapping is BF16 storage -> FP32 arithmetic -> explicit BF16 boundaries, with vector lanes assigned to independent outputs.** RVA23 has no single attention, GEMM, softmax, SiLU or DeltaNet instruction. Those operations become instruction sequences. Native BF16 widening multiply-accumulate can shorten the dominant sequence, when its optional extension is present.
 
-Five assembly files and a reproducible encoding checker are in [isa/](isa/README.md). All five assembled with LLVM 23.1.3, and 23 instruction encodings were checked. They have not executed on a RISC-V simulator or FPGA. Nonlinear kernels, the full runtime and numerical qualification remain work to implement.
+Five assembly files and a reproducible encoding checker are in [isa/](../../isa/README.md). All five assembled with LLVM 23.1.3, and 23 instruction encodings were checked. They have not executed on a RISC-V simulator or FPGA. Nonlinear kernels, the full runtime and numerical qualification remain work to implement.
 
 ## 1. What RVA23 provides
 
@@ -96,7 +96,7 @@ The same small instruction set is reused throughout the graph. Dimensions and or
 | Decayed state | Per-head S[128,128] FP32 | `vfmul.vf Sd,Sold,decay` across value coordinates |
 | Prediction | pred[v]=sum_k(k[k]*Sd[k,v]) | For each k, `vfmul.vf` temporary then `vfadd.vv` into pred; ascending k. No FMA |
 | Delta correction | delta[v]=beta*(v_input[v]-pred[v]) | `vfsub.vv` then `vfmul.vf`; keep FP32 |
-| Outer-product state update | Snew[k,v]=Sd[k,v]+k[k]*delta[v] | Separate multiply then add. [Delta row example](isa/rvv_ops.S) requires prediction to have finished first |
+| Outer-product state update | Snew[k,v]=Sd[k,v]+k[k]*delta[v] | Separate multiply then add. [Delta row example](../../isa/rvv_ops.S) requires prediction to have finished first |
 | Readout | out[v]=sum_k(q_scaled[k]*Snew[k,v]) | Separate multiply/add over ascending k, reading **updated** state; R16 output |
 | Gated RMSNorm | Width128 per value head | FP32 RMS -> R16 normalized -> BF16 multiply direct gamma -> FP32 multiply SiLU32(z) -> R16 |
 | Output projection | 5120x6144 | Ordered GEMV then graph residual boundary |
@@ -124,7 +124,7 @@ Host tokenization and pixel preprocessing retain the already approved boundary. 
 
 ### Ordered dot product
 
-The callable [scalar example](isa/scalar_ops.S) widens BF16 bit patterns with integer shifts and loops over K. Its key step is:
+The callable [scalar example](../../isa/scalar_ops.S) widens BF16 bit patterns with integer shifts and loops over K. Its key step is:
 
 ```asm
 lhu      t0, 0(a0)                  # BF16 bits
@@ -144,7 +144,7 @@ fadd.s   fa0, fa0, ft2, rne
 
 ### Vectorize outputs, keep K ordered
 
-The baseline [RVV GEMV](isa/rvv_ops.S) uses `v12:v13` as FP32 accumulators for independent output rows, initialized once per row block:
+The baseline [RVV GEMV](../../isa/rvv_ops.S) uses `v12:v13` as FP32 accumulators for independent output rows, initialized once per row block:
 
 ```asm
 vsetvli   t0, a3, e32, m2, ta, ma
@@ -158,7 +158,7 @@ vfmacc.vf v12, ft0, v10             # ft0 is widened x[k]
 
 One lane follows the same serial FMA recurrence as one scalar output. This exposes output parallelism without a partial-sum tree. For U8 prefill, use separate accumulators per token/output while retaining K order and the dependency constraints of the mixer; changing a vector length does not authorize token reordering in DeltaNet.
 
-The [optional kernel](isa/bf16_optional.S) uses e16/m1 source groups and a double-width FP32 accumulator:
+The [optional kernel](../../isa/bf16_optional.S) uses e16/m1 source groups and a double-width FP32 accumulator:
 
 ```asm
 vle16.v        v8, (t1)
@@ -196,7 +196,7 @@ A 32-bit RISC-V instruction's low 7 bits are its major opcode. Register numbers,
 
 `prefetch.r` is an OP-IMM hint encoding, despite relating to caches. Instructions such as `ret`, `li`, `mv`, `csrw` and `fabs.s` may be assembler aliases/pseudoinstructions; their source spelling is not a new major opcode. [Official encoding map](https://github.com/riscv/riscv-isa-manual/blob/main/src/unpriv/rv-32-64g.adoc).
 
-Selected complete words from [opcode_examples.S](isa/opcode_examples.S), independently field-checked by [verify_assembly.py](isa/verify_assembly.py):
+Selected complete words from [opcode_examples.S](../../isa/opcode_examples.S), independently field-checked by [verify_assembly.py](../../isa/verify_assembly.py):
 
 | Assembly | 32-bit word | Major opcode | Requirement |
 |---|---|---|---|
@@ -235,7 +235,7 @@ The instruction mapping does not remove the workload's memory limit. Dense text 
 
 For a simplified streamed projection, `time >= max(MACs / sustained_MACs_per_s, transferred_bytes / sustained_bytes_per_s)` only when compute/transfer can overlap; startup, dependencies and stalls add time. Measure effective bandwidth and latency, not just DDR advertised width/rate. VLEN, issued vector instructions and physical MAC lanes are three different quantities. [Cache management specification](https://github.com/riscv/riscv-isa-manual/blob/main/src/unpriv/cmo.adoc).
 
-The existing accelerator is controlled by **ABI command opcodes** 0..5. Its `EVALUATE=4` lives in the command structure at byte 6 as a u16. It is not an ISA instruction with opcode 0x04. [transport.S](isa/transport.S) copies an already validated 256-byte command into the mailbox and rings the command doorbell with value 1 using `sw`.
+The existing accelerator is controlled by **ABI command opcodes** 0..5. Its `EVALUATE=4` lives in the command structure at byte 6 as a u16. It is not an ISA instruction with opcode 0x04. [transport.S](../../isa/transport.S) copies an already validated 256-byte command into the mailbox and rings the command doorbell with value 1 using `sw`.
 
 The submission example assumes session/region/upload/seal setup and OS DMA visibility are complete. Driver release ordering precedes ringing; acquire ordering precedes consuming a valid completion. A RISC-V `fence` orders accesses but does not wait for accelerator completion, drain PCIe writes, cancel DMA, make an invalid handle valid or prove safe buffer reuse. The existing tagged weight service, terminal-result ownership and fatal quarantine path remain required.
 

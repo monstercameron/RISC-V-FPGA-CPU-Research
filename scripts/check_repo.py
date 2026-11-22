@@ -22,11 +22,11 @@ MAINTAINED_DOCS = (
     'README.md', 'CONTRIBUTING.md', 'SECURITY.md', 'CHANGELOG.md', 'AGENTS.md',
     'THIRD_PARTY_NOTICES.md', 'licenses/README.md', 'rtl/README.md',
     'fpga/README.md', 'llm-accelerator/planning-evidence/README.md',
-    'llm-rva23-mapping.md', 'isa/README.md',
+    'llm-accelerator/plan/llm-rva23-mapping.md', 'isa/README.md',
     'cpu/README.md', 'cpu/architecture.md', 'cpu/c-demo.md', 'cpu/visualizer.md', 'cpu/addition.md', 'cpu/programs.md', 'cpu/inputs.md',
-    'cpu/review-rubric.md', 'TODO.md', 'cpu/dhrystone.md', 'DEVLOG.md', 'cpu/lzma-benchmark.md', 'cpu/raytracing-benchmark-targets.md',
+    'cpu/review-rubric.md', 'cpu/TODO.md', 'cpu/dhrystone.md', 'DEVLOG.md', 'cpu/lzma-benchmark.md', 'cpu/raytracing-benchmark-targets.md',
     'cpu/js-benchmark-targets.md', 'cpu/mm-benchmark-targets.md', 'cpu/7zip-benchmark-targets.md',
-    'cpu/ternary-benchmark-targets.md', 'sim/cpu/README.md', 'START-HERE.md',
+    'cpu/ternary-benchmark-targets.md', 'sim/cpu/README.md', 'cpu/research/README.md',
 )
 REQUIRED = MAINTAINED_DOCS + (
     'LICENSE', '.gitignore', '.gitattributes', '.editorconfig',
@@ -73,12 +73,24 @@ REQUIRED = MAINTAINED_DOCS + (
     'sim/cpu/suite.py', 'sim/cpu/suite_manifest.py', 'sim/cpu/baselines/0.17.2-release-patch.json',
     'sim/cpu/fetch_riscv_tests.sh', 'sim/cpu/riscv_tests/run_riscv_tests.py', 'sim/cpu/riscv_tests/riscv-tests.lock',
     'sim/cpu/riscv_tests/env/riscv_test.h', 'sim/cpu/riscv_tests/env/link.ld',
+    'cpu/research/performance-targets.md', 'cpu/research/standards.md', 'cpu/research/isa-roadmap.md',
+    'cpu/research/test-suite-inventory.md', 'cpu/research/rv64gc-linux.md', 'cpu/research/cpu-catalog.md',
+    'cpu/research/bitnet-ternary.md', 'cpu/research/riscv-matrix.md', 'cpu/research/js-engines.md',
+    'cpu/research/fp-contract-draft-0.17.0.md', 'llm-accelerator/plan/README.md',
 )
 PLANNING_INPUTS = (
     'memory_model.py', 'plan_audit_checks.py', 'refinement_checks.py', 'abi_v1.py',
     'reference-source-lock.json', 'qualification-fixtures.json',
     'abi-v1.md', 'adapter-v1.md', 'implementation-contract.md',
 )
+# The accelerator planning files live together in this folder (moved from the
+# repository root on 2026-11-22, bytes unchanged). The checkers read their
+# siblings and reference-sources/ by relative name, so check_planning() lays the
+# inputs out flat in a scratch directory exactly as before.
+PLANNING_DIR = 'llm-accelerator/plan'
+# DEVLOG.md is append-only, so its old links keep the pre-2026-11-22 root paths.
+# They are accepted for DEVLOG.md only, and only while the moved file exists.
+MOVED_FROM_ROOT = {'TODO.md': 'cpu/TODO.md'}
 
 
 def sha(path: Path) -> str:
@@ -103,7 +115,8 @@ def check_metadata() -> dict:
             if re.match(r'^[A-Za-z][A-Za-z0-9+.-]*:', target) or target.startswith('#'):
                 continue
             target = unquote(target.split('#', 1)[0])
-            if not (path.parent / target).exists():
+            if not (path.parent / target).exists() and not (
+                    name == 'DEVLOG.md' and (ROOT / MOVED_FROM_ROOT.get(target, '')).is_file()):
                 raise ValueError(f'Broken local link in {name}: {target}')
             checked_links += 1
 
@@ -135,13 +148,13 @@ def check_metadata() -> dict:
 def check_planning(report_dir: Path) -> dict:
     # Existing refinement checks emit a lifecycle fixture beside their script.
     # Run them on a disposable copy to avoid rewriting reviewed repository files.
-    watched = [ROOT / name for name in PLANNING_INPUTS]
+    watched = [ROOT / PLANNING_DIR / name for name in PLANNING_INPUTS]
     watched += [p for p in (ROOT / 'reference-sources').iterdir() if p.is_file()]
-    before = {str(p.relative_to(ROOT)): sha(p) for p in watched}
+    before = {p.relative_to(ROOT).as_posix(): sha(p) for p in watched}
     with tempfile.TemporaryDirectory(prefix='fpga-repository-check-') as temporary:
         scratch = Path(temporary)
         for name in PLANNING_INPUTS:
-            shutil.copy2(ROOT / name, scratch / name)
+            shutil.copy2(ROOT / PLANNING_DIR / name, scratch / name)
         shutil.copytree(ROOT / 'reference-sources', scratch / 'reference-sources')
         for script, result in (
             ('plan_audit_checks.py', 'plan-audit-checks.json'),
@@ -160,7 +173,7 @@ def check_planning(report_dir: Path) -> dict:
             print(f'PASS {script}')
         # JSON writers use platform line endings; compare the actual fixture data.
         generated = json.loads((scratch / 'abi-lifecycle-example.json').read_bytes())
-        if generated != json.loads((ROOT / 'abi-lifecycle-example.json').read_bytes()):
+        if generated != json.loads((ROOT / PLANNING_DIR / 'abi-lifecycle-example.json').read_bytes()):
             raise ValueError('Lifecycle fixture differs from its checked-in codec result')
 
     if any(sha(ROOT / name) != digest for name, digest in before.items()):

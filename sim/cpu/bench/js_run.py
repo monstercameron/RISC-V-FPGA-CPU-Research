@@ -42,7 +42,7 @@ from rt_run import plan_pieces
 KERNELS = ('props', 'sched', 'navier', 'sha256', 'json', 'regex', 'strings', 'dom', 'funcs')
 MAGIC = 0x48434e45424a5351  # "QJSBENCH"
 # Apple M6 reference, set 2026-11-22 03:37 ("M6 everywhere"): 1.30 = Geekbench 6 single-core per GHz, M6 983 /
-# Cortex-X925 755 (Notebookcheck; build/research/performance-targets.md). An estimate bridged from the laptop, not
+# Cortex-X925 755 (Notebookcheck; cpu/research/performance-targets.md). An estimate bridged from the laptop, not
 # an M6 measurement. Previously 1.5 (laptop + 50%).
 GOAL_FACTOR = 1.30
 # Sampling defaults for the out-of-order core: 2 M-instruction warm-up, 250 K-instruction pieces,
