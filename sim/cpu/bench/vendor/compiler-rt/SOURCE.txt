@@ -1,0 +1,59 @@
+compiler-rt soft-float builtins from LLVM 23.1.5
+Repository: https://github.com/llvm/llvm-project
+Tag: llvmorg-23.1.5 = commit 392dfff97d29b59d77e5cac6d4b6ef2585fe7117 (the commit of the
+  Windows clang 23.1.5 that builds the benchmarks: "clang version 23.1.5
+  (https://github.com/llvm/llvm-project 392dfff97d29b59d77e5cac6d4b6ef2585fe7117)")
+Path: compiler-rt/lib/builtins/
+Files (byte-identical to the upstream git blobs, fetched from
+raw.githubusercontent.com at that commit; SHA-256, then git blob id in brackets;
+blob ids of adddf3.c, fp_lib.h and LICENSE.TXT also checked with the GitHub API):
+  adddf3.c             c948665a4272f7155fd0cd51c3f2bb218bfd0d1dc0ab556565ee1a4eb315eb26 [26f11bfa2216a2ee404ed951081f3c95e72f3cf8]
+  addsf3.c             c462bb5e45cf6181b2803633328e2e33c1bd5e4bff7a766f057361ef88ba2c45 [9f1d517c1fa1c0509a54c098d8bd8b69ee813e55]
+  comparedf2.c         c2af3f6a5ae89c08e5ee25b3ec03170b7e98d5dc699646c14820e359cd54fde5 [e1fc12c54d48a33acdf7f9b5372fd135c69c4eb9]
+  comparesf2.c         c24e84f8b8800e994b457dce12089ce14b693c839be5bbe74d53080aaa9597f0 [b8a955448f574d25af47f7bc2895d105b4c3a362]
+  divdf3.c             2c8850a107c4ab79d518d1c3246ff936dd28446c82e17c1f347717a36b7a88a8 [4c11759e0c4a7a0174b7831b9467f3a0c6c3468e]
+  divsf3.c             07fa9c2ac2fa467c8bcd8678ea5dae4ddafade06e6c2429eea9513b775fac2f1 [5744c015240b68a09511d02433d1db4cb9db009d]
+  extendsfdf2.c        0da160f7dcf46bf7d54a688a21477db5dfcb7147ad62e74895e00ea9778d78bf [8132d57e6bf649551a4d6bd94b98fb9d87c99702]
+  fixdfdi.c            5542e35a576e96c17e5c9731ffa24f72cedc7369d18079d8c29c5df6702feb94 [a48facb68598a5ce0eb3c80e027cf7f3c12757b2]
+  floatdidf.c          aa8abfb4f802a359b220b4a5edcd494aa484e7ece129c9e8036143f5913e8783 [6da81f7a05bf23341c2cc934c6feed08fe65109f]
+  floatsidf.c          d5141b5b7e860113c75f2d03d0cf39ca41aeea3e75390c40f73979c4ac172b51 [a23b31e7bc7ef0a581839ef95f0aca61ef749077]
+  floatundidf.c        052bbd24835e69cfa03dc9c820f5022893dd69c2f8b9d9e6fe4187bb8773d28b [9743e96ec67912a21e9c1fd13fe9521db7b71467]
+  floatunsidf.c        9f3593197c2584c14c86a4760051be18c788d0835cf8ffdb9f11834c2ce9bf5b [9b3e5fea0e45bfd79ec1167c0b2943a750be053e]
+  fp_add_impl.inc      d6fa6e3c97cdd0dde376e73711c7ec22a2e0b3aa6bbda310944eeb44fd0821ee [7a05f489b8ce64a673c093935f516f68657ff740]
+  fp_compare_impl.inc  e4693520d2eb36ff6af00ea405299cb1ba30b1375d6f2a5ab37911d9908d3366 [129d0136a0b98cff7799fb93ab855222ecf8d61a]
+  fp_div_impl.inc      2d1d901e87805e0bb2f3a3ab951b29224a59a761d6f292c3bd86f35368186fdd [de61e55cd083befbf901ee171c74f7eb51a47453]
+  fp_extend.h          b3da60a65ab5aca4b93ddd36df8af90051912d1c455c4cea2de0e50ce37c526d [22bf2b2514e574a814e1cd95063a933c33734e64]
+  fp_extend_impl.inc   63f9cd801c0c2a04e8becbd22f189eaaa47b5466bc098acc214fe69fd525f92a [f4f663066431ee428384fd95638c8880521eea96]
+  fp_fixint_impl.inc   9f783582b31c028721a14561f2c5741b5bb19befa557a4575e1436381f966f4e [2f2f77ce781ae278fee43151e1b9e4733817e6b4]
+  fp_lib.h             cf3a5301c95986a9b392edba32dfe7ac27d3352d266e284e528a09413f84f6cc [95b24aac1ff1da88fc96cc23013885bda2927219]
+  fp_mode.c            0f626fefe2e19854549dfe598bd168a770bae7e1cab34b459871fabec4632f25 [51865473cda7e5a14e5ce57369d3b626766eb4ad]
+  fp_mode.h            874aa9eee8990ae2a6f48127ddb48c3198a8fa741f634f93053ebac3f89e1e83 [5b4969a441f24241cfae38e5a30a8b01db705595]
+  fp_mul_impl.inc      5fd5ec9eaf57c983ed521f3501346660221d6f2d49d48d186b2046702b54d8c3 [a93f2d78ad6b1c9dc30b37de26725d2e88f94297]
+  int_endianness.h     ec5175561075845b7b16a92ad5ecdfd42a284de2736dd07e4ca7011b75c37709 [291c6b58c8ed9ed2ff2cc970bbfc0b486cc338ec]
+  int_lib.h            a5735bf1bfacecd6cf5785ed19ae62a981ff2f0923c38caa99f4af47f2be57b5 [629c3065da6a0e48e5423f07c141fcb2fbe612eb]
+  int_math.h           ddc3abe104d4500630174d7e0c3190d203c968213eb189097f70aec55a33c352 [c9c6bc83251c39fd08680946c36e28a4ec77e744]
+  int_to_fp.h          9ac8fd0650f1560e6c910979e0004c5956ae7da6e3bded7eab0b0270c51bf400 [2c1218f1e89c4fa9908037d9fb11b2806aaf46de]
+  int_to_fp_impl.inc   cc90f8dd3dc5649426463202a35c894b81189103f8b580e0b6af85658993b0f8 [11736ed7aafc8805a63f230aea0ad44d3e9d915f]
+  int_types.h          198552b25faf8a75b077ea145591cd7f6762b7f2712321b18f5e38fee8cc2a1e [6411507efdc8719718611b5f96b5c83bb72b1580]
+  int_util.h           63d06198ab720a75c20bfd84be895c2746581b129168bae6201e7384bbb0473b [c372c2edc637137d28926ad9af948f31766907ba]
+  muldf3.c             e35d748cefd466cb17e4d0fd4ef9d92e0911fea97bb7a59ad138479ba9c0d553 [f64b5228d7b7ed80fbbbac5e1ccb5b946e16f8ea]
+  mulsf3.c             9d93ec3313c62db3244c09827a4b27949caf94d2bcaf9ea616d8f5521eee799d [b9cf39abc7842e4a61fa2f5b353b9cacea8e1f97]
+  subdf3.c             201404b61436f1f617221ac20aeee67e41349baaf13ef838f0f5969e3b8b86ab [2100fd39c4ef033b8477478c19b5eb0fcd4309fc]
+  subsf3.c             5a908db14744b02835c6ccc254772d88ac229951830007cfed0a18d1e1d94db5 [ecfc24f7dd30142945e6ac4614f141a603788410]
+(sim/cpu/bench/build_bench.py refuses to build if one differs.)
+Licence: Apache License v2.0 with LLVM Exceptions (SPDX: Apache-2.0 WITH
+  LLVM-exception), stated in every file header; compiler-rt/LICENSE.TXT
+  (SHA-256 1a8f1058753f1ba890de984e48f0242a3a5c29a6a8f2ed9fd813f36985387e8d,
+  blob 5a79a1b9d5cb0af9a779751f07033e44ca3b14d8) is copied to
+  ../../../../../licenses/LLVM-COMPILER-RT-LICENSE.TXT. Under the LLVM Exception, object code
+  compiled from these files and embedded in a benchmark image may be
+  redistributed without the conditions of sections 4(a), 4(b) and 4(d).
+Downloaded: 2026-11-21.
+Local changes: none. Built by build_bench.py --benchmark rt for rv64imb (lp64,
+  soft float) only, with -std=c11 -D__SOFTFP__ (compiler-rt's integer-only paths,
+  as for soft-float Arm targets); fp_mode.c is the generic version (round to
+  nearest, no exception flags). The rv64imfd build links none of them.
+Used: __addsf3 __subsf3 __mulsf3 __divsf3 __eqsf2 __nesf2 __ltsf2 __lesf2
+  __gtsf2 __gesf2 __adddf3 __subdf3 __muldf3 __divdf3 __eqdf2 __nedf2 __ltdf2
+  __gtdf2 __gedf2 __extendsfdf2 __fixdfdi __floatsidf __floatunsidf __floatdidf
+  __floatundidf (and their helpers).

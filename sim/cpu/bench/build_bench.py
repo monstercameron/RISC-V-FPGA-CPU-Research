@@ -5,8 +5,12 @@ procedures across files), links with a generated linker script for the chosen
 RAM size, and writes the images the testbenches load. Runs on Windows with the
 installed LLVM or on Linux with clang, lld and llvm tools on PATH.
 
-Benchmarks: dhrystone (riscv-tests edition) and lzma, a scaled-down 7-Zip
-LZMA benchmark kernel (lzma_bench.c with the LZMA SDK in vendor/lzma/). The
+Benchmarks: dhrystone (riscv-tests edition), lzma, a scaled-down 7-Zip
+LZMA benchmark kernel (lzma_bench.c with the LZMA SDK in vendor/lzma/), and rt,
+the ray-tracing benchmark (RT-T BVH traversal and RT-P smallpt; rt_bench.c).
+The rt build takes its scene, BVH and rays from an rt_export.sh output directory
+(--rt-data); with rv64imb it links the compiler-rt soft-float builtins in
+vendor/compiler-rt/, and rv64imfd_zba_zbb_zbs (lp64d) is for a future FP core. The
 lzma build needs the M extension; --lzma-dict-log sets its dictionary (data =
 dictionary + 1/64, so 22 is the 7z b -md22 shape, 4 MiB + 64 KiB) and the RAM
 defaults to the smallest power of two that holds the estimated arena (1 MiB for
@@ -27,8 +31,14 @@ import time
 ROOT = Path(__file__).resolve().parents[3]
 BENCH = ROOT / 'sim/cpu/bench'
 VENDOR = BENCH / 'vendor/dhrystone'
-ISAS = ('rv64i_zifencei', 'rv64im_zifencei', 'rv64im_zba_zbb_zbs_zifencei')  # M needs 0.4.0+, B needs 0.6.0+
+ISAS = ('rv64i_zifencei', 'rv64im_zifencei', 'rv64im_zba_zbb_zbs_zifencei',  # M needs 0.4.0+, B needs 0.6.0+
+        'rv64imfd_zba_zbb_zbs_zifencei')  # F and D: rt only; no released core implements them
 ABI = 'lp64'
+
+
+def abi_of(isa):
+    """lp64d when the ISA has the F and D extensions (hardware floating-point arguments), else lp64."""
+    return 'lp64d' if isa.split('_')[0].endswith('fd') else ABI
 
 
 def isa_label(isa):
@@ -78,7 +88,52 @@ LZMA_VENDOR_SHA256 = {
     'LzmaEnc.h': 'c5e78398309363dd181840b7ba0bcb856f66619f755d5e2f5e04f7437186ba5f',
     'Precomp.h': 'c8903f2e36a771a272d8981e1e9ffed5ba16ca3d2f3dca6d1414d2340a6829d0',
 }
-LZMA_ISAS = ISAS[1:]  # the kernel multiplies; no software helpers are linked
+LZMA_ISAS = ISAS[1:3]  # the kernel multiplies; no software helpers are linked
+
+# Ray-tracing benchmark (rt): compiler-rt soft-float builtins from LLVM 23.1.5, linked
+# into the rv64imb build only; vendor/compiler-rt/SOURCE.txt records them.
+RT_VENDOR = BENCH / 'vendor/compiler-rt'
+RT_ISAS = ISAS[2:]
+RT_SOFT_FLOAT = ('adddf3.c', 'addsf3.c', 'subdf3.c', 'subsf3.c', 'muldf3.c', 'mulsf3.c', 'divdf3.c', 'divsf3.c',
+                 'comparedf2.c', 'comparesf2.c', 'extendsfdf2.c', 'fixdfdi.c', 'floatdidf.c', 'floatsidf.c',
+                 'floatundidf.c', 'floatunsidf.c', 'fp_mode.c')
+RT_VENDOR_SHA256 = {
+    'adddf3.c': 'c948665a4272f7155fd0cd51c3f2bb218bfd0d1dc0ab556565ee1a4eb315eb26',
+    'addsf3.c': 'c462bb5e45cf6181b2803633328e2e33c1bd5e4bff7a766f057361ef88ba2c45',
+    'comparedf2.c': 'c2af3f6a5ae89c08e5ee25b3ec03170b7e98d5dc699646c14820e359cd54fde5',
+    'comparesf2.c': 'c24e84f8b8800e994b457dce12089ce14b693c839be5bbe74d53080aaa9597f0',
+    'divdf3.c': '2c8850a107c4ab79d518d1c3246ff936dd28446c82e17c1f347717a36b7a88a8',
+    'divsf3.c': '07fa9c2ac2fa467c8bcd8678ea5dae4ddafade06e6c2429eea9513b775fac2f1',
+    'extendsfdf2.c': '0da160f7dcf46bf7d54a688a21477db5dfcb7147ad62e74895e00ea9778d78bf',
+    'fixdfdi.c': '5542e35a576e96c17e5c9731ffa24f72cedc7369d18079d8c29c5df6702feb94',
+    'floatdidf.c': 'aa8abfb4f802a359b220b4a5edcd494aa484e7ece129c9e8036143f5913e8783',
+    'floatsidf.c': 'd5141b5b7e860113c75f2d03d0cf39ca41aeea3e75390c40f73979c4ac172b51',
+    'floatundidf.c': '052bbd24835e69cfa03dc9c820f5022893dd69c2f8b9d9e6fe4187bb8773d28b',
+    'floatunsidf.c': '9f3593197c2584c14c86a4760051be18c788d0835cf8ffdb9f11834c2ce9bf5b',
+    'fp_add_impl.inc': 'd6fa6e3c97cdd0dde376e73711c7ec22a2e0b3aa6bbda310944eeb44fd0821ee',
+    'fp_compare_impl.inc': 'e4693520d2eb36ff6af00ea405299cb1ba30b1375d6f2a5ab37911d9908d3366',
+    'fp_div_impl.inc': '2d1d901e87805e0bb2f3a3ab951b29224a59a761d6f292c3bd86f35368186fdd',
+    'fp_extend.h': 'b3da60a65ab5aca4b93ddd36df8af90051912d1c455c4cea2de0e50ce37c526d',
+    'fp_extend_impl.inc': '63f9cd801c0c2a04e8becbd22f189eaaa47b5466bc098acc214fe69fd525f92a',
+    'fp_fixint_impl.inc': '9f783582b31c028721a14561f2c5741b5bb19befa557a4575e1436381f966f4e',
+    'fp_lib.h': 'cf3a5301c95986a9b392edba32dfe7ac27d3352d266e284e528a09413f84f6cc',
+    'fp_mode.c': '0f626fefe2e19854549dfe598bd168a770bae7e1cab34b459871fabec4632f25',
+    'fp_mode.h': '874aa9eee8990ae2a6f48127ddb48c3198a8fa741f634f93053ebac3f89e1e83',
+    'fp_mul_impl.inc': '5fd5ec9eaf57c983ed521f3501346660221d6f2d49d48d186b2046702b54d8c3',
+    'int_endianness.h': 'ec5175561075845b7b16a92ad5ecdfd42a284de2736dd07e4ca7011b75c37709',
+    'int_lib.h': 'a5735bf1bfacecd6cf5785ed19ae62a981ff2f0923c38caa99f4af47f2be57b5',
+    'int_math.h': 'ddc3abe104d4500630174d7e0c3190d203c968213eb189097f70aec55a33c352',
+    'int_to_fp.h': '9ac8fd0650f1560e6c910979e0004c5956ae7da6e3bded7eab0b0270c51bf400',
+    'int_to_fp_impl.inc': 'cc90f8dd3dc5649426463202a35c894b81189103f8b580e0b6af85658993b0f8',
+    'int_types.h': '198552b25faf8a75b077ea145591cd7f6762b7f2712321b18f5e38fee8cc2a1e',
+    'int_util.h': '63d06198ab720a75c20bfd84be895c2746581b129168bae6201e7384bbb0473b',
+    'muldf3.c': 'e35d748cefd466cb17e4d0fd4ef9d92e0911fea97bb7a59ad138479ba9c0d553',
+    'mulsf3.c': '9d93ec3313c62db3244c09827a4b27949caf94d2bcaf9ea616d8f5521eee799d',
+    'subdf3.c': '201404b61436f1f617221ac20aeee67e41349baaf13ef838f0f5969e3b8b86ab',
+    'subsf3.c': '5a908db14744b02835c6ccc254772d88ac229951830007cfed0a18d1e1d94db5',
+}
+RT_DATA_DEFAULT = 'build/cpu/bench/rt-data/g16s2i32-pt16x12x4'  # rt_export.sh 16 2 32 16 12 4
+RT_STACK_SLACK = 64 << 10  # smallpt recursion below the reserved stack (free RAM above .bss)
 
 # Upstream sources are 1988-era K&R C, so they build as gnu89. clang ignores
 # upstream's "#pragma GCC optimize no-inline"; -fno-inline keeps that intent.
@@ -109,6 +164,24 @@ BENCHMARKS = {
         'defines': ['-DZ7_ST'],
         'required': ('lzma_bench_pass', 'bench_generate_lz', 'LzmaEnc_Encode', 'LzmaDec_DecodeToDic'),
         'headers': [BENCH / 'include-lzma', LZMA_VENDOR],
+    },
+    # Sources of the ray-tracing benchmark; the generated rt_data.c and, for soft float,
+    # the compiler-rt builtins are added in main().
+    'rt': {
+        'sources': [
+            (BENCH / 'rt_bench.c', 'port'),
+            (BENCH / 'rt_trace.c', 'port'),
+            (BENCH / 'rt_math.c', 'port'),
+            (BENCH / 'smallpt_rt.cpp', 'port'),
+            (BENCH / 'rt_runtime.c', 'port'),
+        ],
+        # __SOFTFP__ selects compiler-rt's integer-only paths (as on soft-float Arm), so a
+        # builtin never calls another floating-point builtin (fixdfdi without fixunsdfdi).
+        'vendor_flags': ['-std=c11', '-D__SOFTFP__'],
+        'include': [BENCH / 'include', BENCH / 'include-rt'],
+        'defines': ['-ffp-contract=off', '-fno-math-errno'],
+        'required': ('rt_bench_run', 'rt_intersect', 'rt_occluded', 'rt_smallpt', 'rt_nodes', 'rt_rays_s'),
+        'headers': [BENCH / 'include-rt', RT_VENDOR],
     },
 }
 
@@ -169,6 +242,7 @@ def main():
     parser.add_argument('--lzma-dict-log', type=int, default=12,
                         help='lzma only: dictionary size 2^N bytes, N from 12 (the LZMA minimum) to 22 '
                              '(7z b -md22)')
+    parser.add_argument('--rt-data', help=f'rt only: rt_export.sh output directory (default {RT_DATA_DEFAULT})')
     parser.add_argument('--runtime', choices=('reference', 'fast'), default='reference',
                         help='reference: byte-at-a-time strcpy/strcmp (compared across cores); '
                              'fast: word-at-a-time (a labelled, separate configuration)')
@@ -177,6 +251,31 @@ def main():
     parser.add_argument('--out-dir', help='Default: build/cpu/bench/<benchmark>, plus -rv64im for that ISA')
     args = parser.parse_args()
     lzma = args.benchmark == 'lzma'
+    rt = args.benchmark == 'rt'
+    if args.rt_data and not rt:
+        parser.error('--rt-data applies to --benchmark rt only')
+    if rt:
+        if args.isa is None:
+            args.isa = RT_ISAS[0]
+        if args.isa not in RT_ISAS:
+            parser.error('--benchmark rt needs rv64imb (soft float) or rv64imfd_zba_zbb_zbs')
+        if args.runtime != 'reference':
+            parser.error('--runtime applies to dhrystone only')
+        rt_dir = (ROOT / (args.rt_data or RT_DATA_DEFAULT)).resolve()
+        for name in ('rt_data.c', 'expected.json', 'export.json', 'tinybvh.json'):
+            if not (rt_dir / name).is_file():
+                parser.error(f'{rt_dir / name} is missing: run sim/cpu/bench/rt_export.sh first')
+        rt_export = json.loads((rt_dir / 'export.json').read_bytes())
+        if sha(rt_dir / 'rt_data.c') != rt_export['rt_data_sha256']:
+            parser.error(f'{rt_dir / "rt_data.c"} differs from the one rt_export.sh recorded')
+        rt_args = rt_export['args']
+        rt_data_bytes = (rt_dir / 'rt_data.c').stat().st_size // 11 * 4  # about 11 characters per 32-bit word
+        if args.ram_kib is None:  # data, program, image buffer, stack slack, reserved stack and mailbox
+            need = rt_data_bytes + (192 << 10) + 24 * rt_args['pt_w'] * rt_args['pt_h'] + RT_STACK_SLACK + \
+                STACK_RESERVE + MAILBOX_BYTES
+            args.ram_kib = next(k for k in RAM_KIB if k >= 256 and k * 1024 >= need)
+    elif args.isa == ISAS[3]:
+        parser.error(f'{ISAS[3]} applies to --benchmark rt only')
     if args.ram_kib is None:
         args.ram_kib = 64
         if lzma and args.lzma_dict_log == 12:
@@ -199,6 +298,8 @@ def main():
         ('' if args.runtime == 'reference' else '-fastrt')
     if lzma:
         suffix = f'-d{args.lzma_dict_log}-{isa_label(args.isa)}'
+    if rt:
+        suffix = f'-{rt_dir.name}-{isa_label(args.isa)}'
     out = (ROOT / (args.out_dir or f'build/cpu/bench/{args.benchmark}{suffix}')).resolve()
     if not out.is_relative_to((ROOT / 'build').resolve()):
         parser.error('--out-dir must be inside the repository build/ directory')
@@ -209,9 +310,17 @@ def main():
         for name, digest in LZMA_VENDOR_SHA256.items():
             if sha(LZMA_VENDOR / name) != digest:
                 raise SystemExit(f'Vendored {name} differs from its recorded upstream identity')
+    if rt:
+        for name, digest in RT_VENDOR_SHA256.items():
+            if sha(RT_VENDOR / name) != digest:
+                raise SystemExit(f'Vendored {name} differs from its recorded upstream identity')
     out.mkdir(parents=True, exist_ok=True)
 
-    spec = BENCHMARKS[args.benchmark]
+    spec = dict(BENCHMARKS[args.benchmark])
+    if rt:
+        soft = abi_of(args.isa) == ABI
+        spec['sources'] = spec['sources'] + [(rt_dir / 'rt_data.c', 'data')] + \
+            ([(RT_VENDOR / name, 'vendor') for name in RT_SOFT_FLOAT] if soft else [])
     ram_bytes = args.ram_kib * 1024
     mailbox = ram_bytes - MAILBOX_BYTES
     program_limit = mailbox - STACK_RESERVE
@@ -219,13 +328,16 @@ def main():
     linker.write_text(LINKER_SCRIPT.format(ram_bytes=ram_bytes, mailbox=mailbox,
                                            program_limit=program_limit), encoding='ascii', newline='\n')
 
-    common = [args.clang, '--target=riscv64-unknown-elf', f'-march={args.isa}', f'-mabi={ABI}',
+    common = [args.clang, '--target=riscv64-unknown-elf', f'-march={args.isa}', f'-mabi={abi_of(args.isa)}',
               '-mcmodel=medany', '-msmall-data-limit=0', '-mno-relax', f'-{args.opt}',
               '-ffreestanding', '-fno-builtin', '-fno-stack-protector', '-fno-common',
               '-nostdlibinc', '-I', BENCH / 'include', '-I', VENDOR]
     if lzma:
         common = common[:-4] + [x for d in spec['include'] for x in ('-I', d)] + spec['defines'] + \
             [f'-DLZMA_BENCH_DICT_LOG={args.lzma_dict_log}']
+    if rt:
+        common = common[:-4] + [x for d in spec['include'] for x in ('-I', d)] + spec['defines'] + \
+            [f'-DRT_PT_W={rt_args["pt_w"]}', f'-DRT_PT_H={rt_args["pt_h"]}', f'-DRT_PT_SPP={rt_args["pt_spp"]}']
     port_flags = ['-std=c11', '-Wall', '-Wextra', '-Werror']
     started = time.perf_counter()
     commands, objects = [], []
@@ -236,6 +348,11 @@ def main():
     for source, kind in spec['sources']:
         obj = out / (source.stem + '.o')
         flags = spec['vendor_flags'] if kind == 'vendor' else port_flags
+        if kind == 'data':
+            flags = ['-std=c11']
+        elif source.suffix == '.cpp':  # smallpt_rt.cpp; smallpt's own dangling else is kept as written
+            flags = ['-std=c++20', '-fno-exceptions', '-fno-rtti', '-Wall', '-Wextra', '-Werror',
+                     '-Wno-dangling-else']
         if source.name == 'runtime.c' and args.runtime == 'fast':
             flags = flags + ['-DBENCH_FAST_STRINGS']
         command = common + flags + ['-c', source, '-o', obj]
@@ -243,7 +360,7 @@ def main():
         commands.append([shown(x) for x in command])
         objects.append(obj)
     elf, binary = out / 'bench.elf', out / 'bench.bin'
-    command = [args.clang, '--target=riscv64-unknown-elf', f'-march={args.isa}', f'-mabi={ABI}',
+    command = [args.clang, '--target=riscv64-unknown-elf', f'-march={args.isa}', f'-mabi={abi_of(args.isa)}',
                '-nostdlib', '-fuse-ld=lld', '-Wl,--no-relax', f'-Wl,-T,{linker}',
                start_object, *objects, '-o', elf]
     run(command, out / 'link.log')
@@ -269,6 +386,8 @@ def main():
     if args.objdump:
         (out / 'bench.disasm.txt').write_text(run([args.objdump, '-d', elf]), encoding='utf-8')
         (out / 'sections.txt').write_text(run([args.objdump, '-h', elf]), encoding='utf-8')
+    if rt and args.objdump and re.search(r'init_array|\.ctors', (out / 'sections.txt').read_text(encoding='utf-8')):
+        raise RuntimeError('Global constructors linked: start.S does not run them')
 
     payload = binary.read_bytes()
     if len(payload) > symbols['__bss_start']:
@@ -287,17 +406,24 @@ def main():
     images = ('bench-bytes.hex', 'bench-words.hex') if hex_images else ()
 
     inputs = [source for source, _ in spec['sources']] + [BENCH / 'start.S', Path(__file__)]
+    if rt:
+        inputs += [rt_dir / 'expected.json', rt_dir / 'export.json', rt_dir / 'tinybvh.json']
     inputs += sorted((BENCH / 'include').glob('*.h'))
     for directory in spec.get('headers', []):
         inputs += sorted(directory.glob('*.h'))
     report = {
         'benchmark': args.benchmark,
         'compiler': run([args.clang, '--version']).splitlines()[0],
-        'isa': args.isa, 'abi': ABI, 'optimization': args.opt, 'runtime': args.runtime,
+        'isa': args.isa, 'abi': abi_of(args.isa), 'optimization': args.opt, 'runtime': args.runtime,
         **({'lzma': {'dict_log': args.lzma_dict_log, 'dict_bytes': 1 << args.lzma_dict_log,
                      'data_bytes': (1 << args.lzma_dict_log) + (1 << args.lzma_dict_log) // 64,
                      'arena_estimate_bytes': lzma_arena_estimate(args.lzma_dict_log),
                      'arena_available_bytes': mailbox - STACK_RESERVE - symbols['__bss_end']}} if lzma else {}),
+        **({'rt': {'data_dir': rt_dir.relative_to(ROOT).as_posix() if rt_dir.is_relative_to(ROOT) else str(rt_dir),
+                   'export': rt_export, 'expected': json.loads((rt_dir / 'expected.json').read_bytes()),
+                   'tinybvh': json.loads((rt_dir / 'tinybvh.json').read_bytes()),
+                   'soft_float': abi_of(args.isa) == ABI,
+                   'free_bytes_below_reserved_stack': program_limit - symbols['__bss_end']}} if rt else {}),
         'hex_images': hex_images,
         'ram_bytes': ram_bytes, 'ram_words': ram_bytes // 8,
         'mailbox_address': mailbox, 'stack_top': mailbox, 'stack_reserve_bytes': STACK_RESERVE,

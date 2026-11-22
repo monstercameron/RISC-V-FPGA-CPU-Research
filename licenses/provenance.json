@@ -38,6 +38,24 @@
       "source": "https://github.com/ip7z/7zip/blob/d3296e39e1f1f92c7b41c0c3848e65640428d42d/DOC/copying.txt",
       "sha256": "dc626520dcd53a22f727af3ee42c770e56c97a64fe3adb063799d8ab032fe551",
       "retrieved": "2026-11-21"
+    },
+    {
+      "path": "licenses/LLVM-COMPILER-RT-LICENSE.TXT",
+      "source": "https://github.com/llvm/llvm-project/blob/392dfff97d29b59d77e5cac6d4b6ef2585fe7117/compiler-rt/LICENSE.TXT",
+      "sha256": "1a8f1058753f1ba890de984e48f0242a3a5c29a6a8f2ed9fd813f36985387e8d",
+      "retrieved": "2026-11-21"
+    },
+    {
+      "path": "licenses/TINYBVH-LICENSE.txt",
+      "source": "https://github.com/jbikker/tinybvh/blob/58439efd892f6738f7ffc4e7fcf3cd50ecb9a3b2/LICENSE",
+      "sha256": "f50e32f96aacf63d90362309a85de33d133192acb3fc9178c55e23cec92bc8dc",
+      "retrieved": "2026-11-21"
+    },
+    {
+      "path": "licenses/SMALLPT-LICENSE.txt",
+      "source": "https://www.kevinbeason.com/smallpt/smallpt.tar.gz (smallpt/LICENSE.txt; archive SHA-256 af82ec5d57a7eb30e5f6fb6ed8b6fc2c36596324475b8646f8ce4d629ffd8e43)",
+      "sha256": "353e22629f961fbe053f86a05dd5026c59fa8d3ca5bced37e51a885227145c4b",
+      "retrieved": "2026-11-21"
     }
   ]
 }
