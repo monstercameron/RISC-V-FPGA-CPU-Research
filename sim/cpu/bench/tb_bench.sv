@@ -28,6 +28,12 @@ module tb_bench #(parameter integer RAM_WORDS = 8192, parameter integer ICACHE_B
     // Not named `mailbox`: that is a SystemVerilog built-in class Verilator reserves.
     reg [63:0] mailbox_addr=64'hffffffffffffffff, marker=0;
     integer index,i,profile_fd=0,laps=0,image_fd=0;
+`ifdef L2_PRELOAD
+    string preload_path;
+    integer preload_fd;
+    reg [3:0] pl_v;
+    reg [63:0] pl_tag,pl_use;
+`endif
     longint cycles=0,retirements=0,max_cycles=50000000;
     longint start_cycle=-1,start_retired=-1,stop_cycle=-1,stop_retired=-1;
     longint sample_from=-1,sample_to=-1,sample_cycle=-1,sample_retired=-1;
@@ -56,6 +62,24 @@ module tb_bench #(parameter integer RAM_WORDS = 8192, parameter integer ICACHE_B
         end else $readmemh(image_path,dut.ram);
         repeat (4) @(negedge clk);
         #1 reset=0;
+`ifdef L2_PRELOAD
+        // +l2_preload=FILE (built with -DL2_PRELOAD for an SoC with the tags-only L2): L2 tags
+        // from rv_iss --warm-caches, loaded once reset has stopped clearing them. Off by default.
+        if ($value$plusargs("l2_preload=%s",preload_path)) begin
+            preload_fd=$fopen(preload_path,"r");
+            if (!preload_fd) $fatal(1,"cannot open +l2_preload file");
+            for (i=0;;i=i+1) begin
+                if ($fscanf(preload_fd,"%h %h %h\n",pl_v,pl_tag,pl_use)!=3) $fatal(1,"short +l2_preload file");
+                if (pl_v==2) begin dut.l2_clock=pl_tag; break; end
+                dut.l2_valid[i]=pl_v[0]; dut.l2_tag[i]=pl_tag; dut.l2_use[i]=pl_use;
+`ifdef L2_PRELOAD_READY
+                dut.l2_ready[i]=0;   // SoCs that time line fills (memory hand-off 2)
+`endif
+            end
+            $fclose(preload_fd);
+            $display("L2PRELOAD entries=%0d",i);
+        end
+`endif
     end
 
     // Sampled between edges: a marker store has updated RAM and not yet retired,

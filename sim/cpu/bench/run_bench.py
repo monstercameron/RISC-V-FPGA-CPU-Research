@@ -121,6 +121,8 @@ def main():
     lzma_options.add_argument('--pieces', help='rv_iss path, sampled mode: A:B times only plan pieces A..B-1 and '
                               'saves them (to split a long run into 5-minute invocations); merge reports from the '
                               'saved pieces')
+    lzma_options.add_argument('--warm-l2', action='store_true',
+                              help='Experimental: preload each piece\'s L2 tags from rv_iss\'s functional cache model')
     lzma_options.add_argument('--sample-instructions', type=int, help='Instructions per piece (sampled mode)')
     lzma_options.add_argument('--warmup-instructions', type=int, help='Warm-up before each piece (sampled mode)')
     lzma_options.add_argument('--jobs', type=int, default=3, help='Simulations run at once (sampled mode)')

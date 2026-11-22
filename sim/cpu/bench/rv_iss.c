@@ -23,6 +23,8 @@
  *   --final-memory FILE  write the memory at the end
  *   --final-state FILE   write the state at the end (the stopping instruction
  *                        not executed)
+ *   --warm-caches I,D,K,W,L  model L1s of I and D beats and a K KiB, W-way, L-byte-line
+ *                        tags-only L2; --dump-at also writes <prefix><index>.l2
  * Prints one JSON object on stdout: instructions retired, the stop (trap
  * cause, tval and PC, as reference.py's T line), the marker stores with the
  * program-order index of the storing instruction, the mailbox words written
@@ -220,12 +222,76 @@ static inline void note_store(u64 address, u64 b, int size) {
     }
 }
 
+/* ---- Functional cache warming (--warm-caches): an approximate model of the out-of-order
+ * core's L1s (I: direct-mapped 8-byte beats; D: 2-way 8-byte lines, fill into the way the
+ * core picks, write-through without allocation) feeding the SoC's tags-only L2 (LRU by a
+ * use counter; reads that miss the L1s and every store touch it, as in the SoC). Correct-path
+ * accesses only: the core's wrong-path fetches and loads are not modelled. At each --dump-at
+ * index the L2 tags are written to <prefix><index>.l2 for tb_bench's +l2_preload. */
+static int warm;
+static u64 ic_n, dc_sets, l2_lines, l2_sets, l2_ways, l2_off, l2_clock;
+static u64 *ic_tag, *dc_tag, *l2_tag, *l2_use;
+static uint8_t *ic_valid, *dc_valid, *dc_last, *l2_valid;
+
+static void warm_init(const char *spec) {
+    u64 ib, db, kib, line;
+    if (sscanf(spec, "%" SCNu64 ",%" SCNu64 ",%" SCNu64 ",%" SCNu64 ",%" SCNu64, &ib, &db, &kib, &l2_ways, &line) != 5)
+        die("--warm-caches IBEATS,DBEATS,L2_KIB,L2_WAYS,L2_LINE");
+    ic_n = ib; dc_sets = db / 2; l2_lines = kib * 1024 / line; l2_sets = l2_lines / l2_ways;
+    for (l2_off = 0; ((u64)1 << l2_off) < line; l2_off++) {}
+    ic_tag = calloc(ic_n, 8); ic_valid = calloc(ic_n, 1);
+    dc_tag = calloc(2 * dc_sets, 8); dc_valid = calloc(2 * dc_sets, 1); dc_last = calloc(dc_sets, 1);
+    l2_tag = calloc(l2_lines, 8); l2_use = calloc(l2_lines, 8); l2_valid = calloc(l2_lines, 1);
+    if (!ic_tag || !dc_tag || !l2_tag || !l2_use || !l2_valid || !dc_last || !l2_sets) die("cache model");
+    warm = 1;
+}
+
+static void l2_touch(u64 a) {
+    u64 line = a >> l2_off, base = (line % l2_sets) * l2_ways, v = ~(u64)0;
+    l2_clock++;
+    for (u64 w = 0; w < l2_ways; w++)
+        if (l2_valid[base + w] && l2_tag[base + w] == line) { l2_use[base + w] = l2_clock; return; }
+    for (u64 w = 0; w < l2_ways; w++) if (v == ~(u64)0 && !l2_valid[base + w]) v = w;
+    if (v == ~(u64)0) {
+        v = 0;
+        for (u64 w = 1; w < l2_ways; w++) if (l2_use[base + w] < l2_use[base + v]) v = w;
+    }
+    l2_valid[base + v] = 1; l2_tag[base + v] = line; l2_use[base + v] = l2_clock;
+}
+
+static inline void warm_fetch(u64 a) {
+    u64 beat = a >> 3, i = beat % ic_n;
+    if (ic_valid[i] && ic_tag[i] == beat) return;
+    ic_valid[i] = 1; ic_tag[i] = beat;
+    l2_touch(a);
+}
+
+static inline void warm_load(u64 a) {
+    u64 beat = a >> 3, set = beat % dc_sets;
+    if ((dc_valid[set] && dc_tag[set] == beat) || (dc_valid[dc_sets + set] && dc_tag[dc_sets + set] == beat)) return;
+    u64 l = set;
+    if (dc_valid[l] && (!dc_valid[dc_sets + set] || !dc_last[set])) l = dc_sets + set;
+    dc_valid[l] = 1; dc_tag[l] = beat; dc_last[set] = l >= dc_sets;
+    l2_touch(a);
+}
+
+static void write_l2(const char *path) {
+    FILE *f = fopen(path, "w");
+    if (!f) die("cannot write L2 state");
+    /* One line per L2 entry (way-major within a set, as the SoC's arrays): valid tag use (hex). */
+    for (u64 i = 0; i < l2_lines; i++)
+        fprintf(f, "%x %016" PRIx64 " %016" PRIx64 "\n", l2_valid[i], l2_tag[i], l2_use[i]);
+    fprintf(f, "%x %016" PRIx64 " %016" PRIx64 "\n", 2u, l2_clock, (u64)0); /* trailer: the use clock */
+    if (fclose(f)) die("L2 state write failed");
+}
+
 /* One instruction; returns 0 when the run stops (stop_cause set). */
 static inline int step(void) {
     if (pc & 3) TRAP(0, pc);
     if ((pc & ~(u64)7) >= ram) TRAP(1, pc);
     u32 ins;
     memcpy(&ins, mem + pc, 4);
+    if (warm) warm_fetch(pc);
     u32 op = ins & 127, rd = (ins >> 7) & 31, f3 = (ins >> 12) & 7, rs1 = (ins >> 15) & 31, rs2 = (ins >> 20) & 31;
     u32 f7 = ins >> 25;
     u64 a = regs[rs1], b = regs[rs2];
@@ -276,11 +342,13 @@ static inline int step(void) {
             if (load) {
                 u64 v = 0;
                 memcpy(&v, mem + address, (size_t)size);
+                if (warm) warm_load(address);
                 if (f3 < 4 && size < 8) v = (u64)sx(v, 8 * size);
                 value = v; dest = rd;
             } else {
                 memcpy(mem + address, &b, (size_t)size);
                 note_store(address, b, size);
+                if (warm) l2_touch(address);
             }
             ok = 1;
         }
@@ -380,6 +448,7 @@ int main(int argc, char **argv) {
         else if (!strcmp(k, "--trace-to")) trace_to = strtoull(v, NULL, 0);
         else if (!strcmp(k, "--final-memory")) final_memory = v;
         else if (!strcmp(k, "--final-state")) final_state = v;
+        else if (!strcmp(k, "--warm-caches")) warm_init(v);
         else die("unknown option");
     }
     if (!ram || (ram & 7) || (!image == !state)) die("need --ram and one of --image / --state");
@@ -406,6 +475,10 @@ int main(int argc, char **argv) {
             if (next_dump < ndumps && dumps[next_dump] == count) {
                 snprintf(path, sizeof path, "%s%" PRIu64 ".state", dump_prefix, count);
                 write_state(path);
+                if (warm) {
+                    snprintf(path, sizeof path, "%s%" PRIu64 ".l2", dump_prefix, count);
+                    write_l2(path);
+                }
                 next_dump++;
                 continue;
             }

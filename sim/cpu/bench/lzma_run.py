@@ -515,8 +515,15 @@ def run_iss(args, root, out, build, snap, rtl, core_file, command, sha, sim, cac
     arena_used = words.get(15)
     max_cycles = args.max_cycles or max(50_000_000, 40 * total_instructions)
 
+    warm_l2 = getattr(args, 'warm_l2', False)
+    if warm_l2 and not caches.get('L2_KIB'):
+        raise SystemExit('--warm-l2 needs an L2 (L2_KIB)')
+    warm_spec = ','.join(str(caches.get(k, d)) for k, d in (('ICACHE_BEATS', 0), ('DCACHE_BEATS', 0), ('L2_KIB', 0),
+                                                             ('L2_WAYS', 8), ('L2_LINE', 64)))
     timing_sim = sim.build('tb_bench', [*rtl, snap / 'sim/cpu/bench/tb_bench.sv'], out / 'tb_bench.vvp',
-                           params={'RAM_WORDS': ram_bytes // 8, **caches}, defines=wide)
+                           params={'RAM_WORDS': ram_bytes // 8, **caches},
+                           defines=wide + (['L2_PRELOAD'] if warm_l2 else []) +
+                           (['L2_PRELOAD_READY'] if warm_l2 and 'l2_ready' in rtl[1].read_text(encoding='utf-8') else []))
     trace_sim = sim.build('tb_core', [rtl[0], snap / 'sim/cpu/tb_core.sv'], out / 'tb_core.vvp',
                           params={'MEM_BYTES': ram_bytes}, defines=wide)
     jobs = max(1, args.jobs)
@@ -563,7 +570,7 @@ def run_iss(args, root, out, build, snap, rtl, core_file, command, sha, sim, cac
     # --pieces A:B runs only plan pieces A..B-1 and saves them to pieces/A-B.json, so a long
     # sampled run can be split into invocations of at most 5 minutes; --pieces merge then
     # reports from the saved files without simulating (every planned piece must be there).
-    key = {'core': args.core, 'core_sha256': sha(rtl[0]), 'soc_sha256': sha(rtl[1]), 'caches': caches, 'mode': mode,
+    key = {'warm_l2': getattr(args, 'warm_l2', False), 'core': args.core, 'core_sha256': sha(rtl[0]), 'soc_sha256': sha(rtl[1]), 'caches': caches, 'mode': mode,
            'piece': piece, 'warmup': warmup, 'sample_pieces': args.sample_pieces, 'phases': phases,
            'differential_every': None if args.no_differential else args.differential_every,
            'image_sha256': build['artifact_sha256']['bench.bin']}
@@ -599,7 +606,8 @@ def run_iss(args, root, out, build, snap, rtl, core_file, command, sha, sim, cac
     stub = mailbox - build['stack_reserve_bytes']
 
     def time_piece(p):
-        output = simulate([*timing_sim, f'+image_bin={p["be"]}', f'+mailbox={mailbox:x}',
+        preload = [f'+l2_preload={p["l2"]}'] if warm_l2 else []
+        output = simulate([*timing_sim, f'+image_bin={p["be"]}', *preload, f'+mailbox={mailbox:x}',
                            f'+max_cycles={max(50_000_000, 40 * p["window"][1])}', f'+sample_from={p["window"][0]}',
                            f'+sample_to={p["window"][1]}'], f'timing, piece {p["index"]}')
         m = re.search(r'^SAMPLE cycles=(\d+) retirements=(\d+) from_cycle=(\d+) from_retired=(\d+) '
@@ -699,22 +707,32 @@ def run_iss(args, root, out, build, snap, rtl, core_file, command, sha, sim, cac
         p['be'] = p['le'] = None
 
     state, position, done = None, 0, []
+    if warm_l2 and work:
+        # The cache model is not in the state files, so one rv_iss pass from reset dumps every
+        # checkpoint of this invocation with its L2 tags (64 MiB per state at d22: keep --pieces small).
+        every = sorted({p['checkpoint'] for p in work})
+        iss_call(exe, ram_bytes, '--image', out / 'bench.bin', '--warm-caches', warm_spec,
+                 '--dump-at', ','.join(map(str, every)), '--max', every[-1], '--dump-prefix', ckdir / 'state-')
     for start in range(0, len(work), jobs):
         batch = work[start:start + jobs]
         targets = sorted({p['checkpoint'] for p in batch})
-        source = ['--state', state] if state else ['--image', out / 'bench.bin']
-        iss_call(exe, ram_bytes, *source, '--dump-at', ','.join(map(str, targets)), '--max', targets[-1],
-                 '--dump-prefix', ckdir / 'state-')
-        if state and state.name not in {f'state-{t}.state' for t in targets}:
-            state.unlink()
+        if not warm_l2:
+            source = ['--state', state] if state else ['--image', out / 'bench.bin']
+            iss_call(exe, ram_bytes, *source, '--dump-at', ','.join(map(str, targets)), '--max', targets[-1],
+                     '--dump-prefix', ckdir / 'state-')
+            if state and state.name not in {f'state-{t}.state' for t in targets}:
+                state.unlink()
         for p in batch:
             p['state'] = ckdir / f'state-{p["checkpoint"]}.state'
+            p['l2'] = ckdir / f'state-{p["checkpoint"]}.l2'
         with ThreadPoolExecutor(max_workers=jobs) as pool:
             list(pool.map(piece_job, batch))
         keep = ckdir / f'state-{targets[-1]}.state'
         for p in batch:
-            if p['state'] != keep and p['state'].exists():
+            if (warm_l2 or p['state'] != keep) and p['state'].exists():
                 p['state'].unlink()
+            if warm_l2 and p['l2'].exists():
+                p['l2'].unlink()
         state = keep
         position = targets[-1]
         done += batch
