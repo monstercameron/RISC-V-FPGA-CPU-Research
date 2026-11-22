@@ -12,8 +12,15 @@ per thread. The rating is an estimate scaled from measured speed with fixed per-
 instruction rate of the CPU under test and is comparable across ISAs only as a speed measure.
 Compression depends heavily on memory latency and cache size (it searches a large dictionary);
 decompression depends more on branch prediction and short dependency chains. Use `-mmt1` (one thread)
-and the **Rating** column (not Usage or R/U), state the dictionary (`-md22` = 4 MB, `-md25` = 32 MB),
+and the **Rating** column (not Usage or R/U), state the dictionary (`-md22` = 2^22 bytes = 4 MiB, `-md25` = 32 MiB),
 the 7-Zip version, and divide by the measured clock in MHz for a per-MHz figure (corrected 2026-11-21 17:57: earlier text said per GHz, a factor-of-1,000 unit error found by the Codex review).
+
+**Units on this page.** "MIPS" is always 7-Zip's nominal rating, not instructions per second: real CPUs are
+rated from measured time, and our simulated cores from clock counts with the same per-byte command counts, so
+"MIPS/MHz" is rating per MHz of clock. For the laptop the clock is the one 7-Zip measured or an assumed
+average (stated in each table); for our cores it is the simulated clock, with no frequency claim. Our IPC
+columns are retired RISC-V instructions per clock, a different quantity. Sizes use binary prefixes (KiB, MiB)
+for powers of two and SI prefixes (kB, MB) for decimal counts (IEC 80000-13).
 
 Source code used here: 7-Zip 26.06, `https://github.com/ip7z/7zip`, commit
 `d3296e39e1f1f92c7b41c0c3848e65640428d42d` (copy in the ignored `build/third-party/7zip/`).
@@ -25,7 +32,7 @@ for aarch64 Linux (WSL), `7zz b -mmt1`; 7-Zip measured the single-thread clock a
 
 | Dictionary | Compressing rating | Decompressing rating | Per MHz (at ~4.2 GHz) |
 |---|---:|---:|---|
-| 22 (4 MB) | 8,003 MIPS | 8,087 MIPS | about 1.9 / 1.9 |
+| 22 (4 MiB) | 8,003 MIPS | 8,087 MIPS | about 1.9 / 1.9 |
 | 22-25 average | 7,085 MIPS | 8,042 MIPS | about 1.7 / 1.9 |
 
 ## Published single-thread ratings (per MHz, derived from the listed clock)
@@ -111,8 +118,8 @@ model, which it does not have yet (1-clock memory).
 
 ### Goal on the full-size kernel (added 2026-11-21 20:34)
 
-Since 2026-11-21 the kernel also runs at the real benchmark's size: `--lzma-dict-log 22` (4 MB dictionary,
-4.19 MB of data, about 4.0 billion instructions), in checkpointed pieces on the out-of-order core. On
+Since 2026-11-21 the kernel also runs at the real benchmark's size: `--lzma-dict-log 22` (4 MiB dictionary,
+4 MiB + 64 KiB = 4,259,840 bytes of data, about 4.0 billion instructions), in checkpointed pieces on the out-of-order core. On
 the X925 the d22 kernel rates 1.55 / 1.68 MIPS/MHz against 1.91 / 1.93 from the real `7z b -md22`
 (ratios 0.81 / 0.87, close to 1, so this calibration is far less uncertain than the d12 one). The
 10,000 MIPS goal (2.5 MIPS/MHz at 4 GHz) is therefore about **2.03 compress / 2.18 decompress MIPS/MHz
@@ -134,7 +141,7 @@ released model, the rating is quoted with the piece it lacks:
 | Load-to-use (`RV64_OOO_LD_LAT`) | 4 clocks | current large cores (since 0.14.10 a knob; default 1) |
 | L0 recent-beat buffer | 16 beats at 2 clocks | Lion Cove-class precedent (backend hand-off 7, queued) |
 | Multiply | 2 clocks | as released (0.14.7), a behavioural assumption |
-| L2 (stand-in for L2 + L3) | 4 MiB, 8-way, 64 B lines, 20 clocks | the X925 has 2-3 MB of L2 and a shared L3 behind it |
+| L2 (stand-in for L2 + L3) | 4 MiB, 8-way, 64 B lines, 20 clocks | the X925 has 2-3 MiB of L2 and a shared L3 behind it |
 | Memory (`MEM_LAT`) | 350 clocks | about 88 ns at 4 GHz |
 | Misses in flight | several, oldest guaranteed | memory hand-off 2 (held after its Codex review) |
 

@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: MIT
 """Assemble examples and check instruction encodings; does NOT execute kernels.
 
 Python 3.11+, clang and llvm-objdump. No downloads. Output: build/rva23-assembly/.

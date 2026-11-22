@@ -1,5 +1,7 @@
 # Changelog
 
+This file was last extended at architecture 0.4.0 (November 20, 2026). Every later CPU release, 0.5.0 to the current [cpu/VERSION](cpu/VERSION), is recorded with its evidence in the [architecture version history](cpu/architecture.md#history) and tagged `cpu-vX.Y.Z`; benchmark, test and tooling additions since then (the pipelined and out-of-order cores, the 7-Zip, ray-tracing, JavaScript, matrix and ternary benchmarks, the TestFloat oracle, `sim/cpu/suite.py`) are in [DEVLOG.md](DEVLOG.md).
+
 ## Unreleased
 
 ### Added

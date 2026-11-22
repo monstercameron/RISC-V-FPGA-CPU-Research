@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: MIT
 param([string]$Distribution = 'Ubuntu-24.04')
 $ErrorActionPreference = 'Stop'
 $repoPath = (Resolve-Path (Join-Path $PSScriptRoot '../..')).Path

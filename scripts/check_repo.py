@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: MIT
 """Check repository conventions and run existing planning checks in isolation.
 
 Python 3.11+, standard library only. No network, downloads or hardware tools.
@@ -24,7 +25,8 @@ MAINTAINED_DOCS = (
     'llm-rva23-mapping.md', 'isa/README.md',
     'cpu/README.md', 'cpu/architecture.md', 'cpu/c-demo.md', 'cpu/visualizer.md', 'cpu/addition.md', 'cpu/programs.md', 'cpu/inputs.md',
     'cpu/review-rubric.md', 'TODO.md', 'cpu/dhrystone.md', 'DEVLOG.md', 'cpu/lzma-benchmark.md', 'cpu/raytracing-benchmark-targets.md',
-    'cpu/js-benchmark-targets.md', 'cpu/mm-benchmark-targets.md',
+    'cpu/js-benchmark-targets.md', 'cpu/mm-benchmark-targets.md', 'cpu/7zip-benchmark-targets.md',
+    'cpu/ternary-benchmark-targets.md', 'sim/cpu/README.md', 'START-HERE.md',
 )
 REQUIRED = MAINTAINED_DOCS + (
     'LICENSE', '.gitignore', '.gitattributes', '.editorconfig',

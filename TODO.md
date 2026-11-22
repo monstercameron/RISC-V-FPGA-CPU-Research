@@ -4,6 +4,8 @@ Working list for the custom CPU, in priority order. The [architecture document](
 
 Last updated November 20, 2026.
 
+> **Status note (2026-11-22).** This list has not been revised since architecture 0.4.0. Since then the project added the pipelined (0.8.0) and out-of-order (0.9.0) cores, B (0.6.0), an SoC memory model (0.15.0), split reads (0.16.0), the F/D option (0.17.0), Verilator runs, Yosys depth and Fmax estimates (`sim/cpu/synth_depth.py`, `synth_fmax.py`), a TestFloat 3e FP oracle and the `sim/cpu/suite.py` front end, and the optimization goal moved to a 10,000 MIPS 7-Zip rating at 4 GHz. Unticked items below may be partly done; check [DEVLOG.md](DEVLOG.md) and the [architecture history](cpu/architecture.md#history) before starting one, and tick an item only with its evidence linked.
+
 ## Now: make the C0 core measurable and independently checked
 
 - [ ] **External model in the regression.** Compare every retirement against Spike or Sail in lockstep. Done when the default suite fails on any disagreement. Rubric HG3, R1.1, R3.1.

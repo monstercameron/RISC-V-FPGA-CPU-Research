@@ -42,7 +42,7 @@ ROOT = Path(__file__).resolve().parents[3]
 BENCH = ROOT / 'sim/cpu/bench'
 VENDOR = BENCH / 'vendor/dhrystone'
 ISAS = ('rv64i_zifencei', 'rv64im_zifencei', 'rv64im_zba_zbb_zbs_zifencei',  # M needs 0.4.0+, B needs 0.6.0+
-        'rv64imfd_zba_zbb_zbs_zifencei')  # F and D: rt only; no released core implements them
+        'rv64imfd_zba_zbb_zbs_zifencei')  # F and D: --core ooo --fpu (RV64_OOO_FPU, 0.17.0); rt, js and mm
 ABI = 'lp64'
 
 

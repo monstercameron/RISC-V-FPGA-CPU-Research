@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: MIT
 """FP timing cases for test_cpu.py --fpu (council backend; latency and throughput of the
 FP execute patch handoff-fp-exec.py). Usage inside test_cpu.py:
     import fp_timing_cases as FT

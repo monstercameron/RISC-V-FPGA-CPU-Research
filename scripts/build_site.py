@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# SPDX-License-Identifier: MIT
 """Generate the static gallery site in docs/ from the repository's own records.
 
 Reads (never writes): cpu/VERSION, cpu/architecture.md (section 9 history table),

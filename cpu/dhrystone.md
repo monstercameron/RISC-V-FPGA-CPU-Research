@@ -1,6 +1,6 @@
 # Dhrystone on our custom CPU
 
-**Current result, architecture 0.7.1: 2.216 DMIPS/MHz** built for `rv64im_zba_zbb_zbs_zifencei` with the reference runtime (2.174 for `rv64im`, 2.078 for `rv64i`), and 2.624 with the labelled fast runtime. The first 0.1.0 core scored 0.260. All are simulation runs of the core with its synchronous RAM, so they are non-compliant runs under the [review rubric](review-rubric.md), evidence class E1, and do not support calling the core performant.
+**Last logged result, architecture 0.15.1, out-of-order core: 18.17 DMIPS/MHz** built for `rv64im_zba_zbb_zbs_zifencei` with the reference runtime, and 27.98 with the labelled fast runtime ([later cores](#later-cores-pipelined-and-out-of-order-logged-runs)). The multicycle core's last measured result (0.7.1) is 2.216 DMIPS/MHz (2.174 for `rv64im`, 2.078 for `rv64i`), and 2.624 with the fast runtime. The first 0.1.0 core scored 0.260. All are simulation runs of the core with its synchronous RAM, so they are non-compliant runs under the [review rubric](review-rubric.md), evidence class E1, and do not support calling the core performant.
 
 Dhrystone is the secondary benchmark in the rubric. Report it next to CoreMark once that runs, never on its own.
 
@@ -34,9 +34,26 @@ Up to 0.4.0 every measured result matched the profile's estimate. From 0.5.0 eac
 
 **Caution about the 0.5.x gains.** Dual issue, forwarding and branch folding do more work in each clock: two ALUs in a chain, or a branch decision followed by an instruction-cache read and a second instruction. That lengthens the clock. DMIPS/MHz counts clocks, so it improves even when the clock gets slower; only synthesis on a real part shows whether the design still runs fast. A logic-depth measurement with Yosys is the next check, and wider designs wait for it. The caches assume Dhrystone's code and data fit in 4 KiB each and that memory answers in one clock; a slow-memory model, still a to-do, would show how much of the gain survives on board DRAM.
 
-The full records are [dhrystone-results.json](dhrystone-results.json) (`rv64i`) and [dhrystone-rv64im-results.json](dhrystone-rv64im-results.json). DMIPS per MHz is runs x 1,000,000 / (clocks x 1,757); 1,757 Dhrystones per second is the VAX 11/780 reference.
+The table above is the multicycle core. The full records are [dhrystone-results.json](dhrystone-results.json) (`rv64i`) and [dhrystone-rv64im-results.json](dhrystone-rv64im-results.json); the `-rv64imb`, `-fastrt`, `-pipe` and `-ooo` files beside them hold the corresponding builds, each as of the run last recorded with `-Record`. DMIPS per MHz is runs x 1,000,000 / (clocks x 1,757); 1,757 Dhrystones per second is the VAX 11/780 reference.
 
 Scope: ISA as built, ABI `lp64`, bare metal with the laboratory terminal trap, multicycle core with the RTL hashes given in each record, 64 KiB synchronous RAM, Icarus Verilog 12.0, no FPGA, no synthesis. The caches and early-issue logic have not been checked for timing; they may lower the achievable clock frequency.
+
+## Later cores: pipelined and out-of-order (logged runs)
+
+From 0.8.0 the same benchmark also runs on the pipelined core (`rv64_pipe.sv`) and from 0.9.0 on the out-of-order core (`rv64_ooo.sv`), both built for `rv64imb` (`rv64im_zba_zbb_zbs_zifencei`) with clang 23.1.5 `-O2`, 64 KiB RAM and 4 KiB caches, as above. The rows are the last logged run of each listed version, copied from the run index in [DEVLOG.md](../DEVLOG.md#run-logs), which links each run's full record; versions in between are in that index.
+
+| Version | Core | Reference runtime: clocks per run | DMIPS/MHz | Fast runtime: clocks per run | DMIPS/MHz |
+|---|---|---:|---:|---:|---:|
+| 0.8.0 | pipelined | 588.6 | 0.9670 | 484.6 | 1.1744 |
+| 0.9.0 | out-of-order | 721.6 | 0.7888 | 611.6 | 0.9306 |
+| 0.10.0 | out-of-order | 131.9 | 4.3161 | 147.9 | 3.8484 |
+| 0.11.2 | out-of-order | 76.2 | 7.4686 | 62.3 | 9.1333 |
+| 0.12.0 | out-of-order | 57.5 | 9.8986 | 44.5 | 12.7790 |
+| 0.13.0 | out-of-order | 41.6 | 13.6809 | 32.5 | 17.5285 |
+| 0.14.1 | out-of-order | 31.4 | 18.1212 | 20.7 | 27.4396 |
+| 0.15.1 | out-of-order | 31.3 | 18.1745 | 20.3 | 27.9792 |
+
+After 0.15.1 no logged Dhrystone run was made; each release instead reports the 500-run timing probe in the [architecture history](architecture.md#history) (0.17.4: 15,706 clocks reference, 10,127 fast runtime, within 0.5% of the 0.15.1 run). From 0.10.0 the out-of-order core is wider and more speculative in every release; the DMIPS/MHz figures count clocks of an unsynthesized model and say nothing about the clock rate it could reach (see the caution above). Fast-runtime figures stay separate from reference-runtime ones.
 
 ## What the number depends on
 
@@ -92,7 +109,7 @@ Dhrystone's ground rules are separate compilation, no merging of procedures and 
 | [runlog.py](../sim/cpu/bench/runlog.py) | Per-commit run logs in `devlog/` and the run index in DEVLOG.md |
 | [run_dhrystone.ps1](../sim/cpu/bench/run_dhrystone.ps1) | Windows launcher: LLVM build, then the run in Ubuntu/WSL |
 
-The benchmark needs about 15.7 KB for code, data and arrays, more than the 16 KiB layout leaves after the stack, so it uses 64 KiB of RAM. The RTL is unchanged: `RAM_WORDS` in the RAM wrapper and a new `MEM_BYTES` parameter in the trace testbench set the size. The main regression keeps 16 KiB because its unmapped-address tests rely on that boundary.
+The benchmark needs about 15.4 KiB (15,728 bytes, `program_end` in the `rv64i` build's `build.json`) for code, data and arrays, more than the 16 KiB layout leaves after the stack, so it uses 64 KiB of RAM. The RTL is unchanged: `RAM_WORDS` in the RAM wrapper and a new `MEM_BYTES` parameter in the trace testbench set the size. The main regression keeps 16 KiB because its unmapped-address tests rely on that boundary.
 
 Memory layout for 64 KiB: program from address 0, stack growing down from `0xff00`, mailbox in the top 256 bytes at `0xff00`. The build fails if the program would leave less than 8 KiB of stack.
 
@@ -104,7 +121,7 @@ From the repository root in PowerShell, with the installed LLVM and Ubuntu WSL t
 .\sim\cpu\bench\run_dhrystone.ps1
 ```
 
-Add `-Isa rv64im_zifencei` to build with the M extension (architecture 0.4.0 or later); that build goes to `build/cpu/bench/dhrystone-rv64im/`. Every run writes its result, rubric scorecard and trace profile to `devlog/devlog-<commit>.md` and adds a row to the run index in [DEVLOG.md](../DEVLOG.md); add `-NoDevlog` for a throwaway run. The profile is also saved as `build/cpu/bench/dhrystone/profile.md`. Add `-Record` to overwrite [dhrystone-results.json](dhrystone-results.json), or `-RamKiB 128` for a larger memory. A run takes about a minute; most of it is the two traced runs.
+Add `-Isa rv64im_zifencei` to build with the M extension (architecture 0.4.0 or later; the build goes to `build/cpu/bench/dhrystone-rv64im/`) or `-Isa rv64im_zba_zbb_zbs_zifencei` for M and B (`dhrystone-rv64imb`). `-Core pipe` or `-Core ooo` runs the pipelined or out-of-order core (folder suffix `-pipe` or `-ooo`), `-Runtime fast` the labelled fast runtime (`-fastrt`) and `-Sim verilator` the faster simulator. Every run writes its result, rubric scorecard and trace profile to `devlog/devlog-<commit>.md` and adds a row to the run index in [DEVLOG.md](../DEVLOG.md); add `-NoDevlog` for a throwaway run. The profile is also saved as `build/cpu/bench/dhrystone/profile.md`. Add `-Record` to overwrite [dhrystone-results.json](dhrystone-results.json), or `-RamKiB 128` for a larger memory. A run takes about a minute; most of it is the two traced runs.
 
 On Linux with clang, lld, LLVM tools, Icarus and Python 3.11+:
 

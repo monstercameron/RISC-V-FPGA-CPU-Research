@@ -110,13 +110,17 @@ machines; they are not available here, and published numbers for these exact wor
 
 ## Where our core stands
 
-Our cores implement rv64imb with no F, D or V extension, so these kernels cannot run on them as they are.
-The plan, each step its own version:
-1. RISC-V F and D (contract proposal `build/cpu/fp/FP-CONTRACT.md`; golden models in progress), with
-   realistic latencies (FMA about 4 clocks, add about 3, iterative divide and square root) behind the
-   build define `RV64_OOO_FPU`, default off.
-2. A scaled RT-T and RT-P port for the simulator (same generators and seeds, fewer triangles, rays and
-   pixels), checked against the native checksums; a soft-float build on the released cores gives a
-   baseline only.
+Status as of architecture 0.17.4 (updated 2026-11-22 from the [architecture history](architecture.md#history); earlier
+text here predated F and D):
+1. **Done: RISC-V F and D** in the out-of-order core behind the build define `RV64_OOO_FPU`, default off (0.17.0;
+   contract in [architecture.md](architecture.md) section 1), with FP add 2, multiply 3 and FMA 4 clocks (0.17.1)
+   and divide 7 / 10, square root 10 / 15 clocks single / double (0.17.2).
+2. **Done: the scaled RT-T and RT-P port** (same generators and seeds, fewer triangles, rays and pixels), checked
+   against the native checksums; the soft-float baseline is the section above. Hard float, full mode, at 0.17.2
+   (unchanged at 0.17.3; RT-P within 0.05% at 0.17.4): flat memory P closest-hit 4.136 rays/kclk, S closest-hit
+   2.208, S any-hit 2.225, RT-P 394.6 paths/Mclk; deciding configuration 3.531, 1.907, 1.900 and 375.0. Against
+   the scalar M6-referenced goals (5.92, 2.15, 2.59, 541) the deciding configuration is at about 60%, 89%, 73% and
+   69%. The flat-memory S closest-hit figure (2.208) is above its goal, but flat memory is not the deciding
+   configuration, so it does not count.
 3. RVV 1.0 (VLEN 128 / 256 / 512, FP32 FMA pipelines, masks, gather / scatter, compress), with lane
    utilisation, divergence and memory stalls measured.
