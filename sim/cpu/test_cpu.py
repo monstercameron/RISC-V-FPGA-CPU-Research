@@ -970,6 +970,25 @@ def cases():
     yield from rc_fetch_cases(i_type, r_type, store, branch, jal, MASK)
     yield from gh_predictor_cases(i_type, r_type, store, branch, jal, MASK)
     yield from btb_stale_cases(i_type, r_type, store, branch, jal, MASK)
+    # Fusion across rename groups (middle hand-off 14): producer/consumer pairs (simple ALU op,
+    # then its reader) at every offset of a 37-instruction loop body, so many pairs straddle a
+    # rename-group boundary; some consumers wait for a divide, so the producer may retire and its
+    # sources be overwritten before the consumer executes; pairs feed a load address, a store
+    # address and data, and a branch.
+    body = [r_type(0x33, 6, 4, 6, 5, 1)]                                     # x6 = x6 / 1 (slow)
+    for n in range(9):
+        a, b = 10 + (n % 6), 16 + (n % 4)
+        body += [r_type(0x33, a, 4, a, 7),                                   # xor xa, xa, x7 (producer)
+                 r_type(0x33, b, 0, a, 6),                                   # add xb, xa, x6 (consumer, waits for x6)
+                 i_type(0x13, 7, 0, 7, 3)]                                   # x7 += 3 (overwrites the producer's source)
+    body += [i_type(0x13, 22, 0, 30, 0x300), i_type(0x13, 23, 7, 11, 8),     # x23 = x11 & 8 (producer)
+             r_type(0x33, 24, 0, 22, 23), store(3, 24, 16, 0),               # address = x22 + x23 (consumer); sd
+             r_type(0x33, 25, 6, 12, 0), branch(0, 25, 12, 8), 0xffffffff,   # x25 = x12 | 0; beq x25, x12 (taken)
+             i_type(0x13, 20, 0, 20, -1), branch(1, 20, 0, -4 * (len(body) + 8))]
+    p = prefix() + [i_type(0x13, 5, 0, 0, 1), i_type(0x13, 6, 0, 0, 1000), i_type(0x13, 20, 0, 0, 7)] + body
+    p += [r_type(0x33, 26, 0, 16, 17), r_type(0x33, 26, 0, 26, 18), r_type(0x33, 26, 0, 26, 19), store(3, 30, 26, 0x3f8),
+          i_type(3, 27, 3, 30, 0x300), 0x100073]
+    yield 'fusion_across_groups', p, 0, MASK
     # Load-wait table (middle hand-off 13): load L conflicts with store A, whose address
     # arrives late (a fill and two divides), and is marked with A; a different store B, older
     # than the next L and later still (thirty multiplies), writes that L's word every 4th

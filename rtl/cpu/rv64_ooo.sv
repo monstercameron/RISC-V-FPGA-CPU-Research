@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Original CPU foundation, wide out-of-order implementation (architecture 0.16.0).
+// Original CPU foundation, wide out-of-order implementation (architecture 0.16.1).
 // RV64IM + B execution, serialized FENCE.I, terminal EEI. Same module name and
 // contract as rv64_core.sv and rv64_pipe.sv, plus a wider retirement trace (rt_*);
 // build with one of the three files. Architecture version: cpu/VERSION,
@@ -1110,7 +1110,7 @@ module rv64_core #(
             free_mask = {PRF_N{1'b1}}; for (i = 0; i < 32; i = i + 1) free_mask[i] = 0;
             for (i = 0; i < 32; i = i + 1) begin rat[i] = i; rrat[i] = i; rat_off[i] = 0; rrat_off[i] = 0; end
             for (i = 0; i < PRF_N; i = i + 1) refcnt[i] = i < 32 ? 1 : 0;
-            rb_viol = 0; mdp_wait = 0; rb_live = 0; rb_done = 0; rb_head = 0; rb_tail = 0; rb_count = 0;
+            pv_ok = 0; rb_viol = 0; mdp_wait = 0; rb_live = 0; rb_done = 0; rb_head = 0; rb_tail = 0; rb_count = 0;
             iq_valid = 0; iq_issued = 0; ex_valid = 0; mq_valid = 0; dv_busy = 0; lw_valid = 0; rb_ans = 0; l0_v = 0; l0_p = 0; ld_lat_now = LD_LAT;
             ic_valid = 0; dc_valid = 0; btb_valid = 0; btb_ret = 0; ras_sp = 0; vp_valid = 0; lp_valid = 0; lp_dir = 0; tg_v = 0; tg_alt = 8; tg_age = 0; tg_ap = 0; f_gh = 0; r_gh = 0; tq_cnt = 0; tq_h = 0;
             for (i = 0; i < RAS_N; i = i + 1) ras[i] = 0;
@@ -1655,6 +1655,7 @@ module rv64_core #(
             // ---- recovery
             h_after = rb_head + n_ret[ROB_B-1:0];
             rb_count_new = rb_count - n_ret;
+            if (rflush || mp_any) pv_ok = 0;
             if (rflush) begin
                 squash_after(n_ret[ROB_B-1:0] - 1);
                 for (i = 0; i < 32; i = i + 1) begin rat[i] = rrat[i]; rat_off[i] = rrat_off[i]; end
@@ -1686,7 +1687,7 @@ module rv64_core #(
             d_redirect = 0; n_ren = 0;
             if (!rflush && !mp_any) begin
                 stop = 0;
-                nfi = 0; nfp = 0; ui = 0; up = 0; pv_ok = 0; cf_lvl = 0; n_cf = 0; n_br = 0;
+                nfi = 0; nfp = 0; ui = 0; up = 0; cf_lvl = 0; n_cf = 0; n_br = 0;
                 for (k = 0; k < IQ_N; k = k + 1) if (!iq_valid[k] && nfi < FW) begin fiq[nfi] = k; nfi = nfi + 1; end
                 for (k = 1; k < PRF_N; k = k + 1) if (free_mask[k] && nfp < FW) begin fpl[nfp] = k; nfp = nfp + 1; end
                 for (s = 0; s < FW; s = s + 1) if (!stop) begin
