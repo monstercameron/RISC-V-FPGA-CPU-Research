@@ -1,0 +1,126 @@
+/* SPDX-License-Identifier: MIT
+ * Native generator of the ternary benchmark's data object (run by tern_export.sh). Packs the
+ * synthetic weights for each requested kernel layout, generates the activations, computes the exact
+ * int32 outputs with a plain multiply-accumulate, checks that the three native kernels reproduce
+ * them, and writes into OUTDIR:
+ *   w_i2.bin w_lut5w.bin w_bs8.bin   packed weights of all layers, each layer 64-byte aligned
+ *                                    (w_i2.bin is always written: the stream probe reads it)
+ *   act.bin                          int8 activations, each layer padded to 64 bytes
+ *   yref.bin                         reference int32 outputs, each layer padded to 64 bytes
+ *   ternary_data.S                   .incbin of the above plus the descriptor table tern_desc
+ *   expected.json                    per-layer shapes, byte counts, output hashes, stream sums
+ * Usage: tern_gen SHAPE KERNELS OUTDIR     SHAPE small|2b4t   KERNELS e.g. i2,lut5w,bs8
+ * Built with -DTERN_SHAPE=1 (small) or 0 (2b4t).
+ */
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include "tern_data.h"
+
+static size_t up64(size_t n) { return (n + 63) & ~(size_t)63; }
+
+static void write_file(const char *dir, const char *name, const void *p, size_t n) {
+    char path[1024];
+    snprintf(path, sizeof path, "%s/%s", dir, name);
+    FILE *f = fopen(path, "wb");
+    if (!f || fwrite(p, 1, n, f) != n) { fprintf(stderr, "cannot write %s\n", path); exit(1); }
+    fclose(f);
+}
+
+int main(int argc, char **argv) {
+    if (argc != 4) { fprintf(stderr, "usage: tern_gen small|2b4t kernels outdir\n"); return 2; }
+    const char *outdir = argv[3];
+    int mask = 0;
+    if (strstr(argv[2], "i2")) mask |= 1 << TS_I2;
+    if (strstr(argv[2], "lut5w")) mask |= 1 << TS_LUT5W;
+    if (strstr(argv[2], "bs8")) mask |= 1 << TS_BS8;
+    int small = !strcmp(argv[1], "small");
+#if TERN_SHAPE == 1
+    if (!small) { fprintf(stderr, "built for T-small\n"); return 2; }
+#else
+    if (small) { fprintf(stderr, "built for T-2B4T\n"); return 2; }
+#endif
+    tern_init_qidx();
+    int bad_q = tern_qidx_selfcheck();
+    size_t off_w[3] = {0, 0, 0}, off_act = 0, off_y = 0, total_w = 0;
+    size_t cap_w[3] = {0, 0, 0}, cap_act = 0, cap_y = 0;
+    for (int li = 0; li < TERN_NL; li++) {
+        int M = TERN_LAYERS[li].m, K = TERN_LAYERS[li].k;
+        cap_w[0] += up64(tern_bytes_i2(M, K)); cap_w[1] += up64(tern_bytes_lut5w(M, K));
+        cap_w[2] += up64(tern_bytes_bs8(M, K)); cap_act += up64((size_t)K); cap_y += up64((size_t)M * 4);
+    }
+    uint8_t *w[3];
+    for (int s = 0; s < 3; s++) w[s] = calloc(cap_w[s], 1);
+    int8_t *act = calloc(cap_act, 1);
+    int32_t *yr = calloc(cap_y / 4, 4);
+    int32_t *y = calloc(TERN_MAXM + 16, 4);
+    uint64_t desc[TERN_NL + 1][8];
+    uint32_t fnv[TERN_NL];
+    int bad_kernel = 0;
+    for (int li = 0; li < TERN_NL; li++) {
+        int M = TERN_LAYERS[li].m, K = TERN_LAYERS[li].k;
+        int8_t *A = act + off_act;
+        for (int k = 0; k < K; k++) A[k] = (int8_t)tern_act(li, k);
+        int32_t *YR = yr + off_y / 4;
+        tern_ref(li, M, K, A, YR);
+        fnv[li] = tern_fnv(YR, M);
+        uint8_t *W[3] = {w[0] + off_w[0], w[1] + off_w[1], w[2] + off_w[2]};
+        tern_pack_i2(li, M, K, W[0]); tern_pack_lut5w(li, M, K, W[1]); tern_pack_bs8(li, M, K, W[2]);
+        k_i2(W[0], A, y, M, K);    for (int m = 0; m < M; m++) bad_kernel += y[m] != YR[m];
+        k_lut5w(W[1], A, y, M, K); for (int m = 0; m < M; m++) bad_kernel += y[m] != YR[m];
+        k_bs8(W[2], A, y, M, K);   for (int m = 0; m < M; m++) bad_kernel += y[m] != YR[m];
+        uint64_t sum = k_stream((const uint64_t *)W[0], tern_bytes_i2(M, K) / 8);
+        desc[li][0] = off_w[0]; desc[li][1] = off_w[1]; desc[li][2] = off_w[2];
+        desc[li][3] = off_act; desc[li][4] = off_y; desc[li][5] = sum;
+        desc[li][6] = tern_bytes_i2(M, K); desc[li][7] = 0;
+        off_w[0] += up64(tern_bytes_i2(M, K)); off_w[1] += up64(tern_bytes_lut5w(M, K));
+        off_w[2] += up64(tern_bytes_bs8(M, K)); off_act += up64((size_t)K); off_y += up64((size_t)M * 4);
+        total_w += (size_t)M * K;
+    }
+    /* pseudo layer NL: stream over the whole i2 blob (contiguous, larger than a small L2) */
+    uint64_t all_sum = k_stream((const uint64_t *)w[0], off_w[0] / 8);
+    memset(desc[TERN_NL], 0, sizeof desc[TERN_NL]);
+    desc[TERN_NL][5] = all_sum; desc[TERN_NL][6] = off_w[0];
+    static const char *names[3] = {"i2", "lut5w", "bs8"};
+    char path[1024];
+    write_file(outdir, "w_i2.bin", w[0], off_w[0]);
+    for (int s = 1; s < 3; s++)
+        if (mask >> s & 1) { snprintf(path, sizeof path, "w_%s.bin", names[s]); write_file(outdir, path, w[s], off_w[s]); }
+    write_file(outdir, "act.bin", act, off_act);
+    write_file(outdir, "yref.bin", yr, off_y);
+    snprintf(path, sizeof path, "%s/ternary_data.S", outdir);
+    FILE *f = fopen(path, "w");
+    fprintf(f, "# SPDX-License-Identifier: MIT\n# Generated by tern_gen (sim/cpu/bench/ternary/tern_gen.c); do not edit.\n");
+    fprintf(f, ".section .rodata.tern,\"a\",@progbits\n.balign 64\n");
+    fprintf(f, ".globl tern_w_i2\ntern_w_i2:\n.incbin \"w_i2.bin\"\n.balign 64\n");
+    for (int s = 1; s < 3; s++) {
+        fprintf(f, ".globl tern_w_%s\ntern_w_%s:\n", names[s], names[s]);
+        if (mask >> s & 1) fprintf(f, ".incbin \"w_%s.bin\"\n", names[s]); else fprintf(f, ".space 64\n");
+        fprintf(f, ".balign 64\n");
+    }
+    fprintf(f, ".globl tern_act\ntern_act:\n.incbin \"act.bin\"\n.balign 64\n");
+    fprintf(f, ".globl tern_yref\ntern_yref:\n.incbin \"yref.bin\"\n.balign 64\n");
+    fprintf(f, ".globl tern_desc\ntern_desc:\n# per layer: off_i2 off_lut5w off_bs8 off_act off_yref stream_sum bytes_i2 reserved\n");
+    for (int li = 0; li <= TERN_NL; li++) {
+        fprintf(f, ".quad");
+        for (int e = 0; e < 8; e++) fprintf(f, "%s %llu", e ? "," : "", (unsigned long long)desc[li][e]);
+        fprintf(f, "\n");
+    }
+    fclose(f);
+    snprintf(path, sizeof path, "%s/expected.json", outdir);
+    f = fopen(path, "w");
+    fprintf(f, "{\n  \"shape\": \"%s\", \"seed\": %llu, \"layers\": [\n", argv[1], (unsigned long long)TERN_SEED);
+    for (int li = 0; li < TERN_NL; li++)
+        fprintf(f, "    {\"m\": %d, \"k\": %d, \"bytes_i2\": %zu, \"bytes_lut5w\": %zu, \"bytes_bs8\": %zu, \"y_fnv\": %u, "
+                   "\"stream_sum\": %llu}%s\n",
+                TERN_LAYERS[li].m, TERN_LAYERS[li].k, tern_bytes_i2(TERN_LAYERS[li].m, TERN_LAYERS[li].k),
+                tern_bytes_lut5w(TERN_LAYERS[li].m, TERN_LAYERS[li].k), tern_bytes_bs8(TERN_LAYERS[li].m, TERN_LAYERS[li].k),
+                fnv[li], (unsigned long long)desc[li][5], li + 1 < TERN_NL ? "," : "");
+    fprintf(f, "  ],\n  \"weights\": %zu, \"kernel_mask_in_data\": %d, \"stream_all_bytes\": %zu, \"stream_all_sum\": %llu,\n",
+            total_w, mask, off_w[0], (unsigned long long)all_sum);
+    fprintf(f, "  \"native_checks\": {\"qidx_bad\": %d, \"kernel_mismatches\": %d}\n}\n", bad_q, bad_kernel);
+    fclose(f);
+    printf("shape %s weights %zu bytes i2 %zu lut5w %zu bs8 %zu qidx_bad %d kernel_mismatches %d\n", argv[1], total_w,
+           off_w[0], off_w[1], off_w[2], bad_q, bad_kernel);
+    return bad_q || bad_kernel;
+}
