@@ -886,6 +886,30 @@ def cases():
     yield from rc_fetch_cases(i_type, r_type, store, branch, jal, MASK)
     yield from gh_predictor_cases(i_type, r_type, store, branch, jal, MASK)
     yield from btb_stale_cases(i_type, r_type, store, branch, jal, MASK)
+    # Load-wait table (middle hand-off 13): load L conflicts with store A, whose address
+    # arrives late (a fill and two divides), and is marked with A; a different store B, older
+    # than the next L and later still (thirty multiplies), writes that L's word every 4th
+    # iteration, so a load marked only with A may run past B and must be caught and refetched.
+    # Addresses move every iteration, so value prediction cannot supply them early.
+    def late(rd, src):     # rd = (src + mem[0x1f8]) / 1 / 1
+        return [i_type(0x13, 27, 0, 0, 1), i_type(3, 26, 3, 30, 0x1f8), r_type(0x33, rd, 0, src, 26),
+                r_type(0x33, rd, 4, rd, 27, 1), r_type(0x33, rd, 4, rd, 27, 1)]
+    def slow(rd, src):     # rd = (src + mem[0x1f0]) * 1, thirty times
+        return [i_type(0x13, 27, 0, 0, 1), i_type(3, 26, 3, 30, 0x1f0), r_type(0x33, rd, 0, src, 26)] + \
+               [r_type(0x33, rd, 0, rd, 27, 1)] * 30
+    loop = ([r_type(0x33, 31, 0, 30, 25)] +                               # x31 = x30 + x25 (early)
+            late(20, 31) + [r_type(0x33, 20, 0, 20, 23), store(3, 20, 16, 0x400)] +   # A: sd x16, 0x400(late x31 + x23)
+            [i_type(3, 17, 3, 31, 0x400), r_type(0x33, 18, 0, 18, 17)] +   # L: ld x17, 0x400(x31); x18 += x17
+            [r_type(0x33, 28, 0, 31, 24)] + slow(22, 28) +                 # B: sd x16, 0x400(slow(x31 + x24))
+            [store(3, 22, 16, 0x400),
+             i_type(0x13, 16, 0, 16, 3), i_type(0x13, 25, 0, 25, 8),       # data += 3; x25 += 8
+             i_type(0x13, 19, 0, 19, 1), i_type(0x13, 29, 7, 19, 3),
+             i_type(0x13, 24, 0, 0, 72), branch(1, 29, 0, 8), i_type(0x13, 24, 0, 0, 8),   # x24 = 8 every 4th
+             i_type(0x13, 23, 0, 0, 64), i_type(0x13, 21, 0, 21, -1)])   # A writes elsewhere after iteration 1
+    loop += [branch(1, 21, 0, -4 * len(loop))]
+    p = prefix() + [i_type(0x13, 21, 0, 0, 40), i_type(0x13, 24, 0, 0, 72), i_type(0x13, 25, 0, 0, 0), i_type(0x13, 23, 0, 0, 0)] + loop
+    p += [store(3, 30, 18, 0x3f8), 0x100073]
+    yield 'mdp_learnt_store_only', p, 0, MASK
     # Value-prediction confidence (middle hand-off 11): one load PC sees runs of 11 equal
     # values (an 8-result confidence predicts and then misses at every change); then a load
     # that returns the same value 450 times becomes predicted, its value changes under it

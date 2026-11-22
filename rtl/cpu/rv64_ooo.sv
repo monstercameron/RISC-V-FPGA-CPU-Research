@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Original CPU foundation, wide out-of-order implementation (architecture 0.15.5).
+// Original CPU foundation, wide out-of-order implementation (architecture 0.15.6).
 // RV64IM + B execution, serialized FENCE.I, terminal EEI. Same module name and
 // contract as rv64_core.sv and rv64_pipe.sv, plus a wider retirement trace (rt_*);
 // build with one of the three files. Architecture version: cpu/VERSION,
@@ -823,7 +823,10 @@ module rv64_core #(
     reg [ROB_B-1:0] sx0_idx, sx1_idx;
     reg [1:0] hold_nx;           // extra stores of a held write
     reg [ROB_N-1:0] rb_viol;    // a finished load read bytes an older store then wrote
-    reg [255:0] mdp_wait;       // load-wait table, by PC bits 9:2
+    localparam integer MDP_BITS = 12;   // load-wait table: 2^MDP_BITS entries by PC bits MDP_BITS+1:2
+    localparam integer MDP_CLR = 65536;    // clocks between clears of the whole table (0: never)
+    reg [(1 << MDP_BITS)-1:0] mdp_wait;
+    function automatic [MDP_BITS-1:0] mdp_i(input [63:0] a); mdp_i = a[2 +: MDP_BITS]; endfunction
     // Instructions that retire and then end the retirement group with a refetch (fence.i,
     // a wrong value prediction): retirement and the store-write scan both stop after them.
     wire [ROB_N-1:0] rb_ends = rb_fencei | rb_vpbad;
@@ -1085,6 +1088,7 @@ module rv64_core #(
                 end
             end
             // ================= phase 1: decisions from the state at the clock start =====
+            if (MDP_CLR != 0 && fe_clk % MDP_CLR == 0) mdp_wait = 0;
             // ---- issue selection: oldest first per port class
             ou_valid = 0; ou_age = 0;
             for (k = ROB_N-1; k >= 0; k = k - 1) begin
@@ -1117,7 +1121,7 @@ module rv64_core #(
                         ok = ok && rdy2(k) &&
                              (iq_cls[k] == C_ALU || (p < N_BR && iq_cls[k] == C_FULL &&
                               !(iq_mdu[k] && iq_insn[k][14] && (dv_busy || dv_pend || divtaken))));
-                    end else if (p < N_ALU + N_LD) ok = ok && iq_cls[k] == C_LD && (!ou_valid || a_age < ou_age || !mdp_wait[iq_pc[k][9:2]]) && (!fo_valid || a_age < fo_age);
+                    end else if (p < N_ALU + N_LD) ok = ok && iq_cls[k] == C_LD && (!ou_valid || a_age < ou_age || !mdp_wait[mdp_i(iq_pc[k])]) && (!fo_valid || a_age < fo_age);
                     else ok = ok && iq_cls[k] == C_ST;
                     // Branch-capable ports: a full-class instruction (branch, jump, system, M)
                     // before any plain ALU one, oldest first within each.
@@ -1174,7 +1178,7 @@ module rv64_core #(
                         stop = 1;   // fetched from a beat written this clock: refetched after
                     end else if (rb_viol[e]) begin
                         // Read stale bytes: refetch from this load; it waits for older stores from now on.
-                        rflush = 1; rflush_pc = rb_pc[e]; stop = 1; mdp_wait[rb_pc[e][9:2]] = 1; rflush_ld = 1; rflush_e = e;
+                        rflush = 1; rflush_pc = rb_pc[e]; stop = 1; mdp_wait[mdp_i(rb_pc[e])] = 1; rflush_ld = 1; rflush_e = e;
                     end else if (TG_N != 0 && rb_ctl[e] && rb_insn[e][6:0] == 7'h63 && tq_cnt + n_tq >= TQ_N) begin
                         stop = 1;   // the predictor's training queue is full (frontend 12)
                     end else begin
