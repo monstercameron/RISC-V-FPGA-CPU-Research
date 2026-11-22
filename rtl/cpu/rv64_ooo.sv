@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Original CPU foundation, wide out-of-order implementation (architecture 0.18.0).
+// Original CPU foundation, wide out-of-order implementation (architecture 0.19.0).
 // RV64IM + B execution (RV64F and D with define RV64_OOO_FPU, default off; with RV64_OOO_V
 // also the RVV subset of the vector contract, step 1, executed in order),
 // serialized FENCE.I, terminal EEI. Same module name and
@@ -89,6 +89,11 @@ module rv64_core #(
     // never has more than N_MISS reads outstanding, with distinct tags 0..N_MISS-1, and always
     // accepts a response. With N_MISS 1 mem_tag is 0 and rsp_* are ignored.
     output wire [3:0]      mem_tag,
+    // Line reads (only with RV64_OOO_DLINE): beats - 1 of a split read; the beats answer critical first,
+    // then the rest of the line wrapping, each as its own rsp_* answer with the tag. 0 otherwise.
+`ifdef RV64_OOO_DLINE
+    output wire [2:0]      mem_len,
+`endif
     input  wire            rsp_valid,
     input  wire [3:0]      rsp_tag,
     input  wire [63:0]     rsp_data,
@@ -108,15 +113,26 @@ module rv64_core #(
     localparam [2:0] FETCH=0, EXECUTE=1, MEMORY=2, HALTED=3;
     localparam integer IC_INDEX = $clog2(ICACHE_BEATS);
     localparam integer IC_TAG = 61 - IC_INDEX;
-    // Data cache: 2-way set associative, DCACHE_BEATS 8-byte lines in all (memory 1).
-    localparam integer DC_SETS = DCACHE_BEATS / 2;
+    // Data cache: 2-way set associative, DCACHE_BEATS 8-byte beats in all (memory 1), in lines of DLINE
+    // bytes (RV64_OOO_DLINE, 8 = one beat per line, the cache until 0.17.0).
+`ifdef RV64_OOO_DLINE
+    localparam integer DLINE = `RV64_OOO_DLINE;
+`else
+    localparam integer DLINE = 8;
+`endif
+    localparam integer LB = DLINE / 8;                          // beats per line
+    localparam integer LBB = LB >= 8 ? 3 : LB >= 4 ? 2 : LB >= 2 ? 1 : 0;
+    localparam integer DC_SETS = DCACHE_BEATS / (2 * LB);
     localparam integer DC_INDEX = $clog2(DC_SETS);   // set-index bits, may be 0
-    localparam integer DC_TAG = 61 - DC_INDEX;
+    localparam integer DC_TAG = 61 - LBB - DC_INDEX;
     generate if (ICACHE_BEATS < 2 || (ICACHE_BEATS & (ICACHE_BEATS - 1)) != 0) begin : bad_icache_size
         initial $fatal(1, "ICACHE_BEATS must be a power of two of at least 2");
     end endgenerate
     generate if (DCACHE_BEATS < 2 || (DCACHE_BEATS & (DCACHE_BEATS - 1)) != 0) begin : bad_dcache_size
         initial $fatal(1, "DCACHE_BEATS must be a power of two of at least 2");
+    end endgenerate
+    generate if ((DLINE != 8 && DLINE != 16 && DLINE != 32 && DLINE != 64) || (LB > 1 && N_MISS < 2) || DCACHE_BEATS < 2 * LB) begin : bad_dline
+        initial $fatal(1, "RV64_OOO_DLINE must be 8, 16, 32 or 64; above 8 it needs N_MISS >= 2 and DCACHE_BEATS >= 2 lines");
     end endgenerate
     generate if (EXTRA_WRITES < 0 || EXTRA_WRITES > 2 || (EXTRA_WRITES != 0 && PAIR_WRITES == 0)) begin : bad_extra_writes
         initial $fatal(1, "EXTRA_WRITES must be 0, 1 or 2, and needs PAIR_WRITES");
@@ -586,8 +602,8 @@ module rv64_core #(
     reg [ICACHE_BEATS-1:0] ic_valid;
     reg [IC_TAG-1:0] ic_tag [0:ICACHE_BEATS-1];
     reg [63:0] ic_data [0:ICACHE_BEATS-1];
-    reg [DCACHE_BEATS-1:0] dc_valid;
-    reg [DC_TAG-1:0] dc_tag [0:DCACHE_BEATS-1];
+    reg [2*DC_SETS-1:0] dc_valid;                 // per line
+    reg [DC_TAG-1:0] dc_tag [0:2*DC_SETS-1];
     reg [63:0] dc_data [0:DCACHE_BEATS-1];
     // Line l is way l / DC_SETS of set l % DC_SETS. A fill replaces the way that was
     // not filled last in its set (for two ways, the older fill).
@@ -595,7 +611,13 @@ module rv64_core #(
     initial dc_last = 0;
     integer dc_l;
     function automatic integer dc_set(input [63:0] a);
-        dc_set = (a >> 3) & (DC_SETS - 1);
+        dc_set = (a >> (3 + LBB)) & (DC_SETS - 1);
+    endfunction
+    function automatic integer dc_di(input integer l, input [63:0] a);   // data index of a's beat in line l
+        dc_di = l * LB + ((a >> 3) % LB);
+    endfunction
+    function automatic [60:0] dl_ln(input [63:0] a);                     // line number of a
+        dl_ln = a[63:3] >> LBB;
     endfunction
     function automatic integer dc_line(input [63:0] a);   // line holding a's beat, else -1
         integer s0;
@@ -906,6 +928,14 @@ module rv64_core #(
     reg mu_stale;               // a store wrote its beat after the request was accepted
     reg [PM_N-1:0] pm_valid, pm_sent, pm_stale;   // younger-miss entries (index 0 unused)
     reg [63:0] pm_beat [0:PM_N-1];
+    // Line fills (LB > 1): the line read by entry t, its beats received so far, bytes stores wrote since
+    // the read was accepted (kept against the answer), and whether a beat answered with an error.
+    reg [63:0] lb_data [0:PM_N-1][0:LB-1];
+    reg [7:0] lb_wm [0:PM_N-1][0:LB-1];
+    reg [3:0] lb_cnt [0:PM_N-1];
+    reg [PM_N-1:0] lb_bad;
+    integer lt, lk;
+    reg [63:0] la;
     reg pf_v;                   // this clock's oldest younger miss (to allocate)
     reg [63:0] pc_beat [0:N_LD-1];   // this clock's younger-miss candidates
     reg [ROB_B-1:0] pc_age [0:N_LD-1];
@@ -923,9 +953,13 @@ module rv64_core #(
     reg [60:0] ms_beat [0:N_LD-1];
     integer ms_n, ms_k, wk_k;
     reg ms_infl, ms_free;
-    task automatic wake_beat(input [60:0] wb);
+    task automatic wake_beat(input [60:0] wb);   // the beat's line (the beat itself with 8-byte lines)
         for (wk_k = 0; wk_k < IQ_N; wk_k = wk_k + 1)
-            if (iq_slp[wk_k] && (iq_wany[wk_k] || iq_wb[wk_k] == wb)) begin iq_slp[wk_k] = 0; iq_wany[wk_k] = 0; end
+            if (iq_slp[wk_k] && (iq_wany[wk_k] || (iq_wb[wk_k] >> LBB) == (wb >> LBB))) begin iq_slp[wk_k] = 0; iq_wany[wk_k] = 0; end
+    endtask
+    task automatic wake_exact(input [60:0] wb);  // loads of this beat only (they can read the fill buffer)
+        for (wk_k = 0; wk_k < IQ_N; wk_k = wk_k + 1)
+            if (iq_slp[wk_k] && !iq_wany[wk_k] && iq_wb[wk_k] == wb) iq_slp[wk_k] = 0;
     endtask
     reg sf_wait;                // a store write faulted while split reads were outstanding: no new
                                 // requests; the trap is taken, with the latched store, once they return
@@ -1093,8 +1127,8 @@ module rv64_core #(
     function in_flight(input [63:0] a);
         integer q;
         begin
-            in_flight = mu_valid && mu_beat[63:3] == a[63:3];
-            for (q = 1; q < PM_N; q = q + 1) if (pm_valid[q] && pm_beat[q][63:3] == a[63:3]) in_flight = 1;
+            in_flight = mu_valid && dl_ln(mu_beat) == dl_ln(a);
+            for (q = 1; q < PM_N; q = q + 1) if (pm_valid[q] && dl_ln(pm_beat[q]) == dl_ln(a)) in_flight = 1;
         end
     endfunction
     wire want_fetch = started && !halted && f_pc[1:0] == 0 && !f_beat_hit && !f_err && !f_hold && !h_exc && !sf_wait;
@@ -1106,6 +1140,9 @@ module rv64_core #(
 `endif
                           want_pm ? 2'd2 : want_fetch ? 2'd1 : 2'd0;
     assign mem_tag = bus_kind != 2 ? 4'd0 : bus_hold == 2 ? hold_tag : want_miss ? 4'd0 : pm_pick;
+`ifdef RV64_OOO_DLINE
+    assign mem_len = bus_kind == 2 && LB > 1 ? LB - 1 : 3'd0;   // a data read is a whole line
+`endif
     assign mem_valid = !reset && bus_kind != 0;
     assign mem_instr = bus_kind == 1;
     assign mem_addr = bus_kind == 1 ? (bus_hold == 1 ? hold_addr : {f_pc[63:3],3'b000})
@@ -1858,6 +1895,7 @@ module rv64_core #(
                         f_stale = 0;
                     end else if (bus_kind == 2 && SPLIT) begin
                         if (bk_tag == 0) mu_sent = 1; else pm_sent[bk_tag] = 1;
+                        if (LB > 1) begin lb_cnt[bk_tag] = 0; lb_bad[bk_tag] = 0; for (k = 0; k < LB; k = k + 1) lb_wm[bk_tag][k] = 0; end
                     end else if (bus_kind == 2) begin
                         mu_valid = 0; wake_beat(mu_beat[63:3]);
                         if (mem_error) begin mu_errv = mu_owner_v; mu_err_beat = mu_beat; mu_err_owner = mu_owner; end
@@ -1878,7 +1916,7 @@ module rv64_core #(
                 end
             end
             // Split read responses (N_MISS > 1), at most one per clock.
-            if (SPLIT && rsp_valid) begin
+            if (SPLIT && rsp_valid && LB == 1) begin
                 if (rsp_tag == 0) begin
                     if (mu_valid && mu_sent) begin
                         wake_beat(mu_beat[63:3]);
@@ -1907,6 +1945,38 @@ module rv64_core #(
                         dc_last[dc_set(pm_beat[rsp_tag])] = dc_l >= DC_SETS;
                     end
                     pm_valid[rsp_tag] = 0; pm_sent[rsp_tag] = 0; pm_stale[rsp_tag] = 0;
+                end
+            end else if (SPLIT && rsp_valid && rsp_tag < PM_N &&
+                         (rsp_tag == 0 ? mu_valid && mu_sent : pm_valid[rsp_tag] && pm_sent[rsp_tag])) begin
+                // Line fill: beat lb_cnt after the critical beat, wrapping inside the line.
+                lt = rsp_tag; la = lt == 0 ? mu_beat : pm_beat[lt];
+                lk = ((la >> 3) + lb_cnt[lt]) % LB;
+                if (rsp_error) lb_bad[lt] = 1;
+                else for (k = 0; k < 8; k = k + 1) if (!lb_wm[lt][lk][k]) lb_data[lt][lk][8*k +: 8] = rsp_data[8*k +: 8];
+                if (lt == 0 && lb_cnt[0] == 0) begin
+                    // Entry 0's critical beat: for its owner, as a one-beat answer. A store wrote the beat
+                    // after the read was accepted (lb_wm): as for a stale one-beat answer, the error is not
+                    // the owner's (it reads the beat again once the line read ends; Codex review, item 1).
+                    wake_exact(mu_beat[63:3]);
+                    if (rsp_error) begin if (lb_wm[0][lk] == 0) begin mu_errv = mu_owner_v; mu_err_beat = mu_beat; mu_err_owner = mu_owner; end end
+                    else begin fb_valid = 1; fb_beat = mu_beat; fb_data = lb_data[0][lk]; fb_owner = mu_owner; fb_lock = mu_owner_v; end
+                end
+                lb_cnt[lt] = lb_cnt[lt] + 4'd1;
+                if (lb_cnt[lt] == LB) begin
+                    // Complete: install unless a beat failed (entry 0 rewrites a present line, a younger
+                    // entry fills only an absent one); wake the loads of the line; free the entry.
+                    if (!lb_bad[lt] && (lt == 0 || dc_line(la) < 0)) begin
+                        dc_l = dc_line(la);
+                        if (dc_l < 0) begin
+                            dc_l = dc_set(la);
+                            if (dc_valid[dc_l] && (!dc_valid[DC_SETS + dc_l] || !dc_last[dc_l])) dc_l = DC_SETS + dc_l;
+                        end
+                        dc_valid[dc_l] = 1; dc_tag[dc_l] = la[63 -: DC_TAG];
+                        for (k = 0; k < LB; k = k + 1) dc_data[dc_l * LB + k] = lb_data[lt][k];
+                        dc_last[dc_set(la)] = dc_l >= DC_SETS;
+                    end
+                    wake_beat(la[63:3]);
+                    if (lt == 0) begin mu_valid = 0; mu_sent = 0; end else begin pm_valid[lt] = 0; pm_sent[lt] = 0; end
                 end
             end
             // ================= phase 1: decisions from the state at the clock start =====
@@ -2111,13 +2181,21 @@ module rv64_core #(
                     fi = rb_addr[e][3 +: IC_INDEX];
                     if (dc_line(rb_addr[e]) >= 0)
                         for (k = 0; k < 8; k = k + 1)
-                            if (rb_wstrb[e][k]) dc_data[dc_line(rb_addr[e])][8*k +: 8] = r_wd[8*k +: 8];
+                            if (rb_wstrb[e][k]) dc_data[dc_di(dc_line(rb_addr[e]), rb_addr[e])][8*k +: 8] = r_wd[8*k +: 8];
                     if (ic_valid[fi] && ic_tag[fi] == rb_addr[e][63 -: IC_TAG]) ic_valid[fi] = 0;
                     if (fb_valid && fb_beat[63:3] == rb_addr[e][63:3])
                         for (k = 0; k < 8; k = k + 1) if (rb_wstrb[e][k]) fb_data[8*k +: 8] = r_wd[8*k +: 8];
-                    if (SPLIT && mu_valid && mu_sent && mu_beat[63:3] == rb_addr[e][63:3]) mu_stale = 1;
+                    if (LB == 1 && SPLIT && mu_valid && mu_sent && mu_beat[63:3] == rb_addr[e][63:3]) mu_stale = 1;
                     for (k = 1; k < PM_N; k = k + 1)
-                        if (SPLIT && pm_valid[k] && pm_sent[k] && pm_beat[k][63:3] == rb_addr[e][63:3]) pm_stale[k] = 1;
+                        if (LB == 1 && SPLIT && pm_valid[k] && pm_sent[k] && pm_beat[k][63:3] == rb_addr[e][63:3]) pm_stale[k] = 1;
+                    // Line fills: a store after acceptance merges into the line (and keeps its bytes).
+                    if (LB > 1) for (k = 0; k < PM_N; k = k + 1)
+                        if (k == 0 ? (mu_valid && mu_sent && dl_ln(mu_beat) == dl_ln(rb_addr[e])) :
+                                     (pm_valid[k] && pm_sent[k] && dl_ln(pm_beat[k]) == dl_ln(rb_addr[e]))) begin
+                            lk = (rb_addr[e] >> 3) % LB;
+                            for (b2 = 0; b2 < 8; b2 = b2 + 1)
+                                if (rb_wstrb[e][b2]) begin lb_data[k][lk][8*b2 +: 8] = r_wd[8*b2 +: 8]; lb_wm[k][lk][b2] = 1; end
+                        end
                     // Younger instructions already fetched from this beat are refetched.
                     hit = 0;
                     for (k = 0; k < ROB_N; k = k + 1)
@@ -2243,7 +2321,7 @@ module rv64_core #(
                         fb_hit_ = fb_valid && fb_beat[63:3] == ea[63:3];
                         if (fwd_wait) begin end
                         else if (dc_hit_ || fb_hit_) begin
-                            lw = dc_hit_ ? dc_data[dc_line(ea)] : fb_data;
+                            lw = dc_hit_ ? dc_data[dc_di(dc_line(ea), ea)] : fb_data;
                             for (b2 = 0; b2 < 8; b2 = b2 + 1) if (fwd_mask[b2]) lw[8*b2 +: 8] = fwd_data[8*b2 +: 8];
                             v = load_align(lw, ea[2:0], f3_); fdone = 1;
                             if (FPU != 0 && ex_insn[p][6:0] == 7'h07 && f3_ == 3'd2) v = {32'hffffffff, v[31:0]};   // flw: NaN-box
@@ -2364,10 +2442,10 @@ module rv64_core #(
                 if (SPLIT && pc_i < pc_n && !in_flight(pc_beat[pc_i]) && (!pf_v || pc_age[pc_i] < pf_age)) begin
                     pf_v = 1; pf_beat = pc_beat[pc_i]; pf_age = pc_age[pc_i];
                 end
-            if (SPLIT && pf_v && !(mu_valid && mu_beat[63:3] == pf_beat[63:3])) begin
+            if (SPLIT && pf_v && !(mu_valid && dl_ln(mu_beat) == dl_ln(pf_beat))) begin
                 pm_dup = 0; pm_free = 0;
                 for (pm_k = PM_N - 1; pm_k >= 1; pm_k = pm_k - 1) begin
-                    if (pm_valid[pm_k] && pm_beat[pm_k][63:3] == pf_beat[63:3]) pm_dup = 1;
+                    if (pm_valid[pm_k] && dl_ln(pm_beat[pm_k]) == dl_ln(pf_beat)) pm_dup = 1;
                     if (!pm_valid[pm_k]) pm_free = pm_k;
                 end
                 if (!pm_dup && pm_free != 0) begin
@@ -2375,10 +2453,10 @@ module rv64_core #(
                 end
             end
             for (ms_k = 0; ms_k < N_LD; ms_k = ms_k + 1) if (ms_k < ms_n) begin
-                ms_infl = mu_valid && mu_beat[63:3] == ms_beat[ms_k];
+                ms_infl = mu_valid && dl_ln(mu_beat) == (ms_beat[ms_k] >> LBB);
                 ms_free = !SPLIT;
                 for (pm_k = 1; pm_k < PM_N; pm_k = pm_k + 1) begin
-                    if (SPLIT && pm_valid[pm_k] && pm_beat[pm_k][63:3] == ms_beat[ms_k]) ms_infl = 1;
+                    if (SPLIT && pm_valid[pm_k] && dl_ln(pm_beat[pm_k]) == (ms_beat[ms_k] >> LBB)) ms_infl = 1;
                     if (SPLIT && !pm_valid[pm_k]) ms_free = 1;
                 end
                 if (ms_infl || !ms_free) begin
@@ -2705,14 +2783,22 @@ module rv64_core #(
                             // write-through effects of a retiring store (copied from retirement)
                             if (dc_line(vx_waddr) >= 0)
                                 for (vk = 0; vk < 8; vk = vk + 1)
-                                    if (vx_wstrb[vk]) dc_data[dc_line(vx_waddr)][8*vk +: 8] = vx_wdata[8*vk +: 8];
+                                    if (vx_wstrb[vk]) dc_data[dc_di(dc_line(vx_waddr), vx_waddr)][8*vk +: 8] = vx_wdata[8*vk +: 8];
                             fi = vx_waddr[3 +: IC_INDEX];
                             if (ic_valid[fi] && ic_tag[fi] == vx_waddr[63 -: IC_TAG]) ic_valid[fi] = 0;
                             if (fb_valid && fb_beat[63:3] == vx_waddr[63:3])
                                 for (vk = 0; vk < 8; vk = vk + 1) if (vx_wstrb[vk]) fb_data[8*vk +: 8] = vx_wdata[8*vk +: 8];
-                            if (SPLIT && mu_valid && mu_sent && mu_beat[63:3] == vx_waddr[63:3]) mu_stale = 1;
+                            if (LB == 1 && SPLIT && mu_valid && mu_sent && mu_beat[63:3] == vx_waddr[63:3]) mu_stale = 1;
                             for (vk = 1; vk < PM_N; vk = vk + 1)
-                                if (SPLIT && pm_valid[vk] && pm_sent[vk] && pm_beat[vk][63:3] == vx_waddr[63:3]) pm_stale[vk] = 1;
+                                if (LB == 1 && SPLIT && pm_valid[vk] && pm_sent[vk] && pm_beat[vk][63:3] == vx_waddr[63:3]) pm_stale[vk] = 1;
+                            // Line fills: the element's bytes merge into in-flight line reads (as a scalar store's).
+                            if (LB > 1) for (vk = 0; vk < PM_N; vk = vk + 1)
+                                if (vk == 0 ? (mu_valid && mu_sent && dl_ln(mu_beat) == dl_ln(vx_waddr)) :
+                                              (pm_valid[vk] && pm_sent[vk] && dl_ln(pm_beat[vk]) == dl_ln(vx_waddr))) begin
+                                    lk = (vx_waddr >> 3) % LB;
+                                    for (b2 = 0; b2 < 8; b2 = b2 + 1)
+                                        if (vx_wstrb[b2]) begin lb_data[vk][lk][8*b2 +: 8] = vx_wdata[8*b2 +: 8]; lb_wm[vk][lk][b2] = 1; end
+                                end
                             vx_i = vx_i + 1;
                         end
                     end
@@ -2726,7 +2812,7 @@ module rv64_core #(
                             else if (vx_load) begin
                                 vhit = dc_line(vaddr) >= 0 || (fb_valid && fb_beat[63:3] == vaddr[63:3]);
                                 if (vhit) begin
-                                    vbeat_d = dc_line(vaddr) >= 0 ? dc_data[dc_line(vaddr)] : fb_data;
+                                    vbeat_d = dc_line(vaddr) >= 0 ? dc_data[dc_di(dc_line(vaddr), vaddr)] : fb_data;
                                     vel = vbeat_d >> {vaddr[2:0], 3'b000};
                                     vput(vx_vd, vx_i, 8 * vsz, vel);
                                     if (fb_lock && fb_owner == e) fb_lock = 0;

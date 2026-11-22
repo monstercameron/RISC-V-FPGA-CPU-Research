@@ -35,14 +35,31 @@ module tb_core #(parameter integer MEM_BYTES=16384, parameter integer ICACHE_BEA
     reg rsp_valid=0, rsp_error=0;
     reg [3:0] rsp_tag=0;
     reg [63:0] rsp_data=0;
-    reg [15:0] sp_v=0;
-    reg [3:0] sp_tag [0:15];
-    reg [63:0] sp_data [0:15];
-    reg sp_err [0:15];
-    integer sp_due [0:15];
-    integer sp_seq [0:15];
+    // One queued answer per beat (a line read, mem_len > 0, queues its beats in answer order sp_ord).
+    reg [63:0] sp_v=0;
+    reg [3:0] sp_tag [0:63];
+    reg [63:0] sp_data [0:63];
+    reg sp_err [0:63];
+    integer sp_due [0:63];
+    integer sp_seq [0:63];
+    integer sp_ord [0:63];
+    wire [2:0] mlen;
+`ifndef RV64_OOO_DLINE
+    assign mlen = 3'd0;
+`endif
+    integer sp_b, line_overlaps=0, line_errors=0, sp_ov;
+    integer fault5_fired=0, fault5_slot=-1, fault5_answered=0, fault5_reads=0;
+    reg [2:0] sp_lmk [0:63];
+    reg [63:0] sp_ba;
+    function sp_first(input integer q);   // no earlier beat of q's tag is still queued
+        integer r;
+        begin
+            sp_first = 1;
+            for (r = 0; r < 64; r = r + 1) if (sp_v[r] && sp_tag[r] == sp_tag[q] && sp_ord[r] < sp_ord[q]) sp_first = 0;
+        end
+    endfunction
     integer split_lat=0;   // +split_lat=N: fixed timing; the answer is valid in the clock that starts N+1 edges after the accepting edge
-    reg [60:0] sp_beat [0:15];
+    reg [60:0] sp_beat [0:63];
     // Covers: split reads, answers given before an older outstanding one, and reads whose beat a
     // store wrote between acceptance and answer (the core must drop those answers).
     integer sp_k, sp_n, sp_pick, sp_min, sp_j, split_reads=0, split_ireads=0, split_reorders=0, split_stale=0, sp_next=0;
@@ -66,7 +83,11 @@ module tb_core #(parameter integer MEM_BYTES=16384, parameter integer ICACHE_BEA
         ,.rt_valid(rtv),.rt_pc(rtpc),.rt_insn(rtinsn),.rt_rd(rtrd),.rt_data(rtdata),.rt_next(rtnext),
         .mem_addr2(addr2),.mem_wdata2(wdata2),.mem_wstrb2(wstrb2),.mem_error2(error2),
         .mem_xaddr(xaddr),.mem_xwdata(xwdata),.mem_xwstrb(xwstrb),.mem_xerror(xerror),
-        .mem_tag(mtag),.rsp_valid(rsp_valid),.rsp_tag(rsp_tag),.rsp_data(rsp_data),.rsp_error(rsp_error)
+        .mem_tag(mtag),
+`ifdef RV64_OOO_DLINE
+        .mem_len(mlen),
+`endif
+        .rsp_valid(rsp_valid),.rsp_tag(rsp_tag),.rsp_data(rsp_data),.rsp_error(rsp_error)
 `endif
         );
 
@@ -92,9 +113,9 @@ module tb_core #(parameter integer MEM_BYTES=16384, parameter integer ICACHE_BEA
     reg active=0,held=0;
     reg fault_once=0;      // fault_kind 4: the one write fault has been given
 `ifdef WIDE_TRACE
-    reg [548:0] held_request;
-    // mem_tag is part of the request a stall must hold (split reads, memory hand-off 2).
-    wire [548:0] request={mtag,instr,addr,wdata,wstrb,addr2,wdata2,wstrb2,xaddr,xwdata,xwstrb};
+    reg [551:0] held_request;
+    // mem_tag and mem_len are part of the request a stall must hold (split reads, line reads).
+    wire [551:0] request={mlen,mtag,instr,addr,wdata,wstrb,addr2,wdata2,wstrb2,xaddr,xwdata,xwstrb};
 `else
     reg [136:0] held_request;
     wire [136:0] request={instr,addr,wdata,wstrb};
@@ -239,7 +260,8 @@ module tb_core #(parameter integer MEM_BYTES=16384, parameter integer ICACHE_BEA
                          retire_count,cycles,slot2_count,slot3_count,slot3_branches,lane2,lane3,lane4,fault_lane2,fault_lane3,fault_lane4);
 `endif
 `ifdef WIDE_TRACE
-                if (N_MISS > 1) $display("SPLIT split_reads=%0d split_ireads=%0d split_reorders=%0d split_stale=%0d",split_reads,split_ireads,split_reorders,split_stale);
+                if (N_MISS > 1) $display("SPLIT split_reads=%0d split_ireads=%0d split_reorders=%0d split_stale=%0d%s",split_reads,split_ireads,split_reorders,split_stale,
+                    line_overlaps+line_errors+fault5_fired != 0 ? $sformatf(" line_store_overlaps=%0d line_error_beats=%0d fault_once_fired=%0d fault_once_answered=%0d fault_once_reads=%0d",line_overlaps,line_errors,fault5_fired,fault5_answered,fault5_reads) : "");
 `endif
                 $finish;
             end
@@ -247,16 +269,16 @@ module tb_core #(parameter integer MEM_BYTES=16384, parameter integer ICACHE_BEA
             rsp_valid=0;
             if (N_MISS > 1) begin
                 sp_n=0;
-                for (sp_k=0;sp_k<16;sp_k=sp_k+1) if (sp_v[sp_k] && sp_due[sp_k]<=cycles) sp_n=sp_n+1;
+                for (sp_k=0;sp_k<64;sp_k=sp_k+1) if (sp_v[sp_k] && sp_due[sp_k]<=cycles && sp_first(sp_k)) sp_n=sp_n+1;
                 if (sp_n>0) begin
                     rng=rng^(rng<<13); rng=rng^(rng>>17); rng=rng^(rng<<5);
                     sp_pick=rng % sp_n; sp_n=0;
-                    for (sp_k=0;sp_k<16;sp_k=sp_k+1) if (sp_v[sp_k] && sp_due[sp_k]<=cycles) begin
+                    for (sp_k=0;sp_k<64;sp_k=sp_k+1) if (sp_v[sp_k] && sp_due[sp_k]<=cycles && sp_first(sp_k)) begin
                         if (sp_n==sp_pick) begin
                             sp_min=sp_seq[sp_k];
-                            for (sp_j=0;sp_j<16;sp_j=sp_j+1) if (sp_v[sp_j] && sp_seq[sp_j]<sp_min) sp_min=sp_seq[sp_j];
+                            for (sp_j=0;sp_j<64;sp_j=sp_j+1) if (sp_v[sp_j] && sp_seq[sp_j]<sp_min) sp_min=sp_seq[sp_j];
                             if (sp_min!=sp_seq[sp_k]) split_reorders=split_reorders+1;
-                            rsp_valid=1; rsp_tag=sp_tag[sp_k]; rsp_data=sp_data[sp_k]; rsp_error=sp_err[sp_k]; sp_v[sp_k]=0;
+                            rsp_valid=1; rsp_tag=sp_tag[sp_k]; rsp_data=sp_data[sp_k]; rsp_error=sp_err[sp_k]; sp_v[sp_k]=0; if (sp_k==fault5_slot) begin fault5_answered=1; fault5_slot=-1; end
                         end
                         sp_n=sp_n+1;
                     end
@@ -292,24 +314,50 @@ module tb_core #(parameter integer MEM_BYTES=16384, parameter integer ICACHE_BEA
             cycles=cycles+1;
             if (cycles>max_cycles) $fatal(1,"timeout");
             if (held && (!valid || request!==held_request)) $fatal(1,"unstable stalled request");
+`ifdef WIDE_TRACE
+            if (valid && mlen!=0 && !split_read) $fatal(1,"mem_len %0d on a request that is not a split read",mlen);
+`endif
             held=valid && !ready;
             held_request=request;
 `ifdef WIDE_TRACE
-            for (sp_k=0;sp_k<16;sp_k=sp_k+1) if (sp_v[sp_k] && !sp_err[sp_k])
+            for (sp_k=0;sp_k<64;sp_k=sp_k+1) if (sp_v[sp_k] && !sp_err[sp_k])
                 for (lane=0;lane<8;lane=lane+1) sp_data[sp_k][8*lane+:8]=memory[{sp_beat[sp_k],3'b000}+lane];
             if (valid && ready && split_read) begin
                 sp_pick=-1;
-                for (sp_k=15;sp_k>=0;sp_k=sp_k-1) if (!sp_v[sp_k]) sp_pick=sp_k;
-                if (sp_pick<0) $fatal(1,"more than 16 split reads outstanding");
-                for (sp_k=0;sp_k<16;sp_k=sp_k+1) if (sp_v[sp_k] && sp_tag[sp_k]==mtag) $fatal(1,"split read tag %0d reused while outstanding",mtag);
+                for (sp_k=63;sp_k>=0;sp_k=sp_k-1) if (!sp_v[sp_k]) sp_pick=sp_k;
+                if (sp_pick<0) $fatal(1,"more than 64 split beats outstanding");
+                if (instr && mlen!=0) $fatal(1,"line read on the instruction side");
+                if (mlen!=0 && mlen!=1 && mlen!=3 && mlen!=7) $fatal(1,"mem_len %0d is not 2^n - 1",mlen);
+                for (sp_k=0;sp_k<64;sp_k=sp_k+1) if (sp_v[sp_k] && sp_tag[sp_k]==mtag) $fatal(1,"split read tag %0d reused while outstanding",mtag);
                 if (mtag>=N_MISS && !mtag[3]) $fatal(1,"split read tag %0d >= N_MISS",mtag);
                 if (instr != mtag[3]) $fatal(1,"split read tag %0d on the wrong side",mtag);
                 if (instr) split_ireads=split_ireads+1;
                 rng=rng^(rng<<13); rng=rng^(rng>>17); rng=rng^(rng<<5);
                 sp_v[sp_pick]=1; sp_tag[sp_pick]=mtag; sp_err[sp_pick]=error; sp_seq[sp_pick]=sp_next; sp_next=sp_next+1;
                 sp_due[sp_pick]=split_lat>0 ? cycles+split_lat : cycles+1+(rng % (3*max_stall+3));
-                sp_data[sp_pick]=0; sp_beat[sp_pick]=addr[63:3];
+                sp_data[sp_pick]=0; sp_beat[sp_pick]=addr[63:3]; sp_ord[sp_pick]=0; sp_lmk[sp_pick]=mlen;
+`ifdef RV64_OOO_DLINE
+                if (fault_kind==5 && fault5_fired==0 && !instr && addr==fault_addr) begin sp_err[sp_pick]=1; fault5_fired=1; fault5_slot=sp_pick; end
+                if (fault_kind==5 && !instr && addr[63:3]==fault_addr[63:3]) fault5_reads=fault5_reads+1;
+`endif
                 if (!error) for (lane=0;lane<8;lane=lane+1) sp_data[sp_pick][8*lane+:8]=memory[addr+lane];
+                // A line read (mem_len > 0): the following beats of the line, wrapping, each queued with its
+                // own delay, answered after the beats before it (sp_first), with its own error.
+                for (sp_b=1;sp_b<=mlen;sp_b=sp_b+1) begin
+                    sp_pick=-1;
+                    for (sp_k=63;sp_k>=0;sp_k=sp_k-1) if (!sp_v[sp_k]) sp_pick=sp_k;
+                    if (sp_pick<0) $fatal(1,"more than 64 split beats outstanding");
+                    sp_ba={addr[63:3] & ~{58'b0,mlen},3'b000} | {58'b0,(addr[5:3]+sp_b[2:0]) & mlen,3'b000};
+                    rng=rng^(rng<<13); rng=rng^(rng>>17); rng=rng^(rng<<5);
+                    sp_v[sp_pick]=1; sp_tag[sp_pick]=mtag; sp_seq[sp_pick]=sp_next; sp_next=sp_next+1; sp_ord[sp_pick]=sp_b;
+                    sp_err[sp_pick]=sp_ba>=MEM_BYTES || (sp_ba==fault_addr && fault_kind==2);
+                    sp_due[sp_pick]=split_lat>0 ? cycles+split_lat+sp_b : cycles+1+(rng % (3*max_stall+3));
+                    sp_data[sp_pick]=0; sp_beat[sp_pick]=sp_ba[63:3]; sp_lmk[sp_pick]=mlen; if (sp_err[sp_pick]) line_errors=line_errors+1;
+`ifdef RV64_OOO_DLINE
+                    if (fault_kind==5 && fault5_fired==0 && sp_ba==fault_addr) begin sp_err[sp_pick]=1; fault5_fired=1; fault5_slot=sp_pick; end
+`endif
+                    if (!sp_err[sp_pick]) for (lane=0;lane<8;lane=lane+1) sp_data[sp_pick][8*lane+:8]=memory[sp_ba+lane];
+                end
                 split_reads=split_reads+1;
             end
 `endif
@@ -322,7 +370,11 @@ module tb_core #(parameter integer MEM_BYTES=16384, parameter integer ICACHE_BEA
                 active=0;
                 if (!error && wstrb!=0) begin
 `ifdef WIDE_TRACE
-                    for (sp_k=0;sp_k<16;sp_k=sp_k+1)
+                    sp_ov=0;
+                    for (sp_k=0;sp_k<64;sp_k=sp_k+1)
+                        if (sp_v[sp_k] && sp_lmk[sp_k]!=0 && (addr[63:3] & ~{58'b0,sp_lmk[sp_k]})==(sp_beat[sp_k] & ~{58'b0,sp_lmk[sp_k]})) sp_ov=1;
+                    if (sp_ov) line_overlaps=line_overlaps+1;
+                    for (sp_k=0;sp_k<64;sp_k=sp_k+1)
                         if (sp_v[sp_k] && (sp_beat[sp_k]==addr[63:3] || (wstrb2!=0 && sp_beat[sp_k]==addr2[63:3]) ||
                             (xwstrb[7:0]!=0 && sp_beat[sp_k]==xaddr[63:3]) || (xwstrb[15:8]!=0 && sp_beat[sp_k]==xaddr[127:67])))
                             split_stale=split_stale+1;

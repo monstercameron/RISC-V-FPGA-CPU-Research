@@ -1144,6 +1144,8 @@ def main():
     parser.add_argument('--vector', action='store_true',
                         help='ooo core: build with the RVV subset (define RV64_OOO_V; implies --fpu) and add the vector cases (golden model vector=True)')
     parser.add_argument('--vlen', type=int, choices=(128, 256, 512), default=256, help='with --vector: VLEN (define RV64_OOO_VLEN)')
+    parser.add_argument('--dline', type=int, choices=(8, 16, 32, 64), default=8,
+                        help='ooo core: data-cache line bytes (define RV64_OOO_DLINE; above 8 needs --n-miss >= 2)')
     parser.add_argument('--n-miss', type=int, default=1,
                         help='Out-of-order core: data misses in flight (N_MISS; above 1, split reads in tb_core)')
     parser.add_argument('--core-source', type=Path,
@@ -1186,9 +1188,12 @@ def main():
         lat += [f'RV64_OOO_L0_N={args.l0}', f'RV64_OOO_L0_LAT={args.l0_lat}']
     if args.vector: args.fpu = True   # vector FP uses the F state
     if args.fpu and args.core != 'ooo': parser.error('--fpu (and --vector) apply to the ooo core')
+    if args.dline != 8 and (args.core != 'ooo' or args.n_miss < 2):
+        parser.error('--dline above 8 needs --core ooo and --n-miss >= 2 (line reads are split reads)')
     wide += lat + (['RV64_OOO_FPU'] if args.fpu else []) + (['RV64_OOO_V', f'RV64_OOO_VLEN={args.vlen}'] if args.vector else [])
     executable = sim.build('tb_core', [core_src, ROOT / 'sim/cpu/tb_core.sv'], OUT / 'cpu.vvp',
-                           params=cache, defines=wide, timeout=limit)
+                           params=cache, defines=wide + ([f'RV64_OOO_DLINE={args.dline}'] if args.dline != 8 else []),
+                           timeout=limit)
     sim.elaborate('rv64_bram_soc', [core_src, ROOT/'rtl/cpu/rv64_bram_soc.sv'], OUT/'soc.vvp',
                   defines=wide, timeout=limit)
     reset_sim = sim.build('tb_reset', [core_src, ROOT/'sim/cpu/tb_reset.sv'], OUT/'reset.vvp', defines=lat, timeout=limit)
@@ -1206,6 +1211,11 @@ def main():
         workloads += [(name,fp_cases.image_for(words),kind,addr) for name,words,kind,addr in fp_cases.fp_cases()]
         workloads += [(name,image_for(words),kind,addr) for name,words,kind,addr in fp_ooo_cases.cases()]
         workloads += [(name,image_for(words),kind,addr) for name,words,kind,addr in fp_timing_cases.cases(globals())]
+    if args.n_miss > 1:
+        # data-cache line cases (split reads; whole lines with --dline > 8), offsets for the line size
+        import line_cases
+        line_cases.LINE = args.dline if args.dline > 8 else 64
+        workloads += [(name,image_for(words),kind,addr) for name,words,kind,addr in line_cases.cases()]
     names = [w[0] for w in workloads]
     if args.shard or args.merge_shards:
         if args.image or (args.shard and args.merge_shards):
@@ -1228,6 +1238,13 @@ def main():
     for name, image, kind, address in workloads:
         final = {}
         expected, covered = execute(image, 3 if kind == 4 else kind, address, fp=args.fpu, **({'vector': True, 'vlen': args.vlen} if args.vector else {}), state=final)  # kind 4: store faults once
+        if args.n_miss > 1 and name.startswith('line_'):
+            # each line case's intended end (Codex review of line step 1, item 3)
+            import line_cases
+            last = expected[-1].split()
+            want = line_cases.END[name]
+            if last[0] != 'T' or (int(last[2], 16), int(last[3], 16)) != want:
+                raise AssertionError(f'{name}: golden trace ends {expected[-1]}, expected cause/tval {want}')
         if name == 'compiled_firmware':
             if 'W 0000000000003000 0000000000000024 ff' not in expected:
                 raise AssertionError('Compiled firmware did not produce the known sum 36')
@@ -1262,7 +1279,7 @@ def main():
                     raise AssertionError(f'{name}: expected {field} > 0, simulator said {output.strip()}')
             records.append({'case':name,'max_wait_cycles':stalls,'events':len(actual),'result':'PASS','simulator_summary':output.strip()})
     if args.shard or args.merge_shards:
-        config = {'core': args.core, 'sim': sim.name, 'fpu': args.fpu, 'n_miss': args.n_miss, 'ld_lat': args.ld_lat,
+        config = {'core': args.core, 'sim': sim.name, 'fpu': args.fpu, 'n_miss': args.n_miss, 'dline': args.dline, 'ld_lat': args.ld_lat,
                   'l0': args.l0, 'l0_lat': args.l0_lat, 'icache_beats': args.icache_beats, 'dcache_beats': args.dcache_beats,
                   'sha256': {p.name: hashlib.sha256(p.read_bytes()).hexdigest() for p in
                              (core_src, ROOT / 'sim/cpu/tb_core.sv', ROOT / 'sim/cpu/test_cpu.py', ROOT / 'sim/cpu/reference.py')}}
@@ -1280,6 +1297,32 @@ def main():
             iss_fp = ({'status': 'PASS', 'runs': sum(g['runs'] for g in got), 'configs': got[0]['configs'],
                        'compiler': got[0]['compiler']} if all(g and g['status'] == 'PASS' for g in got) else
                       {'status': 'SKIPPED', 'reason': 'not run in every shard'})
+    if args.dline > 8 and not args.merge_shards:
+        # (not in --shard runs, which return earlier: run it unsharded)
+        # A one-shot error on entry 0's critical beat after a store wrote that beat is not the load's fault: it
+        # reads the beat again (Codex review of line step 1, item 1). Fixed timing (stall 0, split latency 80),
+        # so the store retires while the read is out; tb_core +fault_kind=5 gives the error once.
+        import line_cases
+        name = 'line_fault_once_after_store'
+        image = image_for(line_cases.fault_once_program())
+        expected, covered = execute(image, 0, MASK, fp=args.fpu)
+        hexfile = OUT / (name + '.hex')
+        hexfile.write_text(''.join(f'{b:02x}\n' for b in image), encoding='ascii')
+        trace = OUT / (name + '-stall0-lat80.trace')
+        output = command([*executable, f'+image={hexfile}', f'+trace={trace}', '+stall=0', '+seed=1', '+fault_kind=5',
+                          f'+fault_addr={line_cases.FAULT_ONCE_ADDR:x}', '+split_lat=80'])
+        # the error beat was answered and the beat read again (Codex re-review, item 3)
+        got = dict(re.findall(r'(fault_once_[a-z]+)=([0-9]+)', output))
+        if got.get('fault_once_fired') != '1' or got.get('fault_once_answered') != '1' or int(got.get('fault_once_reads', 0)) < 2:
+            raise AssertionError(f'{name}: the one-shot read fault did not fire, answer and read again: {output}')
+        actual = trace.read_text().splitlines()
+        if actual != expected:
+            for index in range(max(len(actual), len(expected))):
+                a = actual[index] if index < len(actual) else '<missing>'
+                e = expected[index] if index < len(expected) else '<missing>'
+                if a != e: raise AssertionError(f'{name} event {index}:\nactual {a}\nexpect {e}')
+        records.append({'case': name, 'max_wait_cycles': 0, 'events': len(actual), 'result': 'PASS',
+                        'simulator_summary': output.strip()})
     # Wake-on-fill (middle hand-off 10): with N_MISS 4 the 20 independent misses of
     # wake_many_misses overlap instead of replaying; a core without the wakeup takes 103
     # clocks at stall 0 (default caches), with it 76.
@@ -1319,7 +1362,7 @@ def main():
         for outcome in ('taken','not_taken'):
             if branch_name+':'+outcome not in coverage: raise AssertionError('Missing branch outcome')
     report={'status':'PASS','cases':len(workloads),'runs':len(records),'iss_fp_check':iss_fp,'instruction_names_covered':len(required),
-            'core':args.core,'fpu':args.fpu,'vector':args.vector,'vlen':args.vlen if args.vector else None,'ld_lat':args.ld_lat or 1,'l0_n':args.l0 or 0,'l0_lat':args.l0_lat if args.l0 else None,'core_source':str(args.core_source) if args.core_source else CORES[args.core],
+            'core':args.core,'fpu':args.fpu,'dline':args.dline,'dline_scope':'tb_core only (SoC smoke and reset tests: 8-byte lines, N_MISS 1)','vector':args.vector,'vlen':args.vlen if args.vector else None,'ld_lat':args.ld_lat or 1,'l0_n':args.l0 or 0,'l0_lat':args.l0_lat if args.l0 else None,'core_source':str(args.core_source) if args.core_source else CORES[args.core],
             'icache_beats':args.icache_beats or 'tb_core default (512)','dcache_beats':args.dcache_beats or 'tb_core default (512)',
             'reset_test':reset_result,'bram_soc_tests':soc_results,
             'coverage':sorted(coverage),'validation_scope':'local directed/random differential simulation; no official ISA certification or synthesis',

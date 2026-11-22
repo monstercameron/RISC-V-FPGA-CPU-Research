@@ -84,10 +84,16 @@ module rv64_bram_soc #(
     reg [3:0] sp_tag [0:SP_N-1];
     reg [63:0] sp_addr [0:SP_N-1];
     reg [31:0] sp_cnt [0:SP_N-1];
+    reg [2:0] sp_left [0:SP_N-1];     // line reads (mem_len > 0): beats still to answer after this one
+    reg [2:0] sp_lm [0:SP_N-1];       // beats - 1 of the line (its wrap mask)
     reg rsp_valid, rsp_error;
     reg [3:0] rsp_tag;
     reg [63:0] rsp_data;
     wire [3:0] tag;
+    wire [2:0] len;
+`ifndef RV64_OOO_DLINE
+    assign len = 3'd0;                 // a core without line reads has no mem_len
+`endif
     integer sp_k, sp_free, sp_pick;
     reg [63:0] sp_seq [0:SP_N-1];     // acceptance order: the oldest due read is answered first
     reg [63:0] sp_next;
@@ -204,6 +210,8 @@ module rv64_bram_soc #(
                 end else if (!outside_ram) mem_start(l2_lat_v);
                 sp_v[sp_free] = 1; sp_tag[sp_free] = tag; sp_addr[sp_free] = addr; sp_seq[sp_free] = sp_next; sp_next = sp_next + 1;
                 sp_cnt[sp_free] = outside_ram ? MEM_LAT : l2_lat_v;
+                sp_left[sp_free] = len; sp_lm[sp_free] = len;
+                if (L2_KIB != 0 && (len + 1) * 8 > L2_LINE) $fatal(1, "a line read longer than L2_LINE");
             end
             sp_pick = -1;
             for (sp_k = 0; sp_k < SP_N; sp_k = sp_k + 1)
@@ -214,6 +222,12 @@ module rv64_bram_soc #(
                     rsp_valid<=1; rsp_tag<=sp_tag[sp_k];
                     rsp_error<=sp_addr[sp_k]>=RAM_WORDS*64'd8;
                     rsp_data<=sp_addr[sp_k]>=RAM_WORDS*64'd8 ? 64'b0 : ram[sp_addr[sp_k][INDEX_BITS+2:3]];
+                    if (sp_left[sp_k] != 0) begin
+                        // the next beat of the line, wrapping, in the next clock
+                        sp_v[sp_k] = 1; sp_left[sp_k] = sp_left[sp_k] - 3'd1; sp_cnt[sp_k] = 1;
+                        sp_addr[sp_k] = (sp_addr[sp_k] & ~({58'b0, sp_lm[sp_k], 3'b000})) |
+                                        ({58'b0, (sp_addr[sp_k][5:3] + 3'd1) & sp_lm[sp_k], 3'b000});
+                    end
                 end else if (sp_cnt[sp_k] > 1) sp_cnt[sp_k] = sp_cnt[sp_k] - 1;
             end
             if (L2_KIB != 0 && write_request && !outside_ram) begin
@@ -255,7 +269,11 @@ module rv64_bram_soc #(
         ,.rt_valid(),.rt_pc(),.rt_insn(),.rt_rd(),.rt_data(),.rt_next(),
         .mem_addr2(addr2),.mem_wdata2(wdata2),.mem_wstrb2(wstrb2),.mem_error2(error2),
         .mem_xaddr(xaddr),.mem_xwdata(xwdata),.mem_xwstrb(xwstrb),.mem_xerror(xerror),
-        .mem_tag(tag),.rsp_valid(rsp_valid),.rsp_tag(rsp_tag),.rsp_data(rsp_data),.rsp_error(rsp_error)
+        .mem_tag(tag),
+`ifdef RV64_OOO_DLINE
+        .mem_len(len),
+`endif
+        .rsp_valid(rsp_valid),.rsp_tag(rsp_tag),.rsp_data(rsp_data),.rsp_error(rsp_error)
 `endif
     );
 endmodule

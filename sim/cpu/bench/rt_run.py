@@ -369,7 +369,7 @@ def run(args, root, out, build, snap, rtl, core_file, command, sha, sim, caches)
                      'export_args': export, 'data_dir': rt['data_dir']},
         'functional_model': {'name': 'rv_iss.c', 'source_sha256': sha(root / ISS_SOURCE), 'compiler': iss_compiler,
                              'seconds': round(functional_seconds, 2), 'mips': summary['mips']},
-        'mode': mode, 'mode_default': mode_default, 'fpu': fp,
+        'mode': mode, 'mode_default': mode_default, 'fpu': fp, 'dline': getattr(args, 'dline', 8),
         'core_defines': list(getattr(args, 'ooo_defines', [])),
         'pieces': {'piece_instructions': piece, 'warmup_instructions': warmup, 'per_phase': per_phase,
                    'differential_every': None if args.no_differential else args.differential_every,
