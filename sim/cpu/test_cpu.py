@@ -1094,6 +1094,44 @@ def iss_fp_check(workloads):
     return {'status': 'PASS', 'runs': runs, 'configs': [' '.join(c) for c in configs], 'compiler': cc}
 
 
+def shard_of(parser, text):
+    try:
+        k, n = (int(x) for x in text.split('/'))
+    except ValueError:
+        parser.error('--shard takes K/N, for example 0/4')
+    if not 0 <= k < n:
+        parser.error('--shard K/N needs 0 <= K < N')
+    return k, n
+
+
+def shard_select(workloads, k, n, fp):
+    """Shard k of n: the programs are dealt out by their length in the golden model, longest first, each to
+    the lightest shard, so the few long programs do not land in one shard (they did with every N-th program)."""
+    cost = [len(execute(image, 3 if kind == 4 else kind, address, fp=fp)[0]) for _, image, kind, address in workloads]
+    load, owner = [0] * n, {}
+    for i in sorted(range(len(workloads)), key=lambda i: (-cost[i], i)):
+        owner[i] = min(range(n), key=lambda j: (load[j], j))
+        load[owner[i]] += cost[i] + 1
+    return [w for i, w in enumerate(workloads) if owner[i] == k]
+
+
+def merge_shards(folders, config, names):
+    """Records and coverage of all N shards of one configuration (--merge-shards)."""
+    shards = [json.loads((Path(f) / 'shard.json').read_bytes()) for f in folders]
+    total = {s['of'] for s in shards}
+    if len(total) != 1 or sorted(s['index'] for s in shards) != list(range(next(iter(total)))):
+        raise AssertionError(f'--merge-shards needs shards 0..N-1 of one N, got {[(s["index"], s["of"]) for s in shards]}')
+    for s in shards:
+        if s['config'] != config:
+            raise AssertionError(f'shard {s["index"]} was run with another configuration: {s["config"]} != {config}')
+    if sorted(c for s in shards for c in s['cases']) != sorted(names):
+        raise AssertionError('the shards do not cover the program list exactly once')
+    records = [r for s in shards for r in s['records']]
+    if not records:
+        raise AssertionError('the shards hold no runs')
+    return records, set().union(*(s['coverage'] for s in shards)), list(names)
+
+
 def main():
     global OUT
     parser = argparse.ArgumentParser(description=__doc__)
@@ -1113,6 +1151,12 @@ def main():
                         help='ooo core: build with load-to-use latency N (define RV64_OOO_LD_LAT; default 1)')
     parser.add_argument('--l0', type=int, help='ooo core with --ld-lat >= 3: an L0 beat buffer of N beats (RV64_OOO_L0_N)')
     parser.add_argument('--l0-lat', type=int, default=2, help='load-to-use latency of an L0 hit (RV64_OOO_L0_LAT, default 2)')
+    parser.add_argument('--shard', help='K/N: run only shard K of N (programs balanced by golden-model length) and save it to shard.json in '
+                        '--out-dir, without the whole-suite checks (coverage, timing); sim/cpu/suite.py uses this '
+                        'to split long Icarus runs into 5-minute steps')
+    parser.add_argument('--merge-shards', type=Path, nargs='+', metavar='DIR',
+                        help='Run no programs: check and report the union of the shard.json files of all N '
+                             '--shard runs of this configuration (their --out-dir folders)')
     simulator.add_argument(parser)
     args = parser.parse_args()
     if args.out_dir: OUT = args.out_dir.resolve()
@@ -1158,6 +1202,12 @@ def main():
         workloads += [(name,fp_cases.image_for(words),kind,addr) for name,words,kind,addr in fp_cases.fp_cases()]
         workloads += [(name,image_for(words),kind,addr) for name,words,kind,addr in fp_ooo_cases.cases()]
         workloads += [(name,image_for(words),kind,addr) for name,words,kind,addr in fp_timing_cases.cases(globals())]
+    names = [w[0] for w in workloads]
+    if args.shard or args.merge_shards:
+        if args.image or (args.shard and args.merge_shards):
+            parser.error('--shard and --merge-shards exclude each other and --image')
+        shard = shard_of(parser, args.shard) if args.shard else None
+        workloads = shard_select(workloads, *shard, args.fpu) if shard else []
     if args.image:
         data = args.image.read_bytes()
         if len(data)>16384: raise ValueError('Firmware exceeds laboratory RAM')
@@ -1203,6 +1253,25 @@ def main():
                 if not used or int(used[1]) == 0:
                     raise AssertionError(f'{name}: expected {field} > 0, simulator said {output.strip()}')
             records.append({'case':name,'max_wait_cycles':stalls,'events':len(actual),'result':'PASS','simulator_summary':output.strip()})
+    if args.shard or args.merge_shards:
+        config = {'core': args.core, 'sim': sim.name, 'fpu': args.fpu, 'n_miss': args.n_miss, 'ld_lat': args.ld_lat,
+                  'l0': args.l0, 'l0_lat': args.l0_lat, 'icache_beats': args.icache_beats, 'dcache_beats': args.dcache_beats,
+                  'sha256': {p.name: hashlib.sha256(p.read_bytes()).hexdigest() for p in
+                             (core_src, ROOT / 'sim/cpu/tb_core.sv', ROOT / 'sim/cpu/test_cpu.py', ROOT / 'sim/cpu/reference.py')}}
+    if args.shard:
+        (OUT / 'shard.json').write_text(json.dumps({'index': shard[0], 'of': shard[1], 'config': config,
+            'cases': [w[0] for w in workloads], 'coverage': sorted(coverage), 'records': records, 'iss_fp': iss_fp})
+            + '\n', encoding='utf-8')
+        print(f'PASS shard {shard[0]}/{shard[1]} ({args.core} core, {sim.label}): {len(workloads)} of {len(names)} programs, '
+              f'{len(records)} runs; whole-suite checks run with --merge-shards')
+        return
+    if args.merge_shards:
+        records, coverage, workloads = merge_shards(args.merge_shards, config, names)
+        if args.fpu:   # the rv_iss F/D check ran in the shards (this step runs no programs)
+            got = [json.loads((Path(f) / 'shard.json').read_bytes()).get('iss_fp') for f in args.merge_shards]
+            iss_fp = ({'status': 'PASS', 'runs': sum(g['runs'] for g in got), 'configs': got[0]['configs'],
+                       'compiler': got[0]['compiler']} if all(g and g['status'] == 'PASS' for g in got) else
+                      {'status': 'SKIPPED', 'reason': 'not run in every shard'})
     # Wake-on-fill (middle hand-off 10): with N_MISS 4 the 20 independent misses of
     # wake_many_misses overlap instead of replaying; a core without the wakeup takes 103
     # clocks at stall 0 (default caches), with it 76.

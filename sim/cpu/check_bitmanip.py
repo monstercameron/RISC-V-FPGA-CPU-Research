@@ -39,7 +39,8 @@ def build(isa, folder):
     folder.mkdir(parents=True, exist_ok=True)
     mailbox = RAM - MAILBOX_BYTES
     (folder / 'link.ld').write_text(LINKER_SCRIPT.format(ram_bytes=RAM, mailbox=mailbox,
-                                                         program_limit=mailbox - STACK_RESERVE), encoding='ascii')
+                                                         program_limit=mailbox - STACK_RESERVE, extra=''),
+                                    encoding='ascii')
     elf = folder / 'check.elf'
     run(['clang', '--target=riscv64-unknown-elf', f'-march={isa}', '-mabi=lp64', '-mcmodel=medany',
          '-msmall-data-limit=0', '-mno-relax', '-O2', '-ffreestanding', '-fno-builtin', '-fno-stack-protector',

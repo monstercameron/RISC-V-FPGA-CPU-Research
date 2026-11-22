@@ -1,0 +1,75 @@
+{
+  "tool": "sim/cpu/suite.py baseline",
+  "description": "cpu-v0.17.2 release-patch identity numbers, transcribed from the coordinator's vcheck.sh run (build/cpu/ooo-debug/coord/c172/vcheck.log, 2026-11-22 02:07 to 02:23, Verilator 5.020, benchmark images built with clang 23.1.5 -O2). Use: suite.py release-patch --expect <this file>. Valid for test_cpu.py and benchmark sources as of cpu-v0.17.2; a change to either changes them.",
+  "core": "rtl/cpu/rv64_ooo.sv",
+  "core_sha256": "fa7dc8682409d4de0efe6f524a48464ed58baccdd5d38d8734f853a2357f1668",
+  "version": "0.17.2",
+  "steps": {
+    "isa-ooo": {
+      "metrics": {
+        "programs": 131,
+        "runs": 393,
+        "instruction_names": 106
+      }
+    },
+    "isa-ooo-2beat": {
+      "metrics": {
+        "programs": 131,
+        "runs": 393,
+        "instruction_names": 106
+      }
+    },
+    "lzma-64k": {
+      "metrics": {
+        "compress_kernel.clocks": 384788,
+        "compress_kernel.instructions": 3065962,
+        "decompress_kernel.clocks": 133243,
+        "decompress_kernel.instructions": 429119
+      }
+    },
+    "lzma-4k": {
+      "metrics": {
+        "compress_kernel.clocks": 974219,
+        "compress_kernel.instructions": 3065962,
+        "decompress_kernel.clocks": 153238,
+        "decompress_kernel.instructions": 429119
+      }
+    },
+    "dhry-ref": {
+      "metrics": {
+        "timed_cycles": 15706,
+        "timed_instructions": 275030,
+        "dhrystone_runs": 500
+      }
+    },
+    "dhry-fast": {
+      "metrics": {
+        "timed_cycles": 10127,
+        "timed_instructions": 223030,
+        "dhrystone_runs": 500
+      }
+    },
+    "lzma-64k-fpu": {
+      "metrics": {
+        "compress_kernel.clocks": 384788,
+        "compress_kernel.instructions": 3065962,
+        "decompress_kernel.clocks": 133243,
+        "decompress_kernel.instructions": 429119
+      }
+    },
+    "dhry-ref-fpu": {
+      "metrics": {
+        "timed_cycles": 15706,
+        "timed_instructions": 275030,
+        "dhrystone_runs": 500
+      }
+    },
+    "dhry-fast-fpu": {
+      "metrics": {
+        "timed_cycles": 10127,
+        "timed_instructions": 223030,
+        "dhrystone_runs": 500
+      }
+    }
+  }
+}

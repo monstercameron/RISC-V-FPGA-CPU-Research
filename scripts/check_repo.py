@@ -68,6 +68,7 @@ REQUIRED = MAINTAINED_DOCS + (
     'sim/cpu/bench/mm/mm_kernels.c', 'sim/cpu/bench/mm/mm_runtime.c', 'sim/cpu/bench/mm/mm_native.c',
     'sim/cpu/bench/mm/mm_gen.c', 'sim/cpu/bench/mm/mm_export.sh', 'sim/cpu/bench/mm/mm_laptop.c',
     'sim/cpu/bench/mm/mm_laptop.sh', 'sim/cpu/bench/mm/mm_laptop_summary.py',
+    'sim/cpu/suite.py', 'sim/cpu/suite_manifest.py', 'sim/cpu/baselines/0.17.2-release-patch.json',
 )
 PLANNING_INPUTS = (
     'memory_model.py', 'plan_audit_checks.py', 'refinement_checks.py', 'abi_v1.py',

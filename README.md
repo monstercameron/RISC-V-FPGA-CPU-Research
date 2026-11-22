@@ -28,6 +28,20 @@ bash sim/cpu/run.sh
 
 The default suite downloads nothing and needs no FPGA or cross compiler. It runs 108 differential simulations plus reset and synchronous-RAM checks. The expanded 111-run record also includes LLVM-compiled firmware; instructions are in the CPU quick start. Generated traces and reports go under `build/cpu/`.
 
+### Test and benchmark suites (one front end)
+
+`sim/cpu/suite.py` runs every test and benchmark entry point as named suites, from Windows or WSL, from any worktree, with each invocation under the 5-minute limit. It wraps `test_cpu.py`, `bench/run_bench.py` and the other checkers without changing their command lines; `sim/cpu/suite_manifest.py` lists the suites and is where new ones go.
+
+```sh
+python -B sim/cpu/suite.py --list                                   # suites, presets, steps
+python -B sim/cpu/suite.py release-patch --core-source cand.sv --dry-run    # exact commands
+python -B sim/cpu/suite.py release-patch --core-source cand.sv     --expect sim/cpu/baselines/0.17.2-release-patch.json --devlog-row   # same counts and clocks as 0.17.2?
+python -B sim/cpu/suite.py release-minor --jobs 3                   # plus the full Icarus run (sharded)
+python -B sim/cpu/suite.py isa fpu --cache-sizes default,2,64 --only 'fpu-*'
+```
+
+Suites: `unit`, `isa`, `fpu`, `vector`, `bitmanip`, `bench-smoke`, `bench`, `icarus-full`, `soc`, `negative`, `repo`; presets `release-patch` (the coordinator's `vcheck.sh`) and `release-minor` (plus `full_check.sh`). A step passes only with exit 0 and a positive pass count or result line; the summary table, `results.json` and exit code (0 pass, 1 fail, 2 usage, 3 nothing ran) report it. `--help` lists every option.
+
 To build and run the Dhrystone benchmark with the installed LLVM, see [the Dhrystone page](cpu/dhrystone.md):
 
 ```powershell
