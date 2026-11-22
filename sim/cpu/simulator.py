@@ -42,7 +42,11 @@ ROOT = Path(__file__).resolve().parents[2]
 CHOICES = ('icarus', 'verilator')
 STEP_TIMEOUT = 300
 VENDORED = ROOT / 'build/third-party/verilator/root'
-CACHE = ROOT / 'build/sim-cache/verilator'
+# Under WSL with the repository on a Windows drive (/mnt/...), generated C++ written there was
+# found three times on 2026-11-21 with NUL bytes in it (failed compiles that passed on rerun), so
+# builds then go to the Linux file system. RV64_SIM_CACHE overrides the location.
+CACHE = Path(os.environ['RV64_SIM_CACHE']) if os.environ.get('RV64_SIM_CACHE') else (
+    Path.home() / '.cache/rv64-sim/verilator' if str(ROOT).startswith('/mnt/') else ROOT / 'build/sim-cache/verilator')
 WARNINGS = ['-Wno-fatal', '-Wno-lint', '-Wno-style', '-Wno-TIMESCALEMOD']
 OPT = ['OPT_FAST=-O2', 'OPT_SLOW=-O1', 'OPT_GLOBAL=-O2']
 
@@ -167,17 +171,24 @@ class Verilator:
                 pass
         work = Path(tempfile.mkdtemp(prefix=f'.{top}-', dir=CACHE))
         try:
-            _run([self.exe, '--cc', '--exe', '--main', '--timing', *options, '-Mdir', work, *sources], timeout, self.env)
             jobs = max(1, min(4, os.cpu_count() or 1))
             make = [self.make, '-C', work, '-f', f'V{top}.mk', *self._make_vars(), *OPT, f'V{top}']
-            try:
-                _run([*make, f'-j{jobs}'], timeout, self.env)
-            except RuntimeError as failure:
-                # clang++ 18 crashed once here while another Verilator build was running
-                # (2026-11-21) and passed on the next try; make resumes, so retry once, serially.
-                print(f'Verilator build of {top}: make failed, retrying with -j1\n{str(failure)[-2000:]}',
-                      file=sys.stderr)
-                _run([*make, '-j1'], timeout, self.env)
+            for attempt in (1, 2):
+                try:
+                    _run([self.exe, '--cc', '--exe', '--main', '--timing', *options, '-Mdir', work, *sources],
+                         timeout, self.env)
+                    _run([*make, f'-j{jobs}' if attempt == 1 else '-j1'], timeout, self.env)
+                    break
+                except RuntimeError as failure:
+                    # Seen on 2026-11-21: clang++ crashes and generated C++ with NUL bytes in it
+                    # (files written on /mnt/c), each passing on a rerun. Regenerate from scratch
+                    # once, serially; a second failure is real.
+                    if attempt == 2:
+                        raise
+                    print(f'Verilator build of {top} failed; regenerating and retrying once with -j1\n'
+                          f'{str(failure)[-2000:]}', file=sys.stderr)
+                    shutil.rmtree(work, ignore_errors=True)
+                    work.mkdir(parents=True)
             (work / 'build.json').write_text(json.dumps({
                 'top': top, 'key_sha256': key, 'options': options, 'sources': [str(s) for s in sources],
                 'verilator': self.version(), 'cxx': self.cxx_version()}, indent=2) + '\n', encoding='utf-8')
