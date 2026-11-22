@@ -34,6 +34,7 @@ module tb_bench #(parameter integer RAM_WORDS = 8192, parameter integer ICACHE_B
     integer preload_fd;
     reg [3:0] pl_v;
     reg [63:0] pl_tag,pl_use;
+    reg pl_done;
 `endif
     longint cycles=0,retirements=0,max_cycles=50000000;
     longint start_cycle=-1,start_retired=-1,stop_cycle=-1,stop_retired=-1;
@@ -69,14 +70,20 @@ module tb_bench #(parameter integer RAM_WORDS = 8192, parameter integer ICACHE_B
         if ($value$plusargs("l2_preload=%s",preload_path)) begin
             preload_fd=$fopen(preload_path,"r");
             if (!preload_fd) $fatal(1,"cannot open +l2_preload file");
-            for (i=0;;i=i+1) begin
+            // A bounded loop with a done flag (upstream Icarus 12 rejects a for without a condition and break).
+            pl_done=0;
+            for (i=0;!pl_done;i=i+1) begin
+                if (i>L2_KIB*1024/L2_LINE) $fatal(1,"+l2_preload file has more entries than the L2");
                 if ($fscanf(preload_fd,"%h %h %h\n",pl_v,pl_tag,pl_use)!=3) $fatal(1,"short +l2_preload file");
-                if (pl_v==2) begin dut.l2_clock=pl_tag; break; end
-                dut.l2_valid[i]=pl_v[0]; dut.l2_tag[i]=pl_tag; dut.l2_use[i]=pl_use;
+                if (pl_v==2) begin dut.l2_clock=pl_tag; pl_done=1; end
+                else begin
+                    dut.l2_valid[i]=pl_v[0]; dut.l2_tag[i]=pl_tag; dut.l2_use[i]=pl_use;
 `ifdef L2_PRELOAD_READY
-                dut.l2_ready[i]=0;   // SoCs that time line fills (memory hand-off 2)
+                    dut.l2_ready[i]=0;   // SoCs that time line fills (memory hand-off 2)
 `endif
+                end
             end
+            i=i-1;   // the entries read (the loop counted the sentinel)
             $fclose(preload_fd);
             $display("L2PRELOAD entries=%0d",i);
         end
