@@ -24,6 +24,7 @@ MAINTAINED_DOCS = (
     'llm-rva23-mapping.md', 'isa/README.md',
     'cpu/README.md', 'cpu/architecture.md', 'cpu/c-demo.md', 'cpu/visualizer.md', 'cpu/addition.md', 'cpu/programs.md', 'cpu/inputs.md',
     'cpu/review-rubric.md', 'TODO.md', 'cpu/dhrystone.md', 'DEVLOG.md', 'cpu/lzma-benchmark.md', 'cpu/raytracing-benchmark-targets.md',
+    'cpu/js-benchmark-targets.md',
 )
 REQUIRED = MAINTAINED_DOCS + (
     'LICENSE', '.gitignore', '.gitattributes', '.editorconfig',
@@ -59,6 +60,9 @@ REQUIRED = MAINTAINED_DOCS + (
     'sim/cpu/bench/bench_checkpoint.py', 'sim/cpu/bench/include-lzma/lzma_bench.h',
     'sim/cpu/bench/include-lzma/string.h', 'sim/cpu/bench/include-lzma/errno.h',
     'sim/cpu/bench/vendor/lzma/SOURCE.txt',
+    'sim/cpu/bench/js_run.py', 'sim/cpu/bench/js/kernels.js', 'sim/cpu/bench/js/js_bench.c',
+    'sim/cpu/bench/js/libc.c', 'sim/cpu/bench/js/gen_src.py', 'sim/cpu/bench/js/js_native.sh',
+    'sim/cpu/bench/js/js_laptop.py', 'sim/cpu/bench/js/fetch_quickjs.sh', 'licenses/QUICKJS-NG-LICENSE.txt',
 )
 PLANNING_INPUTS = (
     'memory_model.py', 'plan_audit_checks.py', 'refinement_checks.py', 'abi_v1.py',

@@ -10,13 +10,22 @@ LZMA benchmark kernel (lzma_bench.c with the LZMA SDK in vendor/lzma/), and rt,
 the ray-tracing benchmark (RT-T BVH traversal and RT-P smallpt; rt_bench.c).
 The rt build takes its scene, BVH and rays from an rt_export.sh output directory
 (--rt-data); with rv64imb it links the compiler-rt soft-float builtins in
-vendor/compiler-rt/, and rv64imfd_zba_zbb_zbs (lp64d) is for a future FP core. The
+vendor/compiler-rt/, and rv64imfd_zba_zbb_zbs (lp64d) is for the F/D core (0.17.0). The
 lzma build needs the M extension; --lzma-dict-log sets its dictionary (data =
 dictionary + 1/64, so 22 is the 7z b -md22 shape, 4 MiB + 64 KiB) and the RAM
 defaults to the smallest power of two that holds the estimated arena (1 MiB for
 the 4 KiB dictionary, 64 MiB for 4 MiB). Images above 4 MiB of RAM get no hex
 files: the runners load bench.bin (tb_core +image_bin) and bench-words-be.bin
 (tb_bench +image_bin) instead.
+
+js is the JavaScript benchmark: QuickJS-ng v0.18.0 (MIT, fetched by js/fetch_quickjs.sh into the
+ignored build/third-party/quickjs-ng and checked file by file against QUICKJS_SHA256), the
+original shim libc, harness and kernels in js/, and the script kernels.js embedded as js_src.h.
+It takes its scale and expected output from a js_native.sh reference directory (--js-ref); the
+generated script must be byte-identical to the one the native build ran. 32 MiB of RAM: the
+shim heap runs from .bss to __heap_end, 1 MiB below the mailbox, and the stack takes that MiB.
+rv64imb links the compiler-rt soft-float builtins, as rt does; rv64imfd_zba_zbb_zbs needs the
+F/D core (run_bench.py --core ooo --fpu).
 SPDX-License-Identifier: MIT
 """
 from pathlib import Path
@@ -26,6 +35,7 @@ import json
 import re
 import shutil
 import subprocess
+import sys
 import time
 
 ROOT = Path(__file__).resolve().parents[3]
@@ -132,6 +142,38 @@ RT_VENDOR_SHA256 = {
     'subdf3.c': '201404b61436f1f617221ac20aeee67e41349baaf13ef838f0f5969e3b8b86ab',
     'subsf3.c': '5a908db14744b02835c6ccc254772d88ac229951830007cfed0a18d1e1d94db5',
 }
+# JavaScript benchmark (js): QuickJS-ng v0.18.0, github.com/quickjs-ng/quickjs tag v0.18.0, commit
+# d7215b0ad3fc2c562e8317fd9bca058fd4863804, MIT; archive SHA-256
+# 28bcd89aa3683fd2a946537e5ce3f11cc46b5cbf3383c7561aaef3df5ff9f1dd (js/fetch_quickjs.sh). Not vendored:
+# every file the build compiles or includes is locked here, and a mismatch stops the build.
+QUICKJS_DIR = ROOT / 'build/third-party/quickjs-ng'
+QUICKJS_SHA256 = {
+    'LICENSE': '96f73f9d2a16c21a36b418f06073be26e7d6d5e7c1bc99756b21a4f2c74ef171',
+    'builtin-array-fromasync.h': 'd313ac1e47eaa08f39b2cb0929a512d88e492906c400f650e141d00b79faa905',
+    'builtin-iterator-zip-keyed.h': '5b015a8063088987f0fb19357c9da5ec44a7197493fdbb23740fde8f470049a4',
+    'builtin-iterator-zip.h': '54834b615ddc59541515a7aa6d2c66fbfbf3213608f52e463d2469d63d395465',
+    'cutils.h': 'dffec8bea17f08108da5a91c1178804754698bbbb6202dc100268e78e8c5b770',
+    'dtoa.c': 'a8d2cf2d04db406e0c16acdd95ab0e709d309902865722f41dac07a1ba5676af',
+    'dtoa.h': '1c4a4540c0038632c8a4c225472fbc21bd476fb35c4da4a857a11965b58231b9',
+    'libregexp-opcode.h': '2a98d646089f3a72f25480116297c5fdb5b28fd9f815447273951f4ade4a115e',
+    'libregexp.c': 'af13e996abb1767fe0cdfda123c45b811d53688d403a2ac47142e97bf79f1fae',
+    'libregexp.h': '53ff95a038f7001b752c455d195d998e2955f0ae4ed62a002c13eca798db3ceb',
+    'libunicode-table.h': '5840a921ac11664b505ee37b1219f518fff2a04972fe848b4bdf1e85c5a0bd83',
+    'libunicode.c': 'c4724e77ec5f122373d2635b6d481cfb5d96024a38453a54a0830007c4b5f3c9',
+    'libunicode.h': 'ad13f66aaea3fab1616e84b9c048f2a315e1bdbab628b966617a7a3e55bcba2b',
+    'list.h': 'cb6e24e8ee54bccdd66234fe54cd702d1160b9841db2b9b9adeb5003afe301d5',
+    'quickjs-atom.h': '8045b870825a43ecdb50692aac7ad21b43139b288df466ca5f7b780bde4ac13f',
+    'quickjs-opcode.h': '0054b0c45fd091afa308c3fb93b5862e0b071235918d3d73e413d23fce388bbc',
+    'quickjs.c': '51b1d3919ffe812d0e01793f85d347bcea48c924c11262c5c5f00df1e4759d74',
+    'quickjs.h': '6d3879c856551653a1c64fabe52d6d07dc84e97bac3df45848df626702fc30de',
+}
+JS_DIR = BENCH / 'js'
+JS_ISAS = ISAS[2:]
+JS_REF_DEFAULT = 'build/cpu/bench/js-ref/s1'  # js_native.sh 1
+JS_STACK_BYTES = 1 << 20  # stack below the mailbox; the harness caps QuickJS's own stack at 768 KiB
+JS_RAM_KIB = 32768
+# QuickJS's own configuration on these targets: no threads or atomics (-D__DJGPP), no debug dumps.
+JS_DEFINES = ['-D__DJGPP', '-DNDEBUG', '-D_GNU_SOURCE']
 RT_DATA_DEFAULT = 'build/cpu/bench/rt-data/g16s2i32-pt16x12x4'  # rt_export.sh 16 2 32 16 12 4
 RT_STACK_SLACK = 64 << 10  # smallpt recursion below the reserved stack (free RAM above .bss)
 
@@ -183,6 +225,23 @@ BENCHMARKS = {
         'required': ('rt_bench_run', 'rt_intersect', 'rt_occluded', 'rt_smallpt', 'rt_nodes', 'rt_rays_s'),
         'headers': [BENCH / 'include-rt', RT_VENDOR],
     },
+    # QuickJS-ng from build/third-party/quickjs-ng (compiled unmodified, warnings off), the shim
+    # libc and the harness; js_src.h is generated in main().
+    'js': {
+        'sources': [
+            (QUICKJS_DIR / 'quickjs.c', 'vendor'),
+            (QUICKJS_DIR / 'libregexp.c', 'vendor'),
+            (QUICKJS_DIR / 'libunicode.c', 'vendor'),
+            (QUICKJS_DIR / 'dtoa.c', 'vendor'),
+            (JS_DIR / 'libc.c', 'port'),
+            (JS_DIR / 'js_bench.c', 'port'),
+        ],
+        'vendor_flags': ['-std=gnu11', '-Wno-everything'],
+        'include': [JS_DIR / 'include', QUICKJS_DIR],
+        'defines': JS_DEFINES,
+        'required': ('JS_NewRuntime2', 'JS_CallInternal', 'js_print', 'shim_heap_init', '__heap_end'),
+        'headers': [JS_DIR / 'include', JS_DIR / 'include/sys'],
+    },
 }
 
 LINKER_SCRIPT = """/* Generated by sim/cpu/bench/build_bench.py; RAM size {ram_bytes} bytes. */
@@ -202,7 +261,7 @@ SECTIONS {{
     __bss_end = .;
   }} > ram
   ASSERT(__bss_end <= {program_limit:#x}, "Benchmark leaves less than the reserved stack below the mailbox")
-}}
+}}{extra}
 """
 
 
@@ -216,6 +275,16 @@ def shown(argument):
     for root in (str(ROOT), ROOT.as_posix()):
         text = text.replace(root, '.')
     return text
+
+
+def check_quickjs():
+    """QuickJS-ng sources against their locked upstream identities."""
+    for name, digest in QUICKJS_SHA256.items():
+        path = QUICKJS_DIR / name
+        if not path.is_file():
+            raise SystemExit(f'{path} is missing: run sim/cpu/bench/js/fetch_quickjs.sh first')
+        if sha(path) != digest:
+            raise SystemExit(f'QuickJS-ng {name} differs from its recorded upstream identity')
 
 
 def tool(name):
@@ -243,6 +312,7 @@ def main():
                         help='lzma only: dictionary size 2^N bytes, N from 12 (the LZMA minimum) to 22 '
                              '(7z b -md22)')
     parser.add_argument('--rt-data', help=f'rt only: rt_export.sh output directory (default {RT_DATA_DEFAULT})')
+    parser.add_argument('--js-ref', help=f'js only: js_native.sh output directory (default {JS_REF_DEFAULT})')
     parser.add_argument('--runtime', choices=('reference', 'fast'), default='reference',
                         help='reference: byte-at-a-time strcpy/strcmp (compared across cores); '
                              'fast: word-at-a-time (a labelled, separate configuration)')
@@ -252,8 +322,24 @@ def main():
     args = parser.parse_args()
     lzma = args.benchmark == 'lzma'
     rt = args.benchmark == 'rt'
+    js = args.benchmark == 'js'
     if args.rt_data and not rt:
         parser.error('--rt-data applies to --benchmark rt only')
+    if args.js_ref and not js:
+        parser.error('--js-ref applies to --benchmark js only')
+    if js:
+        if args.isa is None:
+            args.isa = JS_ISAS[0]
+        if args.isa not in JS_ISAS:
+            parser.error('--benchmark js needs rv64imb (soft float) or rv64imfd_zba_zbb_zbs')
+        if args.runtime != 'reference':
+            parser.error('--runtime applies to dhrystone only')
+        js_ref = (ROOT / (args.js_ref or JS_REF_DEFAULT)).resolve()
+        for name in ('reference.json', 'expected.json'):
+            if not (js_ref / name).is_file():
+                parser.error(f'{js_ref / name} is missing: run sim/cpu/bench/js/js_native.sh first')
+        js_reference = json.loads((js_ref / 'reference.json').read_bytes())
+        args.ram_kib = args.ram_kib or JS_RAM_KIB
     if rt:
         if args.isa is None:
             args.isa = RT_ISAS[0]
@@ -274,8 +360,8 @@ def main():
             need = rt_data_bytes + (192 << 10) + 24 * rt_args['pt_w'] * rt_args['pt_h'] + RT_STACK_SLACK + \
                 STACK_RESERVE + MAILBOX_BYTES
             args.ram_kib = next(k for k in RAM_KIB if k >= 256 and k * 1024 >= need)
-    elif args.isa == ISAS[3]:
-        parser.error(f'{ISAS[3]} applies to --benchmark rt only')
+    elif args.isa == ISAS[3] and not js:
+        parser.error(f'{ISAS[3]} applies to --benchmark rt and js only')
     if args.ram_kib is None:
         args.ram_kib = 64
         if lzma and args.lzma_dict_log == 12:
@@ -300,6 +386,8 @@ def main():
         suffix = f'-d{args.lzma_dict_log}-{isa_label(args.isa)}'
     if rt:
         suffix = f'-{rt_dir.name}-{isa_label(args.isa)}'
+    if js:
+        suffix = f'-{js_ref.name}-{isa_label(args.isa)}'
     out = (ROOT / (args.out_dir or f'build/cpu/bench/{args.benchmark}{suffix}')).resolve()
     if not out.is_relative_to((ROOT / 'build').resolve()):
         parser.error('--out-dir must be inside the repository build/ directory')
@@ -314,6 +402,8 @@ def main():
         for name, digest in RT_VENDOR_SHA256.items():
             if sha(RT_VENDOR / name) != digest:
                 raise SystemExit(f'Vendored {name} differs from its recorded upstream identity')
+    if js:
+        check_quickjs()
     out.mkdir(parents=True, exist_ok=True)
 
     spec = dict(BENCHMARKS[args.benchmark])
@@ -321,12 +411,26 @@ def main():
         soft = abi_of(args.isa) == ABI
         spec['sources'] = spec['sources'] + [(rt_dir / 'rt_data.c', 'data')] + \
             ([(RT_VENDOR / name, 'vendor') for name in RT_SOFT_FLOAT] if soft else [])
+    if js:
+        soft = abi_of(args.isa) == ABI
+        spec['sources'] = spec['sources'] + ([(RT_VENDOR / name, 'vendor-rt') for name in RT_SOFT_FLOAT] if soft else [])
+        # The script, generated exactly as the native reference generated it.
+        sys.path.insert(0, str(JS_DIR))
+        import gen_src
+        js_text = gen_src.header((JS_DIR / 'kernels.js').read_text(encoding='utf-8'), js_reference['scale'],
+                                 js_reference.get('only'))
+        (out / 'js_src.h').write_bytes(js_text.encode('ascii'))
+        if sha(out / 'js_src.h') != js_reference['js_src_sha256']:
+            raise SystemExit('The generated js_src.h differs from the script the native reference ran '
+                             f'({js_ref}): rerun js_native.sh after changing kernels.js')
     ram_bytes = args.ram_kib * 1024
     mailbox = ram_bytes - MAILBOX_BYTES
-    program_limit = mailbox - STACK_RESERVE
+    stack_reserve = JS_STACK_BYTES if js else STACK_RESERVE
+    program_limit = mailbox - stack_reserve
+    extra = f'\n__heap_end = {program_limit:#x};\n' if js else ''
     linker = out / 'link.ld'
-    linker.write_text(LINKER_SCRIPT.format(ram_bytes=ram_bytes, mailbox=mailbox,
-                                           program_limit=program_limit), encoding='ascii', newline='\n')
+    linker.write_text(LINKER_SCRIPT.format(ram_bytes=ram_bytes, mailbox=mailbox, program_limit=program_limit,
+                                           extra=extra), encoding='ascii', newline='\n')
 
     common = [args.clang, '--target=riscv64-unknown-elf', f'-march={args.isa}', f'-mabi={abi_of(args.isa)}',
               '-mcmodel=medany', '-msmall-data-limit=0', '-mno-relax', f'-{args.opt}',
@@ -338,6 +442,9 @@ def main():
     if rt:
         common = common[:-4] + [x for d in spec['include'] for x in ('-I', d)] + spec['defines'] + \
             [f'-DRT_PT_W={rt_args["pt_w"]}', f'-DRT_PT_H={rt_args["pt_h"]}', f'-DRT_PT_SPP={rt_args["pt_spp"]}']
+    if js:  # hosted-style code generation (memcpy and friends inlined), as in the native reference
+        common = [x for x in common[:-4] if x not in ('-ffreestanding', '-fno-builtin')] + \
+            [x for d in spec['include'] for x in ('-I', d)] + ['-I', out] + spec['defines']
     port_flags = ['-std=c11', '-Wall', '-Wextra', '-Werror']
     started = time.perf_counter()
     commands, objects = [], []
@@ -348,6 +455,8 @@ def main():
     for source, kind in spec['sources']:
         obj = out / (source.stem + '.o')
         flags = spec['vendor_flags'] if kind == 'vendor' else port_flags
+        if kind == 'vendor-rt':  # compiler-rt in the js build, with rt's flags
+            flags = BENCHMARKS['rt']['vendor_flags']
         if kind == 'data':
             flags = ['-std=c11']
         elif source.suffix == '.cpp':  # smallpt_rt.cpp; smallpt's own dangling else is kept as written
@@ -406,6 +515,10 @@ def main():
     images = ('bench-bytes.hex', 'bench-words.hex') if hex_images else ()
 
     inputs = [source for source, _ in spec['sources']] + [BENCH / 'start.S', Path(__file__)]
+    if js:
+        inputs += [JS_DIR / 'kernels.js', JS_DIR / 'gen_src.py', js_ref / 'reference.json', js_ref / 'expected.json'] + \
+            [QUICKJS_DIR / name for name in QUICKJS_SHA256]
+        inputs = list(dict.fromkeys(inputs))
     if rt:
         inputs += [rt_dir / 'expected.json', rt_dir / 'export.json', rt_dir / 'tinybvh.json']
     inputs += sorted((BENCH / 'include').glob('*.h'))
@@ -424,9 +537,15 @@ def main():
                    'tinybvh': json.loads((rt_dir / 'tinybvh.json').read_bytes()),
                    'soft_float': abi_of(args.isa) == ABI,
                    'free_bytes_below_reserved_stack': program_limit - symbols['__bss_end']}} if rt else {}),
+        **({'js': {'reference_dir': js_ref.relative_to(ROOT).as_posix() if js_ref.is_relative_to(ROOT) else str(js_ref),
+                   'reference': js_reference, 'expected': json.loads((js_ref / 'expected.json').read_bytes()),
+                   'soft_float': abi_of(args.isa) == ABI, 'heap_bytes': program_limit - symbols['__bss_end'],
+                   'quickjs': {'version': '0.18.0', 'commit': 'd7215b0ad3fc2c562e8317fd9bca058fd4863804',
+                               'licence': 'MIT', 'archive_sha256':
+                               '28bcd89aa3683fd2a946537e5ce3f11cc46b5cbf3383c7561aaef3df5ff9f1dd'}}} if js else {}),
         'hex_images': hex_images,
         'ram_bytes': ram_bytes, 'ram_words': ram_bytes // 8,
-        'mailbox_address': mailbox, 'stack_top': mailbox, 'stack_reserve_bytes': STACK_RESERVE,
+        'mailbox_address': mailbox, 'stack_top': mailbox, 'stack_reserve_bytes': stack_reserve,
         'payload_bytes': len(payload),
         'bss_bytes': symbols['__bss_end'] - symbols['__bss_start'],
         'program_end': symbols['__bss_end'],

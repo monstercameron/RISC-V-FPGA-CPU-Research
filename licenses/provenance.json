@@ -56,6 +56,12 @@
       "source": "https://www.kevinbeason.com/smallpt/smallpt.tar.gz (smallpt/LICENSE.txt; archive SHA-256 af82ec5d57a7eb30e5f6fb6ed8b6fc2c36596324475b8646f8ce4d629ffd8e43)",
       "sha256": "353e22629f961fbe053f86a05dd5026c59fa8d3ca5bced37e51a885227145c4b",
       "retrieved": "2026-11-21"
+    },
+    {
+      "path": "licenses/QUICKJS-NG-LICENSE.txt",
+      "source": "https://github.com/quickjs-ng/quickjs/blob/d7215b0ad3fc2c562e8317fd9bca058fd4863804/LICENSE (tag v0.18.0; from the tag archive, SHA-256 28bcd89aa3683fd2a946537e5ce3f11cc46b5cbf3383c7561aaef3df5ff9f1dd)",
+      "sha256": "96f73f9d2a16c21a36b418f06073be26e7d6d5e7c1bc99756b21a4f2c74ef171",
+      "retrieved": "2026-11-22"
     }
   ]
 }
