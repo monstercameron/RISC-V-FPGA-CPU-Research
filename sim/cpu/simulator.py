@@ -55,6 +55,48 @@ class SimulatorMissing(SystemExit):
     pass
 
 
+# Cache bound (2026-11-22 09:13): 1,926 never-evicted builds (85 GB) filled the WSL disk. A hit
+# touches its build.json; before a new build, the least recently used builds beyond MAX_BUILDS
+# are removed, but only those unused for EVICT_AGE seconds, so a folder another run may be about
+# to launch is never deleted (all runs are bounded by STEP_TIMEOUT).
+MAX_BUILDS = int(os.environ.get('RV64_SIM_CACHE_MAX', '300'))
+EVICT_AGE = 6 * 3600
+
+
+def _touch(path):
+    try:
+        os.utime(path)
+    except OSError:
+        pass
+
+
+def _evict(cache, now=None):
+    """Remove least recently used builds beyond MAX_BUILDS that are older than EVICT_AGE."""
+    import time
+    now = time.time() if now is None else now
+    try:
+        builds = []
+        for d in cache.iterdir():
+            stamp = d / 'build.json'
+            if d.is_dir() and not d.name.startswith('.') and stamp.is_file():
+                builds.append((stamp.stat().st_mtime, d))
+    except OSError:
+        return []
+    builds.sort()
+    removed = []
+    for mtime, d in builds[:max(0, len(builds) - MAX_BUILDS)]:
+        if now - mtime < EVICT_AGE:
+            break
+        stale = d.with_name(f'.evict-{d.name}-{os.getpid()}')
+        try:
+            d.rename(stale)
+            shutil.rmtree(stale, ignore_errors=True)
+            removed.append(d.name)
+        except OSError:
+            pass
+    return removed
+
+
 def _run(args, timeout=STEP_TIMEOUT, env=None):
     completed = subprocess.run([str(x) for x in args], capture_output=True, text=True, timeout=timeout, env=env)
     if completed.returncode:
@@ -155,8 +197,10 @@ class Verilator:
         folder = CACHE / f'{top}-{key[:16]}'
         binary = folder / f'V{top}'
         if (folder / 'build.json').is_file() and binary.is_file():
+            _touch(folder / 'build.json')
             return [binary]
         CACHE.mkdir(parents=True, exist_ok=True)
+        _evict(CACHE)
         # Builds are made in a private temporary folder and renamed into place only when
         # complete, so a folder with build.json is never deleted: another run may have just
         # published it and be about to launch its binary (Codex review 17:54, item 4).
