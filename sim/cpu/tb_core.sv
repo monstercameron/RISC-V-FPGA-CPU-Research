@@ -58,7 +58,7 @@ module tb_core #(parameter integer MEM_BYTES=16384, parameter integer ICACHE_BEA
     integer max_stall=0,delay_left=0,seed_arg=1,fault_kind=0,max_cycles=200000;
     // +max_retired=N (benchmark checkpoint pieces): stop once N instructions have
     // retired, closing the trace without a trap line. Off by default.
-    integer max_retired=0;
+    integer max_retired=0,image_bin=0;
     reg [31:0] rng;
     reg [63:0] fault_addr=64'hffffffffffffffff;
     reg active=0,held=0;
@@ -70,7 +70,10 @@ module tb_core #(parameter integer MEM_BYTES=16384, parameter integer ICACHE_BEA
     wire [136:0] request={instr,addr,wdata,wstrb};
 `endif
     initial begin
-        if (!$value$plusargs("image=%s",image_path)) $fatal(1,"missing image");
+        // +image_bin=FILE (large benchmark checkpoints): raw little-endian bytes from
+        // address 0 instead of a +image hex file, the rest of memory zero. Off by default.
+        if ($value$plusargs("image_bin=%s",image_path)) image_bin=1;
+        else if (!$value$plusargs("image=%s",image_path)) $fatal(1,"missing image");
         if (!$value$plusargs("trace=%s",trace_path)) $fatal(1,"missing trace");
         if ($value$plusargs("stall=%d",max_stall)) begin end
         if ($value$plusargs("seed=%d",seed_arg)) begin end
@@ -80,7 +83,12 @@ module tb_core #(parameter integer MEM_BYTES=16384, parameter integer ICACHE_BEA
         if ($value$plusargs("max_retired=%d",max_retired)) begin end
         rng=seed_arg==0 ? 1 : seed_arg;
         for (i=0;i<MEM_BYTES;i=i+1) memory[i]=0;
-        $readmemh(image_path,memory);
+        if (image_bin) begin
+            fd=$fopen(image_path,"rb");
+            if (!fd) $fatal(1,"cannot open +image_bin file");
+            if ($fread(memory,fd)<=0) $fatal(1,"empty +image_bin file");
+            $fclose(fd);
+        end else $readmemh(image_path,memory);
         fd=$fopen(trace_path,"w");
         if (!fd) $fatal(1,"cannot open trace");
         repeat (4) @(negedge clk);

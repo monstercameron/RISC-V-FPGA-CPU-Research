@@ -6,6 +6,10 @@
 // +sample_from=N +sample_to=M (retirement counts since reset) the bench instead
 // times that retirement window, prints it and stops there; markers are then only
 // reported. The LZMA benchmark runner uses both; Dhrystone uses neither.
+// +image_bin=FILE loads RAM from raw big-endian 64-bit words (word 0 first), the
+// rest zero, instead of +image hex; the runner uses it for multi-MiB images. Off
+// by default. Clock and retirement counts are 64-bit (longint), so whole runs of
+// billions of clocks do not wrap.
 `timescale 1ns/1ps
 // ICACHE_BEATS/DCACHE_BEATS set the core's cache sizes (8-byte beats); the defaults keep the SoC's 4 KiB.
 module tb_bench #(parameter integer RAM_WORDS = 8192, parameter integer ICACHE_BEATS = 512,
@@ -21,13 +25,15 @@ module tb_bench #(parameter integer RAM_WORDS = 8192, parameter integer ICACHE_B
     string image_path,profile_path;
     // Not named `mailbox`: that is a SystemVerilog built-in class Verilator reserves.
     reg [63:0] mailbox_addr=64'hffffffffffffffff, marker=0;
-    integer index,i,cycles=0,retirements=0,max_cycles=50000000,profile_fd=0;
-    integer start_cycle=-1,start_retired=-1,stop_cycle=-1,stop_retired=-1;
-    integer sample_from=-1,sample_to=-1,sample_cycle=-1,sample_retired=-1,laps=0;
+    integer index,i,profile_fd=0,laps=0,image_fd=0;
+    longint cycles=0,retirements=0,max_cycles=50000000;
+    longint start_cycle=-1,start_retired=-1,stop_cycle=-1,stop_retired=-1;
+    longint sample_from=-1,sample_to=-1,sample_cycle=-1,sample_retired=-1;
     // Clocks spent in each core state since the previous retirement.
     integer in_fetch=0,in_execute=0,in_memory=0,w;
     initial begin
-        if (!$value$plusargs("image=%s",image_path)) $fatal(1,"missing +image");
+        if ($value$plusargs("image_bin=%s",image_path)) image_fd=1;
+        else if (!$value$plusargs("image=%s",image_path)) $fatal(1,"missing +image");
         if ($value$plusargs("profile=%s",profile_path)) begin
             profile_fd=$fopen(profile_path,"w");
             if (!profile_fd) $fatal(1,"cannot open +profile file");
@@ -39,7 +45,13 @@ module tb_bench #(parameter integer RAM_WORDS = 8192, parameter integer ICACHE_B
         if (sample_to>=0 && !(sample_from>=0 && sample_to>sample_from)) $fatal(1,"bad sample window");
         if (mailbox_addr[2:0]!=0 || mailbox_addr+256>RAM_WORDS*8) $fatal(1,"mailbox outside RAM");
         index=mailbox_addr>>3;
-        $readmemh(image_path,dut.ram);
+        if (image_fd) begin
+            for (i=0;i<RAM_WORDS;i=i+1) dut.ram[i]=0;
+            image_fd=$fopen(image_path,"rb");
+            if (!image_fd) $fatal(1,"cannot open +image_bin file");
+            if ($fread(dut.ram,image_fd)<=0) $fatal(1,"empty +image_bin file");
+            $fclose(image_fd);
+        end else $readmemh(image_path,dut.ram);
         repeat (4) @(negedge clk);
         #1 reset=0;
     end

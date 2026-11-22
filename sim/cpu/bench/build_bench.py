@@ -7,8 +7,12 @@ installed LLVM or on Linux with clang, lld and llvm tools on PATH.
 
 Benchmarks: dhrystone (riscv-tests edition) and lzma, a scaled-down 7-Zip
 LZMA benchmark kernel (lzma_bench.c with the LZMA SDK in vendor/lzma/). The
-lzma build needs the M extension and 1 MiB of RAM; --lzma-dict-log sets its
-dictionary (data = dictionary + 1/64).
+lzma build needs the M extension; --lzma-dict-log sets its dictionary (data =
+dictionary + 1/64, so 22 is the 7z b -md22 shape, 4 MiB + 64 KiB) and the RAM
+defaults to the smallest power of two that holds the estimated arena (1 MiB for
+the 4 KiB dictionary, 64 MiB for 4 MiB). Images above 4 MiB of RAM get no hex
+files: the runners load bench.bin (tb_core +image_bin) and bench-words-be.bin
+(tb_bench +image_bin) instead.
 SPDX-License-Identifier: MIT
 """
 from pathlib import Path
@@ -32,6 +36,25 @@ def isa_label(isa):
     return isa.split('_')[0] + ('b' if '_zbb' in isa else '')
 MAILBOX_BYTES = 256
 STACK_RESERVE = 8192
+RAM_KIB = tuple(1 << n for n in range(5, 17))  # 32 KiB to 64 MiB
+HEX_LIMIT_BYTES = 4 << 20  # larger RAM images are written only as binaries
+LZMA_DICT_LOGS = range(12, 23)  # 4 KiB (the LZMA minimum) to 4 MiB (7z b -md22)
+
+
+def lzma_arena_estimate(dict_log):
+    """Upper estimate of lzma_bench.c's arena for a 2^dict_log dictionary (bytes).
+
+    BT4 son table 8 x (dictionary + 1), the hash (half the dictionary, at least 64 Ki
+    entries, plus 66,560 fixed entries, 4 bytes each), the match-finder window (about
+    1.5 x dictionary), data, packed buffer and output, and 1 MiB for the encoder and
+    decoder state. Checked against the native build's measured arena on 2026-11-21:
+    1.97x at 2^12, 1.05x at 2^20, 1.013x at 2^22, never below 1.
+    """
+    d = 1 << dict_log
+    data = d + d // 64
+    capacity = data + data // 16 + 1024
+    hash_entries = max(d // 2, 1 << 16) + 66560
+    return 8 * (d + 1) + 4 * hash_entries + d + d // 2 + (1 << 16) + 2 * data + capacity + (1 << 20)
 
 # Upstream identities from vendor/dhrystone/SOURCE.txt; a mismatch stops the build.
 VENDOR_SHA256 = {
@@ -139,12 +162,13 @@ def run(command, log=None):
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--benchmark', choices=sorted(BENCHMARKS), default='dhrystone')
-    parser.add_argument('--ram-kib', type=int, help='RAM size in KiB, a power of two from 32 to 1024 '
-                        '(default 64; 1024 for lzma)')
+    parser.add_argument('--ram-kib', type=int, help='RAM size in KiB, a power of two from 32 to 65536 '
+                        '(default 64; for lzma the smallest that holds the estimated arena)')
     parser.add_argument('--opt', choices=['O1', 'O2', 'O3', 'Os'], default='O2')
     parser.add_argument('--isa', choices=ISAS, help=f'Default {ISAS[0]}; {LZMA_ISAS[-1]} for lzma')
     parser.add_argument('--lzma-dict-log', type=int, default=12,
-                        help='lzma only: dictionary size 2^N bytes, N from 12 (the LZMA minimum) to 16')
+                        help='lzma only: dictionary size 2^N bytes, N from 12 (the LZMA minimum) to 22 '
+                             '(7z b -md22)')
     parser.add_argument('--runtime', choices=('reference', 'fast'), default='reference',
                         help='reference: byte-at-a-time strcpy/strcmp (compared across cores); '
                              'fast: word-at-a-time (a labelled, separate configuration)')
@@ -154,7 +178,12 @@ def main():
     args = parser.parse_args()
     lzma = args.benchmark == 'lzma'
     if args.ram_kib is None:
-        args.ram_kib = 1024 if lzma else 64
+        args.ram_kib = 64
+        if lzma and args.lzma_dict_log == 12:
+            args.ram_kib = 1024  # the established 4 KiB-dictionary layout (arena 878,400 B measured)
+        elif lzma:  # arena + up to 256 KiB of program + stack and mailbox
+            need = lzma_arena_estimate(args.lzma_dict_log) + (256 << 10) + STACK_RESERVE + MAILBOX_BYTES
+            args.ram_kib = next(k for k in RAM_KIB if k >= 1024 and k * 1024 >= need)
     if args.isa is None:
         args.isa = LZMA_ISAS[-1] if lzma else ISAS[0]
     if lzma:
@@ -162,10 +191,10 @@ def main():
             parser.error('--benchmark lzma needs the M extension (rv64im or rv64imb)')
         if args.runtime != 'reference':
             parser.error('--runtime applies to dhrystone only')
-        if not 12 <= args.lzma_dict_log <= 16:
-            parser.error('--lzma-dict-log must be from 12 to 16')
-    if args.ram_kib not in (32, 64, 128, 256, 512, 1024):
-        parser.error('--ram-kib must be a power of two from 32 to 1024')
+        if args.lzma_dict_log not in LZMA_DICT_LOGS:
+            parser.error('--lzma-dict-log must be from 12 to 22')
+    if args.ram_kib not in RAM_KIB:
+        parser.error('--ram-kib must be a power of two from 32 to 65536')
     suffix = ('' if args.isa == ISAS[0] else '-' + isa_label(args.isa)) + \
         ('' if args.runtime == 'reference' else '-fastrt')
     if lzma:
@@ -244,10 +273,18 @@ def main():
     payload = binary.read_bytes()
     if len(payload) > symbols['__bss_start']:
         raise RuntimeError('Binary image extends past the start of .bss')
-    image = payload.ljust(ram_bytes, b'\0')
-    (out / 'bench-bytes.hex').write_text(''.join(f'{b:02x}\n' for b in image), encoding='ascii')
-    (out / 'bench-words.hex').write_text(''.join(f'{int.from_bytes(image[i:i+8], "little"):016x}\n'
-                                                 for i in range(0, ram_bytes, 8)), encoding='ascii')
+    hex_images = ram_bytes <= HEX_LIMIT_BYTES
+    for name in ('bench-bytes.hex', 'bench-words.hex'):
+        (out / name).unlink(missing_ok=True)
+    if hex_images:
+        image = payload.ljust(ram_bytes, b'\0')
+        (out / 'bench-bytes.hex').write_text(''.join(f'{b:02x}\n' for b in image), encoding='ascii')
+        (out / 'bench-words.hex').write_text(''.join(f'{int.from_bytes(image[i:i+8], "little"):016x}\n'
+                                                     for i in range(0, ram_bytes, 8)), encoding='ascii')
+    # tb_bench +image_bin: the loaded payload as big-endian 64-bit words; the bench zeroes the rest.
+    padded = payload.ljust(-(-len(payload) // 8) * 8, b'\0')
+    (out / 'bench-words-be.bin').write_bytes(b''.join(padded[i:i + 8][::-1] for i in range(0, len(padded), 8)))
+    images = ('bench-bytes.hex', 'bench-words.hex') if hex_images else ()
 
     inputs = [source for source, _ in spec['sources']] + [BENCH / 'start.S', Path(__file__)]
     inputs += sorted((BENCH / 'include').glob('*.h'))
@@ -258,7 +295,10 @@ def main():
         'compiler': run([args.clang, '--version']).splitlines()[0],
         'isa': args.isa, 'abi': ABI, 'optimization': args.opt, 'runtime': args.runtime,
         **({'lzma': {'dict_log': args.lzma_dict_log, 'dict_bytes': 1 << args.lzma_dict_log,
-                     'data_bytes': (1 << args.lzma_dict_log) + (1 << args.lzma_dict_log) // 64}} if lzma else {}),
+                     'data_bytes': (1 << args.lzma_dict_log) + (1 << args.lzma_dict_log) // 64,
+                     'arena_estimate_bytes': lzma_arena_estimate(args.lzma_dict_log),
+                     'arena_available_bytes': mailbox - STACK_RESERVE - symbols['__bss_end']}} if lzma else {}),
+        'hex_images': hex_images,
         'ram_bytes': ram_bytes, 'ram_words': ram_bytes // 8,
         'mailbox_address': mailbox, 'stack_top': mailbox, 'stack_reserve_bytes': STACK_RESERVE,
         'payload_bytes': len(payload),
@@ -268,7 +308,7 @@ def main():
         'commands': commands,
         'input_sha256': {p.relative_to(ROOT).as_posix(): sha(p) for p in inputs},
         'artifact_sha256': {name: sha(out / name) for name in
-                            ('link.ld', 'bench.elf', 'bench.bin', 'bench-bytes.hex', 'bench-words.hex')},
+                            ('link.ld', 'bench.elf', 'bench.bin', 'bench-words-be.bin', *images)},
     }
     (out / 'build.json').write_bytes((json.dumps(report, indent=2) + '\n').encode())
     print(f'Built {args.benchmark}: {len(payload):,} bytes loaded, {report["bss_bytes"]:,} bytes .bss, '

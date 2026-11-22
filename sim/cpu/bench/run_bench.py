@@ -83,7 +83,8 @@ def main():
     parser.add_argument('--out-dir', help='Default: build/cpu/bench/<benchmark>')
     parser.add_argument('--stalls', type=int, nargs='+', default=[0, 7],
                         help='Maximum random memory wait cycles for each differential run')
-    parser.add_argument('--max-cycles', type=int, default=50_000_000)
+    parser.add_argument('--max-cycles', type=int,
+                        help='Clock limit per simulation (default 50,000,000; for lzma 40 clocks per instruction run)')
     parser.add_argument('--core', choices=('multicycle', 'pipe', 'ooo'), default='multicycle',
                         help='Core implementation: rtl/cpu/rv64_core.sv (multicycle) or rv64_pipe.sv (pipelined)')
     parser.add_argument('--record', action='store_true',
@@ -102,6 +103,18 @@ def main():
     lzma_options.add_argument('--lzma-mode', choices=('full', 'sampled'),
                               help='full: whole program from reset; sampled: checkpointed pieces '
                                    '(default full, sampled for ooo under Icarus)')
+    lzma_options.add_argument('--lzma-dict-log', type=int,
+                              help='Dictionary 2^N (12-22): default --out-dir build/cpu/bench/lzma-dN-rv64imb; '
+                                   'with --out-dir, the build must have this dictionary')
+    lzma_options.add_argument('--functional', choices=('reference', 'iss'),
+                              help='Functional model for phases, results and trace checks: reference.py '
+                                   '(default for the 4 KiB dictionary) or the fast rv_iss.c (default above it)')
+    lzma_options.add_argument('--sample-pieces', type=int,
+                              help='Sampled mode: time at most this many evenly spaced pieces per phase and '
+                                   'scale by instruction count (default: every piece)')
+    lzma_options.add_argument('--pieces', help='rv_iss path, sampled mode: A:B times only plan pieces A..B-1 and '
+                              'saves them (to split a long run into 5-minute invocations); merge reports from the '
+                              'saved pieces')
     lzma_options.add_argument('--sample-instructions', type=int, help='Instructions per piece (sampled mode)')
     lzma_options.add_argument('--warmup-instructions', type=int, help='Warm-up before each piece (sampled mode)')
     lzma_options.add_argument('--jobs', type=int, default=3, help='Simulations run at once (sampled mode)')
@@ -117,8 +130,17 @@ def main():
         sim = simulator.get(args.sim)
     except simulator.SimulatorMissing as missing:
         parser.error(f'{missing}; on Windows use run_dhrystone.ps1')
-    out = (ROOT / (args.out_dir or f'build/cpu/bench/{args.benchmark}')).resolve()
+    if args.lzma_dict_log is not None and args.benchmark != 'lzma':
+        parser.error('--lzma-dict-log applies to --benchmark lzma only')
+    default_dir = f'build/cpu/bench/{args.benchmark}'
+    if args.benchmark == 'lzma' and args.lzma_dict_log is not None:
+        default_dir = f'build/cpu/bench/lzma-d{args.lzma_dict_log}-rv64imb'
+    out = (ROOT / (args.out_dir or default_dir)).resolve()
     build = json.loads((out / 'build.json').read_bytes())
+    if args.lzma_dict_log is not None and build.get('lzma', {}).get('dict_log') != args.lzma_dict_log:
+        parser.error(f'{out} is not a 2^{args.lzma_dict_log}-dictionary lzma build')
+    if args.benchmark != 'lzma' and args.max_cycles is None:
+        args.max_cycles = 50_000_000
     for name, digest in build['input_sha256'].items():
         if sha(ROOT / name) != digest:
             raise SystemExit(f'Stale build: {name} changed since build_bench.py ran')
