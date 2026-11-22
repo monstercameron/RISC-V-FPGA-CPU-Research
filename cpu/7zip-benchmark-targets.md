@@ -113,6 +113,15 @@ The first full-size runs (0.15.1, L2 1 / 4 MiB at 12 clocks, MEM_LAT 100, one mi
 loads) rate 2.62 / 2.77 and 3.27 / 2.85 MIPS/MHz: above the 2.03 / 2.18 goal, but with 1-clock loads
 and 25 ns memory, so they do not yet decide it.
 
+| Deciding-configuration run | Compress MIPS/MHz | Decompress MIPS/MHz | Note |
+|---|---:|---:|---|
+| Goal (10,000 MIPS at 4 GHz) | 2.03 | 2.18 | |
+| 0.15.4, one miss at a time (2026-11-21 21:53) | **1.53** (75%, +-10.9%) | **1.98** (91%, +-22.9%) | not met |
+
+The 0.15.4 run has everything in the table above except several misses in flight (memory hand-off 2,
+being integrated as 0.16.0): with 350-clock memory served one miss at a time, compress spends most of
+its time waiting. The next deciding run follows 0.16.0.
+
 ## The scaled kernel on our cores (simulation)
 
 `sim/cpu/bench/lzma_bench.c` runs 7-Zip's LZMA benchmark kernel (the LZMA SDK C sources of 7-Zip 26.06,
