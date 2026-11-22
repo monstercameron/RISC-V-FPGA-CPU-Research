@@ -80,6 +80,19 @@ cache-miss cost that dominates `7z b` compression, so a core that does well on t
 the target on the real benchmark. A full-dictionary result needs a realistic memory hierarchy in the
 model, which it does not have yet (1-clock memory).
 
+### Goal on the full-size kernel (added 2026-11-21 20:34)
+
+Since 2026-11-21 the kernel also runs at the real benchmark's size: `--lzma-dict-log 22` (4 MB dictionary,
+4.19 MB of data, about 4.0 billion instructions), in checkpointed pieces on the out-of-order core. On
+the X925 the d22 kernel rates 1.55 / 1.68 MIPS/MHz against 1.91 / 1.93 from the real `7z b -md22`
+(ratios 0.81 / 0.87, close to 1, so this calibration is far less uncertain than the d12 one). The
+10,000 MIPS goal (2.5 MIPS/MHz at 4 GHz) is therefore about **2.03 compress / 2.18 decompress MIPS/MHz
+on the d22 kernel**, and that is the figure to quote once our model's memory is realistic. Native X925
+kernel figures by size (compress / decompress MIPS/MHz, machine loaded, noisy): d16 4.71 / 1.80, d18
+3.89 / 1.81, d20 2.45 / 1.67, d22 1.55 / 1.68. With flat memory our out-of-order core's d22 estimate
+(0.14.7) is 6.72 / 3.30, which only shows that the dictionary costs nothing until memory latency is
+modelled; with the 0.15.0 memory model (L2 and `MEM_LAT`) the d22 runs are in progress.
+
 ## The scaled kernel on our cores (simulation)
 
 `sim/cpu/bench/lzma_bench.c` runs 7-Zip's LZMA benchmark kernel (the LZMA SDK C sources of 7-Zip 26.06,
