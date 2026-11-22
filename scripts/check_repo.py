@@ -71,6 +71,8 @@ REQUIRED = MAINTAINED_DOCS + (
     'sim/cpu/bench/mm/mm_gen.c', 'sim/cpu/bench/mm/mm_export.sh', 'sim/cpu/bench/mm/mm_laptop.c',
     'sim/cpu/bench/mm/mm_laptop.sh', 'sim/cpu/bench/mm/mm_laptop_summary.py',
     'sim/cpu/suite.py', 'sim/cpu/suite_manifest.py', 'sim/cpu/baselines/0.17.2-release-patch.json',
+    'sim/cpu/fetch_riscv_tests.sh', 'sim/cpu/riscv_tests/run_riscv_tests.py', 'sim/cpu/riscv_tests/riscv-tests.lock',
+    'sim/cpu/riscv_tests/env/riscv_test.h', 'sim/cpu/riscv_tests/env/link.ld',
 )
 PLANNING_INPUTS = (
     'memory_model.py', 'plan_audit_checks.py', 'refinement_checks.py', 'abi_v1.py',

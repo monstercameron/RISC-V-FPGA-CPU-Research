@@ -23,7 +23,7 @@
     },
     {
       "path": "licenses/RISCV-TESTS-BSD-3-Clause.txt",
-      "source": "https://github.com/riscv-software-src/riscv-tests/blob/3df703cd52d5f0d8224e3c50bf03c6cb70efff98/LICENSE",
+      "source": "https://github.com/riscv-software-src/riscv-tests/blob/3df703cd52d5f0d8224e3c50bf03c6cb70efff98/LICENSE (also byte-identical to https://github.com/riscv/riscv-test-env/blob/6de71edb142be36319e380ce782c3d1830c65d68/LICENSE, checked 2026-11-22; covers the vendored Dhrystone and the riscv-tests ISA sources fetched, not vendored, by sim/cpu/fetch_riscv_tests.sh with the per-file lock sim/cpu/riscv_tests/riscv-tests.lock)",
       "sha256": "43b7309213293b4323d65301a90e05472579abcd51feb260a850354bcb49ff8f",
       "retrieved": "2026-11-20"
     },

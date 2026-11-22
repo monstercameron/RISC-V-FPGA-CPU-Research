@@ -75,7 +75,7 @@ WORKTREE_LINKS = {'build/third-party/verilator': 'link', 'build/third-party/tiny
                   'build/third-party/quickjs-ng': 'copy', 'build/third-party/compiler-rt-builtins': 'copy',
                   'build/third-party/smallpt': 'copy', 'build/cpu/bench/rt-data': 'copy',
                   'build/cpu/bench/js-ref': 'copy', 'build/cpu/bench/mm-data': 'copy',
-                  'build/cpu/bench/ternary-data': 'copy'}
+                  'build/cpu/bench/ternary-data': 'copy', 'build/third-party/riscv-tests-src': 'link'}
 # Knobs passed through to the runners: option -> (runners, argparse dest).
 KNOBS = {'--fpu': (('test_cpu', 'run_bench'), 'fpu'), '--vector': (('test_cpu', 'run_bench'), 'vector'),
          '--dline': (('test_cpu', 'run_bench'), 'dline'), '--n-miss': (('test_cpu', 'run_bench'), 'n_miss'),
@@ -412,10 +412,18 @@ class Context:
 
 
 def available(step, args, core_text):
-    """None if the step can run, else the reason it cannot."""
-    w = step.when
-    if not w:
-        return None
+    """None if the step can run, else the reason it cannot. Conditions joined by '&' must all hold."""
+    for w in (step.when or '').split('&'):
+        why = condition(w.strip(), args, core_text) if w.strip() else None
+        if why:
+            return why
+    return None
+
+
+def condition(w, args, core_text):
+    if w.startswith('path-exists:'):
+        rel = w.split(':', 1)[1]
+        return None if (ROOT / rel).exists() else f'{rel} is missing (see the step note)'
     if w == 'core-has-fpu':
         return None if 'RV64_OOO_FPU' in core_text else 'the core under test has no RV64_OOO_FPU'
     if w.startswith('runner-has:'):
@@ -873,6 +881,10 @@ def self_test():
     check('every suite has a step', all(any(n in s.suites for s in allsteps) for n in M.SUITES))
     check('presets name suites', all(n in M.GENERATORS for p in M.PRESETS.values() for n in p))
     check('limit is 300 s', LIMIT == 300)
+    cond = S('c', ('unit',), 'x', [], 'unittest', when='path-exists:sim/cpu/suite.py & path-exists:no/such/dir')
+    check('every joined condition must hold', available(cond, None, '') is not None)
+    cond.when = 'path-exists:sim/cpu/suite.py & core-has-fpu'
+    check('joined conditions that hold', available(cond, None, 'RV64_OOO_FPU') is None)
     failed = [n for n, ok in checks if not ok]
     if failed:
         print(f'FAIL: suite self-test: {failed}')

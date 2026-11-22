@@ -34,6 +34,9 @@ SUITES = {
     'icarus-full': "Icarus: test_cpu ooo (6 shards), ooo with 2-beat caches (12 shards), check_bitmanip, "
                    "multicycle, pipe; today's build/cpu/ooo-debug/full_check.sh",
     'soc': 'check_soc_memory.py (SoC memory-model directed checks) and check_btb_reach.py',
+    'riscv-tests': 'Official riscv-tests ISA tests (rv64ui/um/uzba/uzbb/uzbs, and rv64uf/ud with the F and D option) '
+                   'built with the MIT lab environment, run on reference.py, rv_iss and all three cores; '
+                   'needs sim/cpu/fetch_riscv_tests.sh once',
     'negative': 'Negative control: a mutated copy of the core must FAIL test_cpu with a trace mismatch',
     'repo': 'scripts/check_repo.py and scripts/build_site.py (rewrites docs/)',
 }
@@ -233,6 +236,43 @@ def negative(ctx):
                est=150, note='passes only if test_cpu FAILS on the mutant with a trace mismatch')
 
 
+RVT = 'sim/cpu/riscv_tests/run_riscv_tests.py'
+RVT_INT = ('rv64ui', 'rv64um', 'rv64uzba', 'rv64uzbb', 'rv64uzbs')
+RVT_FP = ('rv64uf', 'rv64ud')
+RVT_TREE = 'path-exists:build/third-party/riscv-tests-src/riscv-tests/isa'
+RVT_NOTE = ('riscv-tests 3df703c fetched by sim/cpu/fetch_riscv_tests.sh (SHA-256 lock); '
+            'rv64ui/ma_data is an expected cause-4 trap (misaligned data traps by contract), not a pass')
+# Measured 2026-11-22 (WSL, load average about 18): golden models 58-84 s for the integer set; Icarus
+# multicycle with 2-beat caches at stalls 0 and 7 70 s, pipe rv64ui 38 s; Verilator ooo 2-beat 60 s with a
+# cached build (a fresh Verilator build adds about 2 minutes); F/D 16 s cached.
+
+
+def rvt_step(name, args, est, core=None, sim=None, when=RVT_TREE, tags=(), candidate=False,
+             parser=r'count:^PASS: (\d+) riscv-tests'):
+    return Step(name, ('riscv-tests',), RVT, list(args), parser, tags=('riscv-tests', *tags, *filter(None, (sim, core))),
+                core=core, candidate=candidate, sim=sim, est=est, when=when, note=RVT_NOTE)
+
+
+def riscv_tests(ctx):
+    # Harness negative controls: a mutated add.S must fail as test 3 on every model, an unexpected trap
+    # or an expected trap that passes must fail, and trace differences must be found.
+    yield rvt_step('rvt-selftest', ['--self-test', '--core', 'pipe', '--sim', 'icarus', '--stalls', '0,7'], 30,
+                   core='pipe', sim='icarus', tags=('negative',),
+                   parser=r'count:^PASS: riscv-tests self-test, (\d+) checks')
+    yield rvt_step('rvt-golden', RVT_INT, 90, tags=('python',))
+    yield rvt_step('rvt-golden-fp', RVT_FP, 40, tags=('python', 'fpu'))
+    for size in ctx.cache_sizes:
+        tag = cache_tag(size)
+        yield rvt_step(f'rvt-ooo{tag}', ['--core', 'ooo', '--sim', 'verilator', '--stalls', '0,7', *cache_args(size),
+                                         *RVT_INT], 200, core='ooo', sim='verilator', candidate=True)
+        yield rvt_step(f'rvt-ooo-fpu{tag}', ['--core', 'ooo', '--sim', 'verilator', '--stalls', '0,7',
+                                             *cache_args(size), *RVT_FP], 180, core='ooo', sim='verilator',
+                       candidate=True, when=f'{RVT_TREE} & core-has-fpu', tags=('fpu',))
+        for core in ('pipe', 'multicycle'):
+            yield rvt_step(f'rvt-{core}{tag}', ['--core', core, '--sim', 'icarus', '--stalls', '0,7',
+                                                *cache_args(size), *RVT_INT], 150, core=core, sim='icarus')
+
+
 def repo(ctx):
     yield Step('repo-check', ('repo',), 'scripts/check_repo.py', [], 'check_repo', tags=('python',),
                side='host', out_arg=None, est=60)
@@ -243,4 +283,4 @@ def repo(ctx):
 
 GENERATORS = {'unit': unit, 'isa': isa, 'fpu': fpu, 'vector': vector, 'bitmanip': bitmanip,
               'bench-smoke': bench_smoke, 'bench': bench, 'icarus-full': icarus_full, 'soc': soc,
-              'negative': negative, 'repo': repo}
+              'riscv-tests': riscv_tests, 'negative': negative, 'repo': repo}
