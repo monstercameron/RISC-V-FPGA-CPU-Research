@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Original CPU foundation, wide out-of-order implementation (architecture 0.14.11).
+// Original CPU foundation, wide out-of-order implementation (architecture 0.14.12).
 // RV64IM + B execution, serialized FENCE.I, terminal EEI. Same module name and
 // contract as rv64_core.sv and rv64_pipe.sv, plus a wider retirement trace (rt_*);
 // build with one of the three files. Architecture version: cpu/VERSION,
@@ -1261,7 +1261,9 @@ module rv64_core #(
             if (LD_LAT >= 2) for (k = 0; k < LW_N; k = k + 1) if (lw_valid[k]) begin
                 if (rflush || (mp_any && (lw_rob[k] - rb_head) > o_age)) lw_valid[k] = 0;
                 else if (lw_cnt[k] == 0) begin
-                    lw_valid[k] = 0; prf_ready[lw_pdst[k]] = 1;
+                    // The value was written when the load answered: an offset consumer
+                    // still pays its clock (prf_late, as for multiply and divide writes).
+                    lw_valid[k] = 0; prf_ready[lw_pdst[k]] = 1; if (lw_pdst[k] != 0) prf_late[lw_pdst[k]] = 1;
                     if (lw_fin[k]) rb_done[lw_rob[k]] = 1;
                 end else lw_cnt[k] = lw_cnt[k] - 1;
             end

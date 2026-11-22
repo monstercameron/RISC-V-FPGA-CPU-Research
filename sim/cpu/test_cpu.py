@@ -731,6 +731,14 @@ def cases():
     body.append(branch(1, 20, 0, -4 * len(body)))
     p += body + [add_(29, 12, 16), add_(29, 29, 22), add_(29, 29, 24), add_(29, 29, 9), 0x100073]
     yield 'ld_lat_mix', p, 0, MASK
+    # Offset consumer of a load (hand-off 6): load -> folded addi -> add -> next load address.
+    def ld_off_chain(n):
+        body = []
+        for _ in range(n):
+            body += [ld(5, 10, 0), i_type(0x13, 6, 0, 5, 1), r_type(0x33, 10, 0, 6, 3)]
+        return prefix() + [i_type(0x13, 10, 0, 30, 0x700), store(3, 30, 10, 0x700)] + body + [store(3, 30, 10, 0x708), 0x100073]
+    yield 'ld_off_chain8', ld_off_chain(8), 0, MASK
+    yield 'ld_off_chain40', ld_off_chain(40), 0, MASK
     # Offset consumers of late-written registers (hand-off 8, Codex 1609-2): a multiply,
     # a divide and a value-predicted load each feed a folded addi, whose result is used by
     # an ALU op, a branch, a store (data and address), a load address and another multiply.
@@ -849,6 +857,12 @@ def main():
         extra = clk['ld_lat_chain40'] - clk['ld_lat_chain8']
         if not 32 * args.ld_lat <= extra <= 32 * args.ld_lat + 8:
             raise AssertionError(f'LD_LAT {args.ld_lat}: 32 chained loads took {extra} clocks, expected {32 * args.ld_lat}')
+        # A consumer with a folded offset pays its clock: load, offset clock, add.
+        clk = {r['case']: int(re.search(r'cycles=(\d+)', r['simulator_summary'])[1]) for r in records
+               if r['max_wait_cycles'] == 0 and r['case'] in ('ld_off_chain8', 'ld_off_chain40')}
+        extra = clk['ld_off_chain40'] - clk['ld_off_chain8']
+        if not 32 * (args.ld_lat + 2) <= extra <= 32 * (args.ld_lat + 2) + 8:
+            raise AssertionError(f'LD_LAT {args.ld_lat}: 32 load-offset-add steps took {extra} clocks, expected {32 * (args.ld_lat + 2)}')
     missing=required-coverage
     if missing: raise AssertionError('Missing instruction coverage: '+str(sorted(missing)))
     for branch_name in ('beq','bne','blt','bge','bltu','bgeu'):
