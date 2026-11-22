@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Original CPU foundation, wide out-of-order implementation (architecture 0.19.1).
+// Original CPU foundation, wide out-of-order implementation (architecture 0.19.2).
 // RV64IM + B execution (RV64F and D with define RV64_OOO_FPU, default off; with RV64_OOO_V
 // also the RVV subset of the vector contract, step 1, executed in order),
 // serialized FENCE.I, terminal EEI. Same module name and

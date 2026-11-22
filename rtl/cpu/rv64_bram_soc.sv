@@ -63,13 +63,14 @@ module rv64_bram_soc #(
     reg [63:0] l2_clock;
     reg [63:0] l2_ready [0:L2_N-1];   // clock at which the line's DRAM fill has arrived
     reg [63:0] now, mem_next;         // clocks since reset; earliest next DRAM start
-    integer l2_lat_v;
+    reg [63:0] l2_lat_v;           // clocks to a read's answer (64-bit, so a long DRAM backlog no longer wraps)
     integer l2_rd_hit = 0, l2_rd_miss = 0, l2_wr_hit = 0, l2_wr_miss = 0;   // statistics for probes
     reg rd_busy;                // a read is waiting for its latency
-    reg [31:0] rd_cnt;
-    integer l2_w, l2_v;
+    reg [63:0] rd_cnt;
+    integer l2_w;
+    reg [63:0] l2_v;
     reg l2_h;
-    task automatic mem_start(output integer lat);
+    task automatic mem_start(output reg [63:0] lat);
         reg [63:0] st;
         begin
             st = mem_next > now ? mem_next : now;
@@ -83,7 +84,7 @@ module rv64_bram_soc #(
     reg [SP_N-1:0] sp_v;
     reg [3:0] sp_tag [0:SP_N-1];
     reg [63:0] sp_addr [0:SP_N-1];
-    reg [31:0] sp_cnt [0:SP_N-1];
+    reg [63:0] sp_cnt [0:SP_N-1];
     reg [2:0] sp_left [0:SP_N-1];     // line reads (mem_len > 0): beats still to answer after this one
     reg [2:0] sp_lm [0:SP_N-1];       // beats - 1 of the line (its wrap mask)
     reg rsp_valid, rsp_error;
@@ -104,7 +105,7 @@ module rv64_bram_soc #(
     end endgenerate
 `endif
     // Look up (and on a miss allocate) the line of byte address a; returns 1 on a hit.
-    task automatic l2_touch(input [63:0] a, input is_read, output reg hit, output integer lat);
+    task automatic l2_touch(input [63:0] a, input is_read, output reg hit, output reg [63:0] lat);
         integer base, w, v;
         reg [63:0] line;
         begin
