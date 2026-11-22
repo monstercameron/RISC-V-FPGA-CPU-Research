@@ -612,7 +612,12 @@ class Runner:
         bench = (step.out_arg == '--out-dir:bench' or step.name.startswith('build:'))
         mapped = list(dict.fromkeys(outs))
         q = shlex.quote
-        parts = ['NS="$HOME/.cache/rv64-suite"']
+        # One native folder per tree and run (middle 06:59: a shared folder let concurrent suites in different
+        # trees overwrite each other's bench folders and source snapshots). Run folders older than 12 h are pruned.
+        run = hashlib.sha256(f'{ROOT}\n{self.out}'.encode()).hexdigest()[:16]
+        parts = ['NB="$HOME/.cache/rv64-suite"',
+                 'find "$NB" -mindepth 1 -maxdepth 1 -name "run-*" -mmin +720 -exec rm -rf {} + 2>/dev/null',
+                 f'NS="$NB"/run-{run}']
         for d in mapped:
             parts.append(f'mkdir -p "$NS"/{q(d)}')
         if bench:   # refresh the native copy of the bench folder when its build changed
