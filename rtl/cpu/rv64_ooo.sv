@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Original CPU foundation, wide out-of-order implementation (architecture 0.17.2).
+// Original CPU foundation, wide out-of-order implementation (architecture 0.17.3).
 // RV64IM + B execution (RV64F and D with define RV64_OOO_FPU, default off),
 // serialized FENCE.I, terminal EEI. Same module name and
 // contract as rv64_core.sv and rv64_pipe.sv, plus a wider retirement trace (rt_*);
@@ -136,7 +136,7 @@ module rv64_core #(
     localparam integer PRF_N = NAR + ROB_N;
     localparam integer P_B = 10;
     localparam integer IQ_N = 128;
-    localparam integer IQ_B = 7;
+    localparam integer IQ_B = $clog2(IQ_N);   // was the literal 7 (IQ_N 128)
     localparam integer Q_N = 64;
     localparam integer Q_B = 6;
     localparam integer N_ALU = 8;        // integer ports
@@ -524,11 +524,7 @@ module rv64_core #(
     reg [P_B-1:0] fq_pdst [0:FQ_N-1];
     reg [63:0] fq_val [0:FQ_N-1];
     reg [4:0] fq_fl [0:FQ_N-1];
-    reg fd_busy, fd_writes, fd_pend, fdtaken;
-    reg [4:0] fd_cnt, fd_fl;
-    reg [ROB_B-1:0] fd_rob;
-    reg [P_B-1:0] fd_pdst;
-    reg [63:0] fd_val;
+    reg fd_pend, fdtaken;               // a divide/sqrt executing this clock, or selected this clock
     reg [68:0] fy;
     reg [2:0] frm_now;
     integer flat;
@@ -1597,7 +1593,6 @@ module rv64_core #(
             if (dv_busy && (dv_rob - rb_head) > keep_age) dv_busy = 0;
             for (k = 0; k < FQ_N; k = k + 1)
                 if (fq_valid[k] && (fq_rob[k] - rb_head) > keep_age) fq_valid[k] = 0;
-            if (fd_busy && (fd_rob - rb_head) > keep_age) fd_busy = 0;
             if (fb_lock && (fb_owner - rb_head) > keep_age) fb_lock = 0;
             if (mu_owner_v && (mu_owner - rb_head) > keep_age) mu_owner_v = 0;
             if (mu_errv && (mu_err_owner - rb_head) > keep_age) mu_errv = 0;
@@ -1617,7 +1612,7 @@ module rv64_core #(
             for (i = 0; i < PRF_N; i = i + 1) refcnt[i] = i < NAR ? 1 : 0;
             rt_rdfp <= 0; rt_ff <= 0; rt_csrw <= 0; csr_busy = 0;
             pv_ok = 0; rb_viol = 0; mdp_wait = 0; rb_live = 0; rb_done = 0; rb_head = 0; rb_tail = 0; rb_count = 0;
-            iq_valid = 0; iq_issued = 0; ex_valid = 0; mq_valid = 0; dv_busy = 0; fq_valid = 0; fd_busy = 0; fd_gap = 0; fcsr = 0; lw_valid = 0; rb_ans = 0; l0_v = 0; l0_p = 0; ld_lat_now = LD_LAT;
+            iq_valid = 0; iq_issued = 0; ex_valid = 0; mq_valid = 0; dv_busy = 0; fq_valid = 0; fd_gap = 0; fcsr = 0; lw_valid = 0; rb_ans = 0; l0_v = 0; l0_p = 0; ld_lat_now = LD_LAT;
             ic_valid = 0; dc_valid = 0; btb_valid = 0; btb_ret = 0; ras_sp = 0; vp_valid = 0; lp_valid = 0; lp_dir = 0; tg_v = 0; tg_alt = 8; tg_age = 0; tg_ap = 0; f_gh = 0; r_gh = 0; tq_cnt = 0; tq_h = 0;
             for (i = 0; i < RAS_N; i = i + 1) ras[i] = 0;
             q_head = 0; q_tail = 0; q_count = 0;
@@ -2180,14 +2175,6 @@ module rv64_core #(
                     if (fq_writes[k]) begin prf_late[fq_pdst[k]] = !prf_ready[fq_pdst[k]]; prf[fq_pdst[k]] = fq_val[k]; prf_written[fq_pdst[k]] = 1; prf_ready[fq_pdst[k]] = 1; end
                     rb_value[fq_rob[k]] = fq_val[k]; rb_done[fq_rob[k]] = 1; rb_exc[fq_rob[k]] = 0; rb_fflags[fq_rob[k]] = fq_fl[k];
                 end else fq_cnt[k] = fq_cnt[k] - 1;
-            end
-            if (fd_busy) begin
-                if (rflush || (mp_any && (fd_rob - rb_head) > o_age)) fd_busy = 0;
-                else if (fd_cnt == 0) begin
-                    fd_busy = 0;
-                    if (fd_writes) begin prf_late[fd_pdst] = !prf_ready[fd_pdst]; prf[fd_pdst] = fd_val; prf_written[fd_pdst] = 1; prf_ready[fd_pdst] = 1; end
-                    rb_value[fd_rob] = fd_val; rb_done[fd_rob] = 1; rb_exc[fd_rob] = 0; rb_fflags[fd_rob] = fd_fl;
-                end else fd_cnt = fd_cnt - 1;
             end
             // ---- multiply pipeline and divide unit
             for (k = 0; k < MQ_N; k = k + 1) if (mq_valid[k]) begin
