@@ -14,6 +14,7 @@ import subprocess
 
 from reference import MASK, execute
 import simulator
+import fe_cases
 
 ROOT = Path(__file__).resolve().parents[2]
 # Programs written to exercise an issue slot, and the testbench counter that must be
@@ -970,6 +971,7 @@ def cases():
     yield from rc_fetch_cases(i_type, r_type, store, branch, jal, MASK)
     yield from gh_predictor_cases(i_type, r_type, store, branch, jal, MASK)
     yield from btb_stale_cases(i_type, r_type, store, branch, jal, MASK)
+    yield from fe_cases.cases(globals())   # frontend 2026-11-22: indirect dispatch paths, aliasing instruction beats
     # Fusion across rename groups (middle hand-off 14): producer/consumer pairs (simple ALU op,
     # then its reader) at every offset of a 37-instruction loop body, so many pairs straddle a
     # rename-group boundary; some consumers wait for a divide, so the producer may retire and its
@@ -1162,6 +1164,8 @@ def main():
     parser.add_argument('--merge-shards', type=Path, nargs='+', metavar='DIR',
                         help='Run no programs: check and report the union of the shard.json files of all N '
                              '--shard runs of this configuration (their --out-dir folders)')
+    parser.add_argument('--ittage', action='store_true',
+                        help='ooo core: indirect-target predictor (define RV64_OOO_ITTAGE) and its timing check')
     simulator.add_argument(parser)
     args = parser.parse_args()
     if args.out_dir: OUT = args.out_dir.resolve()
@@ -1187,6 +1191,8 @@ def main():
         if args.core != 'ooo' or args.ld_lat is None or args.ld_lat < 3: parser.error('--l0 needs the ooo core and --ld-lat >= 3')
         lat += [f'RV64_OOO_L0_N={args.l0}', f'RV64_OOO_L0_LAT={args.l0_lat}']
     if args.vector: args.fpu = True   # vector FP uses the F state
+    if args.ittage and args.core != 'ooo': parser.error('--ittage applies to the ooo core')
+    lat += ['RV64_OOO_ITTAGE'] if args.ittage else []
     if args.fpu and args.core != 'ooo': parser.error('--fpu (and --vector) apply to the ooo core')
     if args.dline != 8 and (args.core != 'ooo' or args.n_miss < 2):
         parser.error('--dline above 8 needs --core ooo and --n-miss >= 2 (line reads are split reads)')
@@ -1353,6 +1359,7 @@ def main():
         extra = clk['ld_off_chain40'] - clk['ld_off_chain8']
         if not 32 * (hit + 2) <= extra <= 32 * (hit + 2) + 8:
             raise AssertionError(f'LD_LAT {args.ld_lat}: 32 load-offset-add steps took {extra} clocks, expected {32 * (hit + 2)}')
+    fe_cases.check(records, args)   # frontend: ITTAGE timing (stall 0, default caches) and fe_iw_alias
     if args.fpu:
         fp_timing_cases.check(records, args)   # backend: FP latency/throughput (default caches, stall 0 only)
         required |= fp_cases.FP_REQUIRED
@@ -1362,7 +1369,7 @@ def main():
         for outcome in ('taken','not_taken'):
             if branch_name+':'+outcome not in coverage: raise AssertionError('Missing branch outcome')
     report={'status':'PASS','cases':len(workloads),'runs':len(records),'iss_fp_check':iss_fp,'instruction_names_covered':len(required),
-            'core':args.core,'fpu':args.fpu,'dline':args.dline,'dline_scope':'tb_core only (SoC smoke and reset tests: 8-byte lines, N_MISS 1)','vector':args.vector,'vlen':args.vlen if args.vector else None,'ld_lat':args.ld_lat or 1,'l0_n':args.l0 or 0,'l0_lat':args.l0_lat if args.l0 else None,'core_source':str(args.core_source) if args.core_source else CORES[args.core],
+            'core':args.core,'fpu':args.fpu,'dline':args.dline,'dline_scope':'tb_core only (SoC smoke and reset tests: 8-byte lines, N_MISS 1)','vector':args.vector,'vlen':args.vlen if args.vector else None,'ld_lat':args.ld_lat or 1,'l0_n':args.l0 or 0,'l0_lat':args.l0_lat if args.l0 else None,'ittage':args.ittage,'core_source':str(args.core_source) if args.core_source else CORES[args.core],
             'icache_beats':args.icache_beats or 'tb_core default (512)','dcache_beats':args.dcache_beats or 'tb_core default (512)',
             'reset_test':reset_result,'bram_soc_tests':soc_results,
             'coverage':sorted(coverage),'validation_scope':'local directed/random differential simulation; no official ISA certification or synthesis',
