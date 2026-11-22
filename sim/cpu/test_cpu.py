@@ -848,6 +848,16 @@ def cases():
         return prefix() + [i_type(0x13, 10, 0, 30, 0x700), store(3, 30, 10, 0x700)] + body + [store(3, 30, 10, 0x708), 0x100073]
     yield 'ld_off_chain8', ld_off_chain(8), 0, MASK
     yield 'ld_off_chain40', ld_off_chain(40), 0, MASK
+    # A walk over distinct beats (hand-off 7): a ring of 48 nodes in consecutive beats (node i
+    # at 0x2400 + 8i points to node i + 1 mod 48), one lap to fill the L1, then n more steps.
+    def ld_far_chain(n):
+        nodes = []
+        for i in range(48):
+            nodes += [i_type(0x13, 12, 0, 30, 0x400 + 8 * ((i + 1) % 48)), store(3, 30, 12, 0x400 + 8 * i)]
+        return prefix() + nodes + [i_type(0x13, 10, 0, 30, 0x400)] + [ld(10, 10, 0) for _ in range(48 + n)] + \
+            [store(3, 30, 10, 0x708), 0x100073]
+    yield 'ld_far_chain8', ld_far_chain(8), 0, MASK
+    yield 'ld_far_chain40', ld_far_chain(40), 0, MASK
     # Offset consumers of late-written registers (hand-off 8, Codex 1609-2): a multiply,
     # a divide and a value-predicted load each feed a folded addi, whose result is used by
     # an ALU op, a branch, a store (data and address), a load address and another multiply.
@@ -922,6 +932,8 @@ def main():
                         help='Build and report folder (default build/cpu), so candidates can be tested side by side')
     parser.add_argument('--ld-lat', type=int,
                         help='ooo core: build with load-to-use latency N (define RV64_OOO_LD_LAT; default 1)')
+    parser.add_argument('--l0', type=int, help='ooo core with --ld-lat >= 3: an L0 beat buffer of N beats (RV64_OOO_L0_N)')
+    parser.add_argument('--l0-lat', type=int, default=2, help='load-to-use latency of an L0 hit (RV64_OOO_L0_LAT, default 2)')
     simulator.add_argument(parser)
     args = parser.parse_args()
     if args.out_dir: OUT = args.out_dir.resolve()
@@ -940,6 +952,9 @@ def main():
     wide = ['WIDE_TRACE'] if args.core == 'ooo' else []  # 0.10.0: up to 8 retirements per clock
     if args.ld_lat is not None and args.core != 'ooo': parser.error('--ld-lat applies to the ooo core')
     lat = [f'RV64_OOO_LD_LAT={args.ld_lat}'] if args.ld_lat is not None else []
+    if args.l0:
+        if args.core != 'ooo' or args.ld_lat is None or args.ld_lat < 3: parser.error('--l0 needs the ooo core and --ld-lat >= 3')
+        lat += [f'RV64_OOO_L0_N={args.l0}', f'RV64_OOO_L0_LAT={args.l0_lat}']
     wide += lat
     executable = sim.build('tb_core', [core_src, ROOT / 'sim/cpu/tb_core.sv'], OUT / 'cpu.vvp',
                            params=cache, defines=wide, timeout=limit)
@@ -993,22 +1008,30 @@ def main():
     if args.ld_lat is not None and args.ld_lat >= 2 and args.icache_beats is None and args.dcache_beats is None:
         clk = {r['case']: int(re.search(r'cycles=(\d+)', r['simulator_summary'])[1]) for r in records
                if r['max_wait_cycles'] == 0 and r['case'] in ('ld_lat_chain8', 'ld_lat_chain40')}
+        # With an L0 the same-beat chains hit it after their first load (hand-off 7).
+        hit = args.l0_lat if args.l0 else args.ld_lat
         extra = clk['ld_lat_chain40'] - clk['ld_lat_chain8']
-        if not 32 * args.ld_lat <= extra <= 32 * args.ld_lat + 8:
-            raise AssertionError(f'LD_LAT {args.ld_lat}: 32 chained loads took {extra} clocks, expected {32 * args.ld_lat}')
+        if not 32 * hit <= extra <= 32 * hit + 8:
+            raise AssertionError(f'LD_LAT {args.ld_lat}: 32 chained loads took {extra} clocks, expected {32 * hit}')
+        clk = {r['case']: int(re.search(r'cycles=(\d+)', r['simulator_summary'])[1]) for r in records
+               if r['max_wait_cycles'] == 0 and r['case'] in ('ld_far_chain8', 'ld_far_chain40')}
+        extra = clk['ld_far_chain40'] - clk['ld_far_chain8']
+        far = args.l0_lat if args.l0 and args.l0 >= 48 else args.ld_lat   # the ring's 48 beats fit an L0 of 48+
+        if not 32 * far <= extra <= 32 * far + 8:
+            raise AssertionError(f'LD_LAT {args.ld_lat}: 32 loads over distinct beats took {extra} clocks, expected {32 * far}')
         # A consumer with a folded offset pays its clock: load, offset clock, add.
         clk = {r['case']: int(re.search(r'cycles=(\d+)', r['simulator_summary'])[1]) for r in records
                if r['max_wait_cycles'] == 0 and r['case'] in ('ld_off_chain8', 'ld_off_chain40')}
         extra = clk['ld_off_chain40'] - clk['ld_off_chain8']
-        if not 32 * (args.ld_lat + 2) <= extra <= 32 * (args.ld_lat + 2) + 8:
-            raise AssertionError(f'LD_LAT {args.ld_lat}: 32 load-offset-add steps took {extra} clocks, expected {32 * (args.ld_lat + 2)}')
+        if not 32 * (hit + 2) <= extra <= 32 * (hit + 2) + 8:
+            raise AssertionError(f'LD_LAT {args.ld_lat}: 32 load-offset-add steps took {extra} clocks, expected {32 * (hit + 2)}')
     missing=required-coverage
     if missing: raise AssertionError('Missing instruction coverage: '+str(sorted(missing)))
     for branch_name in ('beq','bne','blt','bge','bltu','bgeu'):
         for outcome in ('taken','not_taken'):
             if branch_name+':'+outcome not in coverage: raise AssertionError('Missing branch outcome')
     report={'status':'PASS','cases':len(workloads),'runs':len(records),'instruction_names_covered':len(required),
-            'core':args.core,'ld_lat':args.ld_lat or 1,'core_source':str(args.core_source) if args.core_source else CORES[args.core],
+            'core':args.core,'ld_lat':args.ld_lat or 1,'l0_n':args.l0 or 0,'l0_lat':args.l0_lat if args.l0 else None,'core_source':str(args.core_source) if args.core_source else CORES[args.core],
             'icache_beats':args.icache_beats or 'tb_core default (512)','dcache_beats':args.dcache_beats or 'tb_core default (512)',
             'reset_test':reset_result,'bram_soc_tests':soc_results,
             'coverage':sorted(coverage),'validation_scope':'local directed/random differential simulation; no official ISA certification or synthesis',

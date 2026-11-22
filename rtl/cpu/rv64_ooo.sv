@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Original CPU foundation, wide out-of-order implementation (architecture 0.15.3).
+// Original CPU foundation, wide out-of-order implementation (architecture 0.15.4).
 // RV64IM + B execution, serialized FENCE.I, terminal EEI. Same module name and
 // contract as rv64_core.sv and rv64_pipe.sv, plus a wider retirement trace (rt_*);
 // build with one of the three files. Architecture version: cpu/VERSION,
@@ -473,13 +473,30 @@ module rv64_core #(
     reg [3:0] lw_cnt [0:LW_N-1];
     reg [ROB_B-1:0] lw_rob [0:LW_N-1];
     reg [P_B-1:0] lw_pdst [0:LW_N-1];
+    // L0 beat buffer (hand-off 7): loads whose beat was read by one of the last L0_N load
+    // answers wake after L0_LAT clocks instead of LD_LAT. Timing only (values from the L1 model).
+`ifdef RV64_OOO_L0_N
+    localparam integer L0_N = `RV64_OOO_L0_N;
+`else
+    localparam integer L0_N = 0;
+`endif
+`ifdef RV64_OOO_L0_LAT
+    localparam integer L0_LAT = `RV64_OOO_L0_LAT;
+`else
+    localparam integer L0_LAT = 2;
+`endif
+    localparam integer L0_S = L0_N > 0 ? L0_N : 1;
+    reg [60:0] l0_beat [0:L0_S-1];
+    reg [L0_S-1:0] l0_v;
+    integer l0_p, l0_k, ld_lat_now;
+    reg l0_hit;
     task automatic ld_wake(input [P_B-1:0] pd, input [ROB_B-1:0] rob, input fin);
         integer q;
         reg placed;
         begin
             placed = 0;
             for (q = 0; q < LW_N; q = q + 1) if (!lw_valid[q] && !placed) begin
-                placed = 1; lw_valid[q] = 1; lw_cnt[q] = LD_LAT - 2; lw_rob[q] = rob; lw_pdst[q] = pd; lw_fin[q] = fin;
+                placed = 1; lw_valid[q] = 1; lw_cnt[q] = ld_lat_now - 2; lw_rob[q] = rob; lw_pdst[q] = pd; lw_fin[q] = fin;
             end
             if (!placed) $fatal(1, "load wakeup queue full");
         end
@@ -946,6 +963,8 @@ module rv64_core #(
 
     initial if (RW < 3 || RW > 32) $fatal(1, "rv64_ooo.sv supports RW from 3 to 32, got %0d", RW);
     initial if (LD_LAT < 1 || LD_LAT > 16) $fatal(1, "rv64_ooo.sv needs LD_LAT from 1 to 16, got %0d", LD_LAT);
+    initial if (L0_N < 0 || L0_N > 64 || (L0_N > 0 && (L0_LAT < 2 || L0_LAT >= LD_LAT)))
+        $fatal(1, "rv64_ooo.sv: L0_N 0..64, and with L0_N > 0 2 <= L0_LAT < LD_LAT (got L0_N %0d, L0_LAT %0d, LD_LAT %0d)", L0_N, L0_LAT, LD_LAT);
     initial if (MUL_LAT < 2) $fatal(1, "rv64_ooo.sv needs MUL_LAT >= 2, got %0d", MUL_LAT);
 
     // Fused producer's value for execute port pp.
@@ -1010,7 +1029,7 @@ module rv64_core #(
             for (i = 0; i < 32; i = i + 1) begin rat[i] = i; rrat[i] = i; rat_off[i] = 0; rrat_off[i] = 0; end
             for (i = 0; i < PRF_N; i = i + 1) refcnt[i] = i < 32 ? 1 : 0;
             rb_viol = 0; mdp_wait = 0; rb_live = 0; rb_done = 0; rb_head = 0; rb_tail = 0; rb_count = 0;
-            iq_valid = 0; iq_issued = 0; ex_valid = 0; mq_valid = 0; dv_busy = 0; lw_valid = 0; rb_ans = 0;
+            iq_valid = 0; iq_issued = 0; ex_valid = 0; mq_valid = 0; dv_busy = 0; lw_valid = 0; rb_ans = 0; l0_v = 0; l0_p = 0; ld_lat_now = LD_LAT;
             ic_valid = 0; dc_valid = 0; btb_valid = 0; btb_ret = 0; ras_sp = 0; vp_valid = 0; lp_valid = 0; lp_dir = 0; tg_v = 0; tg_alt = 8; tg_age = 0; f_gh = 0; r_gh = 0; tq_cnt = 0; tq_h = 0;
             for (i = 0; i < RAS_N; i = i + 1) ras[i] = 0;
             q_head = 0; q_tail = 0; q_count = 0;
@@ -1377,7 +1396,16 @@ module rv64_core #(
                                 if (ex_writes[p]) prf_ready[ex_pdst[p]] = 1;
                                 rb_done[x_rob] = 1;
                             end else begin
+                                // L0 (hand-off 7): a beat read by a recent load answers sooner.
+                                l0_hit = 0;
+                                if (L0_N > 0) begin
+                                    for (l0_k = 0; l0_k < L0_S; l0_k = l0_k + 1)
+                                        if (l0_v[l0_k] && l0_beat[l0_k] == ea[63:3]) l0_hit = 1;
+                                    if (!l0_hit) begin l0_v[l0_p] = 1; l0_beat[l0_p] = ea[63:3]; l0_p = (l0_p + 1) % L0_S; end
+                                end
+                                ld_lat_now = l0_hit ? L0_LAT : LD_LAT;
                                 ld_wake(ex_writes[p] ? ex_pdst[p] : {P_B{1'b0}}, x_rob, 1'b1);
+                                ld_lat_now = LD_LAT;
                                 rb_ans[x_rob] = 1;
                             end
                             rb_value[x_rob] = v; rb_exc[x_rob] = 0;
