@@ -48,11 +48,13 @@ LABEL = ('Ray-tracing benchmark (RT-T TinyBVH-derived traversal, RT-P smallpt), 
          'class E1)')
 # Laptop reference and goal, per clock (cpu/raytracing-benchmark-targets.md, 2026-11-21): rays per 1,000
 # clocks or paths per million clocks, scalar build and best SIMD build; laptop work per ray and per path.
+# The P and S closest-hit SIMD goals were raised on 2026-11-22 to 1.5x the laptop's best kernels (16-ray
+# NEON packets 12.1, SVE2 ray streams 6.00 rays/kclk); any-hit keeps the TinyBVH NEON figure.
 TARGETS = {
-    'rtt_primary_closest': {'unit': 'rays/kclk', 'laptop_scalar': 4.110, 'laptop_simd': 7.154,
-                            'goal_scalar': 6.17, 'goal_simd': 10.73, 'laptop_node_visits_per_ray': 11.5734},
-    'rtt_secondary_closest': {'unit': 'rays/kclk', 'laptop_scalar': 1.493, 'laptop_simd': 2.655,
-                              'goal_scalar': 2.24, 'goal_simd': 3.98, 'laptop_node_visits_per_ray': 16.2159},
+    'rtt_primary_closest': {'unit': 'rays/kclk', 'laptop_scalar': 4.110, 'laptop_simd': 12.1,
+                            'goal_scalar': 6.17, 'goal_simd': 18.2, 'laptop_node_visits_per_ray': 11.5734},
+    'rtt_secondary_closest': {'unit': 'rays/kclk', 'laptop_scalar': 1.493, 'laptop_simd': 6.00,
+                              'goal_scalar': 2.24, 'goal_simd': 9.0, 'laptop_node_visits_per_ray': 16.2159},
     'rtt_secondary_anyhit': {'unit': 'rays/kclk', 'laptop_scalar': 1.802, 'laptop_simd': 3.085,
                              'goal_scalar': 2.70, 'goal_simd': 4.63},
     'rtp_smallpt': {'unit': 'paths/Mclk', 'laptop_scalar': 375.5, 'laptop_simd': 375.8,
@@ -62,6 +64,11 @@ MAILBOX_NAMES = {2: 'magic', 3: 'tris|nodes<<32', 4: 'rays', 5: 'P hits', 6: 'P 
                  8: 'P distance sum', 9: 'S hits', 10: 'S prim sum', 11: 'S hash', 12: 'S distance sum',
                  13: 'any-hit occluded', 14: 'any-hit hash', 15: 'paths', 16: 'segments', 17: 'image hash',
                  18: 'input data hash', 19: 'RT-P w|h<<16|spp<<32'}
+
+
+def _iss_fp(exe, ram_bytes, *options, exe_fp=None, **kw):
+    from lzma_run import iss_call as call
+    return call(exe, ram_bytes, '--fp', '1', *options, **kw)
 
 
 def check_words(words, expected, what):
@@ -115,18 +122,27 @@ def run(args, root, out, build, snap, rtl, core_file, command, sha, sim, caches)
     if 'rt' not in build:
         raise SystemExit('build.json is not an rt build')
     rt = build['rt']
-    if not rt['soft_float']:
-        raise SystemExit('This build uses the F and D extensions, which rv_iss and the released cores do not '
-                         'implement; only the rv64imb soft-float build can run')
+    fp = not rt['soft_float']
+    if fp and not (args.core == 'ooo' and getattr(args, 'fpu', False)):
+        raise SystemExit('This build uses the F and D extensions: run it with --core ooo --fpu (RV64_OOO_FPU, '
+                         'architecture 0.17.0); the multicycle and pipelined cores have no F or D')
     ram_bytes, mailbox = build['ram_bytes'], build['mailbox_address']
     hex_images = build.get('hex_images', True)
     wide = ['WIDE_TRACE', *getattr(args, 'ooo_defines', [])] if args.core == 'ooo' else []
-    mode = args.rt_mode or 'sampled'
+    # Scaled hard-float builds on the out-of-order core run whole (exact, inside one 5-minute step);
+    # the sampled default (20 K warm-up, cold caches per piece) understated RT-T 2.1-2.3x there.
+    # Soft-float and full-size builds stay sampled.
+    mode_default = args.rt_mode is None
+    mode = args.rt_mode or ('full' if args.core == 'ooo' and fp and rt['tinybvh']['rays'] <= 4096 else 'sampled')
     piece, warmup = SAMPLING[args.core]
     piece = args.sample_instructions or piece
     warmup = args.warmup_instructions if args.warmup_instructions is not None else warmup
     per_phase = args.sample_pieces if args.sample_pieces is not None else 6
     exe, iss_compiler = iss_binary(root, sha)
+    if fp:
+        import functools
+        global iss_call
+        iss_call = functools.partial(_iss_fp, exe_fp=exe)
 
     # 1. Functional run and result checks.
     started = time.perf_counter()
@@ -196,6 +212,7 @@ def run(args, root, out, build, snap, rtl, core_file, command, sha, sim, caches)
 
     def prepare(p):
         regs, memory, pc, index = bench_checkpoint.read_iss_state(p['state'])
+        fstate = bench_checkpoint.read_iss_fstate(p['state'])
         if index != p['checkpoint']:
             raise AssertionError('rv_iss state at the wrong instruction')
         if index == 0:
@@ -203,7 +220,7 @@ def run(args, root, out, build, snap, rtl, core_file, command, sha, sim, caches)
                                           'stack_pointer': 0, 'stub_instructions': 0, 'stub_pcs': []}
         else:
             image, info = bench_checkpoint.build_from_state(regs, memory, pc, index, stub,
-                                                            patches=[(mailbox, bytes(8))])
+                                                            patches=[(mailbox, bytes(8))], fstate=fstate)
         p.update(info)
         p['be'], p['le'] = bench_checkpoint.write_binaries(image, ckdir, f'piece{p["index"]:04d}', little=p['check'])
         p['skip'] = p['begin'] - p['checkpoint']
@@ -346,7 +363,8 @@ def run(args, root, out, build, snap, rtl, core_file, command, sha, sim, caches)
                      'export_args': export, 'data_dir': rt['data_dir']},
         'functional_model': {'name': 'rv_iss.c', 'source_sha256': sha(root / ISS_SOURCE), 'compiler': iss_compiler,
                              'seconds': round(functional_seconds, 2), 'mips': summary['mips']},
-        'mode': mode,
+        'mode': mode, 'mode_default': mode_default, 'fpu': fp,
+        'core_defines': list(getattr(args, 'ooo_defines', [])),
         'pieces': {'piece_instructions': piece, 'warmup_instructions': warmup, 'per_phase': per_phase,
                    'differential_every': None if args.no_differential else args.differential_every,
                    'pieces': [{k: p.get(k) for k in ('index', 'phase', 'ordinal', 'phase_pieces', 'begin', 'end',

@@ -108,20 +108,31 @@ FAR_STUB_INSTRUCTIONS = 36  # lui, jalr, auipc, 31 loads, jalr to 8, trampoline 
 FAR_DEAD_END = 0x30
 
 
-def build_from_state(regs, memory, pc, stop_index, stub_address, patches=()):
+def _fld(rd, rs1, offset):
+    return (offset & 0xfff) << 20 | rs1 << 15 | 3 << 12 | rd << 7 | 0x07
+
+
+def build_from_state(regs, memory, pc, stop_index, stub_address, patches=(), fstate=None):
     """Checkpoint image from architectural state (registers, memory bytes, PC), for
     example a state saved by the fast functional simulator rv_iss.c. Same layout as
     build() when jal reaches (always for images of up to 1 MiB); otherwise the far
     layout above. The info dict gives the layout's instruction count
     ('stub_instructions') and the PCs the stub retires first ('stub_pcs')."""
     memory = memory if isinstance(memory, bytearray) else bytearray(memory)
-    table = stub_address + 4 * 33
+    fp_words = 34 if fstate else 0       # ld x1, fcsr; csrw fcsr, x1; fld f0-f31
+    table = stub_address + 4 * (33 + fp_words)
     table = (table + 7) & ~7
-    stub_end = table + 8 * 32
+    ftable = table + 8 * 32
+    stub_end = ftable + (8 * 33 if fstate else 0)
     if stub_address & 7 or regs[2] < stub_end + 64:
         raise ValueError('restore stub would overlap the live stack')
-    near = _reaches(0, stub_address) and _reaches(stub_address + 4 * 32, pc)
+    near = _reaches(0, stub_address) and _reaches(stub_address + 4 * (32 + fp_words), pc)
     words = [0x17 | 31 << 7]  # auipc x31, 0
+    if fstate:
+        words.append(_ld(1, 31, ftable - stub_address + 8 * 32))
+        words.append(0x003 << 20 | 1 << 15 | 1 << 12 | 0x73)   # csrrw x0, fcsr, x1
+        for rd in range(32):
+            words.append(_fld(rd, 31, ftable - stub_address + 8 * rd))
     for rd in range(1, 32):
         words.append(_ld(rd, 31, table - stub_address + 8 * rd))
     if near:
@@ -130,7 +141,7 @@ def build_from_state(regs, memory, pc, stop_index, stub_address, patches=()):
         if not 0 <= stub_address < (1 << 31) or pc < FAR_DEAD_END or not _reaches(8, pc):
             raise ValueError(f'far restore stub cannot reach PC {pc:#x} from address 8')
         words.append(_jalr(0, 0, 8))
-    if len(words) != STUB_INSTRUCTIONS - 1 or stub_address + 4 * len(words) > table:
+    if len(words) != STUB_INSTRUCTIONS - 1 + fp_words or stub_address + 4 * len(words) > table:
         raise AssertionError('restore stub layout')
     for address, data in patches:
         memory[address:address + len(data)] = data
@@ -138,16 +149,21 @@ def build_from_state(regs, memory, pc, stop_index, stub_address, patches=()):
         memory[stub_address + 4 * i:stub_address + 4 * i + 4] = word.to_bytes(4, 'little')
     for rd in range(32):
         memory[table + 8 * rd:table + 8 * rd + 8] = regs[rd].to_bytes(8, 'little')
+    if fstate:
+        fregs, fcsr = fstate
+        for rd in range(32):
+            memory[ftable + 8 * rd:ftable + 8 * rd + 8] = fregs[rd].to_bytes(8, 'little')
+        memory[ftable + 256:ftable + 264] = fcsr.to_bytes(8, 'little')
     if near:
         memory[0:4] = _jal(0, stub_address).to_bytes(4, 'little')
-        count, pcs = STUB_INSTRUCTIONS, [0, stub_address]
+        count, pcs = STUB_INSTRUCTIONS + fp_words, [0, stub_address]
     else:
         hi = (stub_address + 0x800) >> 12
         lo = stub_address - (hi << 12)
         memory[0:4] = _lui(31, hi).to_bytes(4, 'little')
         memory[4:8] = _jalr(0, 31, lo).to_bytes(4, 'little')
         memory[8:12] = _jal(0, pc - 8).to_bytes(4, 'little')
-        count, pcs = FAR_STUB_INSTRUCTIONS, [0, 4, stub_address]
+        count, pcs = FAR_STUB_INSTRUCTIONS + fp_words, [0, 4, stub_address]
     return bytes(memory), {'resume_pc': pc, 'resume_instruction': stop_index, 'stub_address': stub_address,
                            'stack_pointer': regs[2], 'stub_instructions': count, 'stub_pcs': pcs}
 
@@ -155,7 +171,9 @@ def build_from_state(regs, memory, pc, stop_index, stub_address, patches=()):
 def read_iss_state(path):
     """(registers, memory bytearray, pc, instruction index) from an rv_iss.c state file."""
     data = Path(path).read_bytes()
-    if data[:8] != b'RVISSST1':
+    if data[:8] == b'RVISSST2':   # f0-f31 and fcsr after x31: drop them here (read_iss_fstate)
+        data = data[:280] + data[280 + 8 * 33:]
+    elif data[:8] != b'RVISSST1':
         raise ValueError(f'{path} is not an rv_iss state file')
     index, pc = int.from_bytes(data[8:16], 'little'), int.from_bytes(data[16:24], 'little')
     regs = [int.from_bytes(data[24 + 8 * i:32 + 8 * i], 'little') for i in range(32)]
@@ -164,6 +182,16 @@ def read_iss_state(path):
     if len(memory) != size:
         raise ValueError(f'{path} is truncated')
     return regs, memory, pc, index
+
+
+def read_iss_fstate(path):
+    """(f0-f31, fcsr) from an RVISSST2 state file, or None for RVISSST1."""
+    with open(path, 'rb') as f:
+        data = f.read(280 + 8 * 33)
+    if data[:8] != b'RVISSST2':
+        return None
+    return [int.from_bytes(data[280 + 8 * i:288 + 8 * i], 'little') for i in range(32)], \
+        int.from_bytes(data[536:544], 'little')
 
 
 def write_binaries(memory, directory, stem, little=True):
