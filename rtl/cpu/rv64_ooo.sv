@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Original CPU foundation, wide out-of-order implementation (architecture 0.19.2).
+// Original CPU foundation, wide out-of-order implementation (architecture 0.19.3).
 // RV64IM + B execution (RV64F and D with define RV64_OOO_FPU, default off; with RV64_OOO_V
 // also the RVV subset of the vector contract, step 1, executed in order),
 // serialized FENCE.I, terminal EEI. Same module name and
@@ -111,8 +111,17 @@ module rv64_core #(
     // clock). This is a behavioural simulation model: area and clock rate on an FPGA
     // are not considered yet.
     localparam [2:0] FETCH=0, EXECUTE=1, MEMORY=2, HALTED=3;
-    localparam integer IC_INDEX = $clog2(ICACHE_BEATS);
-    localparam integer IC_TAG = 61 - IC_INDEX;
+    localparam integer IC_INDEX = $clog2(ICACHE_BEATS);   // entry index over all ways
+    // Instruction-cache ways (frontend, RV64_OOO_IWAYS = 1 (default, direct-mapped) / 2 / 4): the
+    // ICACHE_BEATS 8-byte lines form IWAYS ways of IC_SETS sets with true LRU replacement per set.
+    // Entry l is way l / IC_SETS of set l % IC_SETS. Fetch compares IWAYS tags per beat.
+`ifdef RV64_OOO_IWAYS
+    localparam integer IWAYS = `RV64_OOO_IWAYS;
+`else
+    localparam integer IWAYS = 1;
+`endif
+    localparam integer IC_SETS = ICACHE_BEATS / IWAYS;
+    localparam integer IC_TAG = 61 - $clog2(IC_SETS);
     // Data cache: 2-way set associative, DCACHE_BEATS 8-byte beats in all (memory 1), in lines of DLINE
     // bytes (RV64_OOO_DLINE, 8 = one beat per line, the cache until 0.17.0).
 `ifdef RV64_OOO_DLINE
@@ -127,6 +136,9 @@ module rv64_core #(
     localparam integer DC_TAG = 61 - LBB - DC_INDEX;
     generate if (ICACHE_BEATS < 2 || (ICACHE_BEATS & (ICACHE_BEATS - 1)) != 0) begin : bad_icache_size
         initial $fatal(1, "ICACHE_BEATS must be a power of two of at least 2");
+    end endgenerate
+    generate if (!(IWAYS == 1 || IWAYS == 2 || IWAYS == 4) || ICACHE_BEATS < IWAYS) begin : bad_iways
+        initial $fatal(1, "RV64_OOO_IWAYS must be 1, 2 or 4, and at most ICACHE_BEATS");
     end endgenerate
     generate if (DCACHE_BEATS < 2 || (DCACHE_BEATS & (DCACHE_BEATS - 1)) != 0) begin : bad_dcache_size
         initial $fatal(1, "DCACHE_BEATS must be a power of two of at least 2");
@@ -598,10 +610,45 @@ module rv64_core #(
     reg [ROB_B-1:0] dv_rob;
     reg [P_B-1:0] dv_pdst;
     reg [63:0] dv_val;
-    // Caches (direct-mapped, 8-byte lines, write-through data cache).
+    // Caches (8-byte lines, write-through data cache; the instruction cache has IWAYS ways).
     reg [ICACHE_BEATS-1:0] ic_valid;
     reg [IC_TAG-1:0] ic_tag [0:ICACHE_BEATS-1];
     reg [63:0] ic_data [0:ICACHE_BEATS-1];
+    reg [1:0] ic_rank [0:ICACHE_BEATS-1];   // LRU rank in its set, 0 = most recent (a permutation per set)
+    initial for (i = 0; i < ICACHE_BEATS; i = i + 1) ic_rank[i] = i / IC_SETS;
+    function automatic integer ic_set(input [63:0] a);
+        ic_set = (a >> 3) & (IC_SETS - 1);
+    endfunction
+    function automatic integer ic_line(input [63:0] a);   // entry holding a's beat, else -1
+        integer w, s0;
+        begin
+            s0 = ic_set(a); ic_line = -1;
+            for (w = IWAYS - 1; w >= 0; w = w - 1)
+                if (ic_valid[w * IC_SETS + s0] && ic_tag[w * IC_SETS + s0] == a[63 -: IC_TAG]) ic_line = w * IC_SETS + s0;
+        end
+    endfunction
+    function automatic integer ic_victim(input [63:0] a);   // fill entry: a's own, else an invalid way, else the LRU way
+        integer w, s0;
+        begin
+            s0 = ic_set(a); ic_victim = ic_line(a);
+            if (ic_victim < 0)
+                for (w = IWAYS - 1; w >= 0; w = w - 1) if (!ic_valid[w * IC_SETS + s0]) ic_victim = w * IC_SETS + s0;
+            if (ic_victim < 0)
+                for (w = 0; w < IWAYS; w = w + 1) if (ic_rank[w * IC_SETS + s0] == IWAYS - 1) ic_victim = w * IC_SETS + s0;
+        end
+    endfunction
+    task automatic ic_touch(input integer l);   // entry l becomes its set's most recent
+        integer w, s0;
+        reg [1:0] r;
+        begin
+            if (IWAYS > 1) begin
+                s0 = l % IC_SETS; r = ic_rank[l];
+                for (w = 0; w < IWAYS; w = w + 1)
+                    if (ic_rank[w * IC_SETS + s0] < r) ic_rank[w * IC_SETS + s0] = ic_rank[w * IC_SETS + s0] + 2'd1;
+                ic_rank[l] = 0;
+            end
+        end
+    endtask
     reg [2*DC_SETS-1:0] dc_valid;                 // per line
     reg [DC_TAG-1:0] dc_tag [0:2*DC_SETS-1];
     reg [63:0] dc_data [0:DCACHE_BEATS-1];
@@ -1213,7 +1260,13 @@ module rv64_core #(
     wire pair_now = bus_hold == 3 ? hold_pair : st2_cand;
     // Extra stores carried by this write (held unchanged while the bus waits).
     wire [1:0] nx_now = bus_hold == 3 ? hold_nx : st2_cand ? sx_n : 2'd0;
-    wire f_beat_hit = ic_valid[f_pc[3 +: IC_INDEX]] && ic_tag[f_pc[3 +: IC_INDEX]] == f_pc[63 -: IC_TAG];
+    // Written out per way (not through ic_line) so event-driven simulators see the cache state.
+    wire [IC_INDEX-1:0] f_s0 = f_pc[3 +: IC_INDEX] & (IC_SETS - 1);
+    wire [IC_INDEX-1:0] f_s1 = f_s0 + IC_SETS, f_s2 = f_s0 + 2 * IC_SETS, f_s3 = f_s0 + 3 * IC_SETS;
+    wire f_beat_hit = (ic_valid[f_s0] && ic_tag[f_s0] == f_pc[63 -: IC_TAG]) ||
+                      (IWAYS > 1 && ic_valid[f_s1] && ic_tag[f_s1] == f_pc[63 -: IC_TAG]) ||
+                      (IWAYS > 2 && ((ic_valid[f_s2] && ic_tag[f_s2] == f_pc[63 -: IC_TAG]) ||
+                                     (ic_valid[f_s3] && ic_tag[f_s3] == f_pc[63 -: IC_TAG])));
     wire want_store = st_cand && !sf_wait;   // no write after a latched store fault
     wire want_miss = mu_valid && !mu_sent && !h_exc && !sf_wait;
     // The lowest-numbered younger entry waiting to be sent (a function, not always @*, so a
@@ -1336,6 +1389,8 @@ module rv64_core #(
     reg [RAS_B-1:0] cur_sp;
     reg [BTB_BITS-1:0] bi;
     reg [IC_INDEX-1:0] fi;
+    integer ic_l;
+    integer g_il [0:FW-1];               // fetch group: the cache entry of each slot's beat
     reg [6:0] n_ren;
     reg d_redirect;
     reg [63:0] d_redirect_pc;
@@ -2001,8 +2056,8 @@ module rv64_core #(
                         // error is not the redirected fetch's (0.11.1).
                         if (mem_error) begin if (!f_stale && mem_addr[63:3] == f_pc[63:3]) f_err = 1; end
                         else begin
-                            fi = mem_addr[3 +: IC_INDEX];
-                            ic_valid[fi] = 1; ic_tag[fi] = mem_addr[63 -: IC_TAG]; ic_data[fi] = mem_rdata;
+                            fi = IWAYS == 1 ? mem_addr[3 +: IC_INDEX] : ic_victim(mem_addr);
+                            ic_valid[fi] = 1; ic_tag[fi] = mem_addr[63 -: IC_TAG]; ic_data[fi] = mem_rdata; ic_touch(fi);
                         end
                         f_stale = 0;
                     end else if (bus_kind == 2 && SPLIT) begin
@@ -2300,11 +2355,16 @@ module rv64_core #(
                 if (rb_store[e]) begin
                     // Write-through: update a cached line; drop a cached instruction beat.
                     r_wd = ((prf[rb_sps2[e]] + rb_soff[e]) & (rb_fsw[e] ? 64'h00000000ffffffff : 64'hffffffffffffffff)) << {rb_addr[e][2:0],3'b000};
-                    fi = rb_addr[e][3 +: IC_INDEX];
                     if (dc_line(rb_addr[e]) >= 0)
                         for (k = 0; k < 8; k = k + 1)
                             if (rb_wstrb[e][k]) dc_data[dc_di(dc_line(rb_addr[e]), rb_addr[e])][8*k +: 8] = r_wd[8*k +: 8];
-                    if (ic_valid[fi] && ic_tag[fi] == rb_addr[e][63 -: IC_TAG]) ic_valid[fi] = 0;
+                    if (IWAYS == 1) begin
+                        fi = rb_addr[e][3 +: IC_INDEX];
+                        if (ic_valid[fi] && ic_tag[fi] == rb_addr[e][63 -: IC_TAG]) ic_valid[fi] = 0;
+                    end else begin
+                        ic_l = ic_line(rb_addr[e]);
+                        if (ic_l >= 0) ic_valid[ic_l] = 0;
+                    end
                     if (fb_valid && fb_beat[63:3] == rb_addr[e][63:3])
                         for (k = 0; k < 8; k = k + 1) if (rb_wstrb[e][k]) fb_data[8*k +: 8] = r_wd[8*k +: 8];
                     if (LB == 1 && SPLIT && mu_valid && mu_sent && mu_beat[63:3] == rb_addr[e][63:3]) mu_stale = 1;
@@ -2908,8 +2968,13 @@ module rv64_core #(
                             if (dc_line(vx_waddr) >= 0)
                                 for (vk = 0; vk < 8; vk = vk + 1)
                                     if (vx_wstrb[vk]) dc_data[dc_di(dc_line(vx_waddr), vx_waddr)][8*vk +: 8] = vx_wdata[8*vk +: 8];
-                            fi = vx_waddr[3 +: IC_INDEX];
-                            if (ic_valid[fi] && ic_tag[fi] == vx_waddr[63 -: IC_TAG]) ic_valid[fi] = 0;
+                            if (IWAYS == 1) begin
+                                fi = vx_waddr[3 +: IC_INDEX];
+                                if (ic_valid[fi] && ic_tag[fi] == vx_waddr[63 -: IC_TAG]) ic_valid[fi] = 0;
+                            end else begin
+                                ic_l = ic_line(vx_waddr);
+                                if (ic_l >= 0) ic_valid[ic_l] = 0;
+                            end
                             if (fb_valid && fb_beat[63:3] == vx_waddr[63:3])
                                 for (vk = 0; vk < 8; vk = vk + 1) if (vx_wstrb[vk]) fb_data[8*vk +: 8] = vx_wdata[8*vk +: 8];
                             if (LB == 1 && SPLIT && mu_valid && mu_sent && mu_beat[63:3] == vx_waddr[63:3]) mu_stale = 1;
@@ -3206,14 +3271,16 @@ module rv64_core #(
                 end
                 npc = f_pc;
                 for (s = 0; s < FW; s = s + 1) if (!stop) begin
-                    fi = npc[3 +: IC_INDEX];
+                    // IWAYS 1 keeps the released expressions (identical also for unknown values).
+                    if (IWAYS == 1) begin fi = npc[3 +: IC_INDEX]; ic_l = fi; end
+                    else begin ic_l = ic_line(npc); fi = ic_l; end
                     wi = 0;
-                    if (ic_valid[fi] && ic_tag[fi] == npc[63 -: IC_TAG]) wi = npc[2] ? ic_data[fi][63:32] : ic_data[fi][31:0];
+                    if (IWAYS == 1 ? (ic_valid[fi] && ic_tag[fi] == npc[63 -: IC_TAG]) : ic_l >= 0) wi = npc[2] ? ic_data[fi][63:32] : ic_data[fi][31:0];
                     op = wi[6:0];
                     isctl = op == 7'h6f || (op == 7'h67 && wi[14:12] == 0);
                     ok = isctl && (wi[11:7] == 1 || wi[11:7] == 5);                     // a call
                     hit = op == 7'h67 && wi[14:12] == 0 && wi[11:7] == 0 && (wi[19:15] == 1 || wi[19:15] == 5);  // a return
-                    if (!(ic_valid[fi] && ic_tag[fi] == npc[63 -: IC_TAG]) || (RC_FETCH == 1 && mp_any && npc[63:3] != f_pc[63:3])) stop = 1;
+                    if ((IWAYS == 1 ? !(ic_valid[fi] && ic_tag[fi] == npc[63 -: IC_TAG]) : ic_l < 0) || (RC_FETCH == 1 && mp_any && npc[63:3] != f_pc[63:3])) stop = 1;
                     else if ((ok || hit) && g_cr >= CR_MAX) stop = 1;     // CR_MAX calls or returns per group
                     else if (TG_N != 0 && op == 7'h63 && g_cb >= TG_PG) stop = 1;   // TG_PG conditional branches per group
                     else if (IT_N != 0 && is_ind(wi) && g_ij >= IT_PG) stop = 1;     // IT_PG indirect lookups per group
@@ -3289,7 +3356,7 @@ module rv64_core #(
                         if (op == 7'h63) begin cur_gh = {cur_gh[GH_L-2:0], tkp}; g_cb = g_cb + 1; end
                         g_pc[s] = npc; g_insn[s] = wi; g_pred[s] = tkp ? tgt : npc + 64'd4;
                         if (IT_N != 0 && is_ind(wi)) cur_ph = ph_upd(cur_ph, g_pred[s]);
-                        g_fp[s] = tkp; g_bh[s] = fdone; g_bc[s] = btb_ctr[bi]; g_fault[s] = 0; g_fmis[s] = 0;
+                        g_fp[s] = tkp; g_bh[s] = fdone; g_bc[s] = btb_ctr[bi]; g_fault[s] = 0; g_fmis[s] = 0; g_il[s] = ic_l;
                         g_n = s + 1;
                         if (ok) begin g_cr = g_cr + 1; cur_sp = cur_sp + 1; gras[cur_sp] = npc + 64'd4; end
                         else if (hit) begin g_cr = g_cr + 1; cur_sp = cur_sp - 1; end
@@ -3309,6 +3376,7 @@ module rv64_core #(
                         q_bhit[j] = g_bh[s]; q_bctr[j] = g_bc[s]; q_fault[j] = g_fault[s]; q_fmis[j] = g_fmis[s];
                         q_rsp[j] = g_sp[s]; q_rtos[j] = g_tos[s]; q_gh[j] = g_gh[s]; q_tp[j] = g_tp[s]; q_ph[j] = g_ph[s]; q_t[j] = fe_clk + FE_DEPTH;
                         q_lp[j] = g_lpmask[s]; q_ld[j] = g_fp[s]; q_li[j] = g_li[s]; q_lp_c[j] = g_insn[s][6:0] == 7'h63 && !g_fault[s];
+                        if (IWAYS > 1 && !g_fault[s]) ic_touch(g_il[s]);   // LRU: the accepted group's beats, in order
                     end
                     q_tail = q_tail + g_n; q_count = q_count + g_n;
                     ras_sp = cur_sp; f_gh = cur_gh; if (IT_N != 0) f_ph = cur_ph;

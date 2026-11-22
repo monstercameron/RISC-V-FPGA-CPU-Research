@@ -1166,6 +1166,8 @@ def main():
                              '--shard runs of this configuration (their --out-dir folders)')
     parser.add_argument('--ittage', action='store_true',
                         help='ooo core: indirect-target predictor (define RV64_OOO_ITTAGE) and its timing check')
+    parser.add_argument('--iways', type=int, choices=(1, 2, 4),
+                        help='ooo core: instruction-cache ways (define RV64_OOO_IWAYS; default 1)')
     simulator.add_argument(parser)
     args = parser.parse_args()
     if args.out_dir: OUT = args.out_dir.resolve()
@@ -1191,8 +1193,8 @@ def main():
         if args.core != 'ooo' or args.ld_lat is None or args.ld_lat < 3: parser.error('--l0 needs the ooo core and --ld-lat >= 3')
         lat += [f'RV64_OOO_L0_N={args.l0}', f'RV64_OOO_L0_LAT={args.l0_lat}']
     if args.vector: args.fpu = True   # vector FP uses the F state
-    if args.ittage and args.core != 'ooo': parser.error('--ittage applies to the ooo core')
-    lat += ['RV64_OOO_ITTAGE'] if args.ittage else []
+    if (args.ittage or args.iways) and args.core != 'ooo': parser.error('--ittage and --iways apply to the ooo core')
+    lat += (['RV64_OOO_ITTAGE'] if args.ittage else []) + ([f'RV64_OOO_IWAYS={args.iways}'] if args.iways else [])
     if args.fpu and args.core != 'ooo': parser.error('--fpu (and --vector) apply to the ooo core')
     if args.dline != 8 and (args.core != 'ooo' or args.n_miss < 2):
         parser.error('--dline above 8 needs --core ooo and --n-miss >= 2 (line reads are split reads)')
@@ -1232,6 +1234,7 @@ def main():
         # RVV step 1 (simd): directed and random programs in the implemented subset.
         import vec_step1_cases
         workloads += [(name,fp_cases.image_for(words),kind,addr) for name,words,kind,addr in vec_step1_cases.cases(args.vlen, 100)]
+        workloads += [(name,fp_cases.image_for(words),kind,addr) for name,words,kind,addr in fe_cases.vec_cases(globals())]   # frontend: vector store patching code
     if args.image:
         data = args.image.read_bytes()
         if len(data)>16384: raise ValueError('Firmware exceeds laboratory RAM')
@@ -1369,7 +1372,7 @@ def main():
         for outcome in ('taken','not_taken'):
             if branch_name+':'+outcome not in coverage: raise AssertionError('Missing branch outcome')
     report={'status':'PASS','cases':len(workloads),'runs':len(records),'iss_fp_check':iss_fp,'instruction_names_covered':len(required),
-            'core':args.core,'fpu':args.fpu,'dline':args.dline,'dline_scope':'tb_core only (SoC smoke and reset tests: 8-byte lines, N_MISS 1)','vector':args.vector,'vlen':args.vlen if args.vector else None,'ld_lat':args.ld_lat or 1,'l0_n':args.l0 or 0,'l0_lat':args.l0_lat if args.l0 else None,'ittage':args.ittage,'core_source':str(args.core_source) if args.core_source else CORES[args.core],
+            'core':args.core,'fpu':args.fpu,'dline':args.dline,'dline_scope':'tb_core only (SoC smoke and reset tests: 8-byte lines, N_MISS 1)','vector':args.vector,'vlen':args.vlen if args.vector else None,'ld_lat':args.ld_lat or 1,'l0_n':args.l0 or 0,'l0_lat':args.l0_lat if args.l0 else None,'ittage':args.ittage,'iways':args.iways or 1,'core_source':str(args.core_source) if args.core_source else CORES[args.core],
             'icache_beats':args.icache_beats or 'tb_core default (512)','dcache_beats':args.dcache_beats or 'tb_core default (512)',
             'reset_test':reset_result,'bram_soc_tests':soc_results,
             'coverage':sorted(coverage),'validation_scope':'local directed/random differential simulation; no official ISA certification or synthesis',
