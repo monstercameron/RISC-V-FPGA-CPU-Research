@@ -93,6 +93,26 @@ kernel figures by size (compress / decompress MIPS/MHz, machine loaded, noisy): 
 (0.14.7) is 6.72 / 3.30, which only shows that the dictionary costs nothing until memory latency is
 modelled; with the 0.15.0 memory model (L2 and `MEM_LAT`) the d22 runs are in progress.
 
+### The configuration that decides the goal (proposed 2026-11-21 21:16)
+
+A rating counts toward the 10,000 MIPS goal only on the full-size kernel (d22) in a configuration whose
+latencies a shipping core of the X925's class could plausibly have. Until each piece exists in the
+released model, the rating is quoted with the piece it lacks:
+
+| Parameter | Value | Why |
+|---|---|---|
+| L1 instruction / data | 64 KiB / 64 KiB | the X925's L1 sizes |
+| Load-to-use (`RV64_OOO_LD_LAT`) | 4 clocks | current large cores (since 0.14.10 a knob; default 1) |
+| L0 recent-beat buffer | 16 beats at 2 clocks | Lion Cove-class precedent (backend hand-off 7, queued) |
+| Multiply | 2 clocks | as released (0.14.7), a behavioural assumption |
+| L2 (stand-in for L2 + L3) | 4 MiB, 8-way, 64 B lines, 20 clocks | the X925 has 2-3 MB of L2 and a shared L3 behind it |
+| Memory (`MEM_LAT`) | 350 clocks | about 88 ns at 4 GHz |
+| Misses in flight | several, oldest guaranteed | memory hand-off 2 (held after its Codex review) |
+
+The first full-size runs (0.15.1, L2 1 / 4 MiB at 12 clocks, MEM_LAT 100, one miss at a time, 1-clock
+loads) rate 2.62 / 2.77 and 3.27 / 2.85 MIPS/MHz: above the 2.03 / 2.18 goal, but with 1-clock loads
+and 25 ns memory, so they do not yet decide it.
+
 ## The scaled kernel on our cores (simulation)
 
 `sim/cpu/bench/lzma_bench.c` runs 7-Zip's LZMA benchmark kernel (the LZMA SDK C sources of 7-Zip 26.06,
