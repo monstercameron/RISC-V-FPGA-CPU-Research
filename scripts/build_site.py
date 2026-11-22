@@ -555,6 +555,13 @@ WORKS = [
      "An error still belongs to the load that made the read. Bit-exact with 0.19.4: Dhrystone 15,703 / 10,127 clocks, "
      "7-Zip 64 KiB 359,284 / 129,587 and 4 KiB 966,029 / 149,450, in simulation.",
      dict(marks=["shared line read, error owner kept"])),
+    # Figures from the 0.20.0 history row. A new room: a prefetcher in the sample SoC's L2 is a different subject from the shared line reads of 0.19.5.
+    # An option off by default, so the drawing adds marks only.
+    ("0.20.0", "Le Pas d'Avance",
+     "A stream prefetcher in the sample SoC's L2, as an option: it fetches ahead of a sequential miss stream. "
+     "With it on at the deciding knobs (L2_PF 16, warm L2), 7-Zip d22 decompression falls 9.76% and compression 0.36%, in simulation; "
+     "the default is off and timing is unchanged, and no hardware cost or timing is claimed.",
+     dict(marks=["L2 stream prefetcher, option off by default", "fetches ahead of a sequential miss stream"])),
 ]
 
 ERAS = [
@@ -574,6 +581,7 @@ ERAS = [
     ("XIV", "Salle XIV", "Les Voies", "Ways for the instruction cache, as an option: a set of lines may hold more than one beat, and the least recently used gives way.", "0.19.3", "0.19.3"),
     ("XV", "Salle XV", "Le Lien Lointain", "A weld that reaches back: a simple operation fuses with the last writer of its source, at any distance, through a table that recovery clears.", "0.19.4", "0.19.4"),
     ("XVI", "Salle XVI", "La Lecture Partagée", "Wider lines once more: the oldest load adopts a younger load's in-flight, error-free read of the same line, and a fault stays with the load that made the read.", "0.19.5", "0.19.5"),
+    ("XVII", "Salle XVII", "Le Pas d'Avance", "The memory system looks ahead: an L2 stream prefetcher in the sample SoC, as an option, fetches the next lines of a sequential miss stream before they are asked for.", "0.20.0", "0.20.0"),
 ]
 
 

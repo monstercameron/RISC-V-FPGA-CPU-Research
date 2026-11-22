@@ -3409,6 +3409,11 @@
      "time": "11:05",
      "text": "**Publishing rule and the 0.19.3 to 0.19.5 releases** (user answer 'yes' at about 11:05: push tags and GitHub Releases with each version). Recorded in memory: for each released version, push main (fast-forward only, never force), push its cpu-v tag, and create its GitHub Release (notes = the history-row summary, cut at 600 characters, plus the Pages link; the newest is marked latest); other outward actions still need asking. Done now: origin/main was already at 6283e3f (0.19.5); `git push origin refs/tags/cpu-v0.19.3` / 0.19.4 / 0.19.5 created the tags; `gh release create cpu-v<v> --verify-tag --notes-file ...` made the three releases, with cpu-v0.19.5 latest.",
      "kind": ""
+    },
+    {
+     "time": "10:54 to 11:21",
+     "text": "**0.20.0 released** (coordinator; bandwidth D1 package c-l2pf-on-0190-after-a.diff applied to main 6283e3f: rtl/cpu/rv64_bram_soc.sv, sim/cpu/bench/tb_bench.sv, run_bench.py and the js/lzma/mm/rt/stream/ternary runners; core unchanged except the header). Check: `python -B sim/cpu/suite.py release-minor fpu vector soc --expect sim/cpu/baselines/0.19.4-release-patch.json --jobs 2` (10:54 to 11:21) 63/63 PASS, all the same as 0.19.4. MINOR (new documented SoC parameters). Tag `cpu-v0.20.0`; pushed and released on GitHub per the 11:05 rule.",
+     "kind": ""
     }
    ],
    "commits": []
