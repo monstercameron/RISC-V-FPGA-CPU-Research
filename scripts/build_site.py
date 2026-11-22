@@ -262,7 +262,7 @@ DEFAULTS = dict(
     marks=[], fuse=False, bias=False, btb_n=256, lp_n=256,
     mul_lat=0, ld_knob=False, l2=False, vp_conf=False, tage=False,
     tg_n=4, btb_guard=False, btb_rel=False, l0=False, ldwait=False, n_miss=False, fuse_x=False,
-    wake_fill=False, fpu=False,
+    wake_fill=False, fpu=False, fp_lat=False, fp_div=False,
 )
 
 # (version, era, French title, caption, medium, overrides)
@@ -490,6 +490,18 @@ WORKS = [
      "and the exception flags settled at retirement. Hard-float ray tracing finds 3.57 primary rays per thousand clocks where soft float found 0.327, "
      "and 315 paths per million clocks where it found 15.4, in simulation; built in, the unit leaves Dhrystone and 7-Zip clocks unchanged.",
      dict(fpu=True, marks=["F and D, off by default", "fflags at retirement"])),
+    # Figures from the 0.17.1 and 0.17.2 history rows (ray tracing in full mode, contiguous
+    # from reset; not the sampled deciding-config RT-T rates withdrawn at DEVLOG.md 01:08 / 01:11).
+    ("0.17.1", "Le Pas Pressé",
+     "A quicker step for numbers that float: an add now takes two clocks and a multiply three, where they took three and four, and the fused multiply-add keeps four, "
+     "the latencies of Lion Cove and Zen 5. Ray tracing in hard float, run whole from reset, finds 4.020 primary rays per thousand clocks where it found 3.736, "
+     "and 367.9 paths per million clocks where it found 326.6, in simulation; Dhrystone and 7-Zip clocks do not move.",
+     dict(fp_lat=True, marks=["add in two, multiply in three"])),
+    ("0.17.2", "La Racine",
+     "Division and the square root at Lion Cove's pace: a single-precision divide in 7 clocks and a double in 10, roots in 10 and 15, where they took 11, 13, 12 and 18, "
+     "and a new single divide may start every second clock. Paths per million clocks rise from 367.9 to 394.6 and primary rays from 4.020 to 4.136 per thousand, "
+     "in simulation; Dhrystone and 7-Zip clocks do not move.",
+     dict(fp_div=True, marks=["divide and root at Lion Cove's pace"])),
 ]
 
 ERAS = [
@@ -502,7 +514,7 @@ ERAS = [
     ("VII", "Salle VII", "Le Conseil", "The council widens everything at once: doors, room and breath, then a mending, a deeper memory for returns, and a fourth hand for branches.", "0.13.1", "0.14.6"),
     ("VIII", "Salle VIII", "L'Archive", "The council turns to a second measure, the LZMA kernel of 7-Zip: a quicker multiply, honest offsets, a mended way home, floors of memory below, and a predictor with a long memory.", "0.14.7", "0.15.2"),
     ("IX", "Salle IX", "Les Lettres en Vol", "Mendings for the branch buffer, a near memory and a ledger of waiting loads, six tables of long memory, then several reads in flight at once, a weld that spans two clocks, and loads that sleep until their answer comes.", "0.15.3", "0.16.2"),
-    ("X", "Salle X", "La Virgule Flottante", "Numbers that float: single and double precision arrive in the out-of-order core, built in only on request.", "0.17.0", "0.17.0"),
+    ("X", "Salle X", "La Virgule Flottante", "Numbers that float: single and double precision arrive in the out-of-order core, built in only on request, then add, multiply, divide and root at the latencies of Lion Cove and Zen 5.", "0.17.0", "0.17.2"),
 ]
 
 
@@ -611,6 +623,11 @@ def unit_lines(s: dict) -> list[tuple[str, str]]:
         if s["fpu"]:
             u.append(("Floating point", "RV64F and RV64D behind the define RV64_OOO_FPU, default off: four FP ports (two FMA, two misc), "
                       "pipelined divide and square root, a 64-entry rename map (x and f) on one physical register file, fflags at retirement"))
+            if s["fp_lat"] or s["fp_div"]:
+                lat = ["add 2, multiply 3, fused multiply-add 4" if s["fp_lat"] else "add 3, multiply 4, fused multiply-add 4"]
+                if s["fp_div"]:
+                    lat.append("divide 7 / 10 and square root 10 / 15 (single / double), a single divide every 2 clocks")
+                u.append(("FP latencies, clocks", "; ".join(lat)))
     return u
 
 
@@ -1082,6 +1099,16 @@ class Art:
                 self.line(554 + 9 * math.cos(a), fy + 9 * math.sin(a), 554 + 13 * math.cos(a), fy + 13 * math.sin(a), sw=1)
             self.line(725, 500, 725, 528, sw=1.2)
             self.path("M725 506 L745 511 L725 517 Z", sw=1, fill=GOLD)
+            if s["fp_lat"]:
+                # a quicker step: two gold beats under the first multiply-add port (add in two)
+                # and three under the second (multiply in three)
+                for i, n in ((0, 2), (1, 3)):
+                    fx = 452 + i * 34
+                    for k in range(n):
+                        self.disc(fx - (n - 1) * 3.5 + k * 7, fy + 21, 2.2, GOLD, sw=0.7, off=0)
+            if s["fp_div"]:
+                # the divider's notches gain a gold radical: divide and root at Lion Cove's pace
+                self.path(f"M547 {fy + 1} L550 {fy + 5} L554 {fy - 6} L561 {fy - 6}", sw=1.6, col=GOLD)
         self.caches(796)
         if s["l2"]:
             self.memory_floors(796)
@@ -1284,6 +1311,8 @@ PROBE_DHRYSTONE = {
     "0.16.1": ("15,703 / 10,127", ""),
     "0.16.2": ("15,706 / 10,127", "default N_MISS 1 neutral"),
     "0.17.0": ("15,706 / 10,127", "unchanged with the FPU built in"),
+    "0.17.1": ("15,706 / 10,127", "unchanged with and without the FPU"),
+    "0.17.2": ("15,706 / 10,127", "unchanged with and without the FPU"),
 }
 
 # The second measure: the LZMA benchmark kernel of 7-Zip, scaled down to fit the
@@ -1341,6 +1370,8 @@ SEVENZIP_BY_VERSION = {
                            "and -4.3% / -0.5% compress / decompress at 4 KiB"),
     "0.17.0": (None, None, "384,788 / 133,243 clocks at 64 KiB caches, unchanged with the FPU built in; "
                            "604,503 / 229,974 at the deciding knobs, also unchanged"),
+    "0.17.1": (None, None, "384,788 / 133,243 clocks at 64 KiB caches, unchanged with and without the FPU"),
+    "0.17.2": (None, None, "384,788 / 133,243 clocks at 64 KiB caches, unchanged with and without the FPU"),
 }
 
 
@@ -1403,6 +1434,43 @@ def sevenzip_plate() -> str:
 </section>"""
 
 
+# A third measure: the QuickJS-ng 0.18.0 bytecode interpreter running nine kernels
+# (cpu/js-benchmark-targets.md, commit 4c64892). Each figure is the geometric mean over the
+# nine timed calls of (laptop cycles / our clocks): 1.0 is the laptop's own rate per clock.
+# Baseline on architecture 0.17.0 from that file's tables; the 1 MiB instruction-cache probe
+# from the DEVLOG.md row of 2026-11-22 02:12 to 02:16.
+JSBENCH = [
+    # (label, note, laptop-relative rate per clock, fraction of goal or None, style)
+    ("Goal", "1.5x the laptop per clock, on every kernel and as the geometric mean", 1.5, None, "goal"),
+    ("Cortex-X925, native", "the laptop core running the same engine, harness and script; median of 16 runs, CPU cycle counter; not a simulation", 1.0, None, "native"),
+    ("0.17.0 out of order, hard float, 64 KiB caches", "simulated, flat memory, 16 sampled pieces per kernel; no kernel reaches the goal", 0.844, 56.3, "sim"),
+    ("0.17.0 out of order, soft float, 64 KiB caches", "simulated, as above with the FPU off and compiler-rt, 8 pieces per kernel; faster than hard float through instruction-cache layout", 0.916, 61.1, "sim"),
+    ("0.17.0 out of order, hard float, 1 MiB instruction cache", "a probe, not a design: simulated, one piece per kernel, 500K warm-up", 1.15, 76.0, "sim"),
+    ("0.17.0 out of order, hard float, 7-Zip's deciding configuration", "simulated, slow loads and a large distant memory, 4 pieces per kernel with wide intervals; the order of magnitude is the result", 0.284, 18.9, "sim"),
+]
+
+
+def js_plate() -> str:
+    top = 1.6
+    rows = []
+    for label, note, r, frac, style in JSBENCH:
+        extra = f"; {frac:g}% of the goal" if frac is not None else ""
+        fr = f"{r:.2f}" if r >= 1 else f"{r:.3f}"
+        rows.append(f'<li class="zrow {style}"><p class="zlab">{e(label)} <span class="znote">{e(note + extra)}</span></p>'
+                    f'<div class="zb c"><span class="bar" style="--f:{r / top:.4f}" title="{e(label)}: {fr}x the laptop per clock"></span>'
+                    f'<span class="val">{fr}x<span class="sr-only"> the laptop per clock</span></span></div></li>')
+    return f"""
+<section class="plate" aria-labelledby="js-h">
+  <h2 id="js-h">L'Interprète</h2>
+  <p class="small">A third measure: JavaScript, run by the QuickJS-ng 0.18.0 bytecode interpreter (no JIT) through nine kernels: properties, a scheduler, a fluid stencil, SHA-256, JSON, regular expressions,
+  strings, a DOM-like tree and closures. Each bar is the geometric mean over the nine of the laptop's clocks divided by ours for the same timed call, so 1.0 is the laptop's own rate per clock.
+  The goal is 1.5x on every kernel and as the mean. The laptop row is a native measurement; every other row is a simulation of this processor, not a hardware result, and the flat-memory rows flatter it
+  against the laptop's real caches and memory.</p>
+  <ol class="zchart">{"".join(rows)}</ol>
+  <p class="small">Scale: 0 to {top:g}x the laptop per clock, linear. Out-of-order rows under Verilator, sampled from rv_iss checkpoints with a 2M-instruction warm-up; output checked against the native run by hash.</p>
+</section>"""
+
+
 def medium(kind: str) -> str:
     return {"mc": "ink and ochre on vellum; simulated",
             "pipe": "ink, slate and ochre on vellum; simulated",
@@ -1436,6 +1504,10 @@ def alt_text(v: dict, s: dict) -> str:
         if s["fpu"]:
             parts.append("Four small dashed sage discs below the execution row are the floating-point ports, two with oxblood centres for the multiply-add units and one notched for the pipelined divider; "
                          "a gold row in the register file stands for the f registers, and a gold flag on the retire column for the exception flags settled at retirement.")
+        if s["fp_lat"]:
+            parts.append("Two gold beats under the first multiply-add port and three under the second: an add in two clocks, a multiply in three.")
+        if s["fp_div"]:
+            parts.append("A gold radical sign inside the notched divider port: divide and square root at shorter latencies.")
     elif s["kind"] == "pipe":
         parts.append(f"{len(s['stages'])} pipeline stages as coloured slabs, a branch target buffer drawn as rings, and two caches above a bus.")
     else:
@@ -1585,7 +1657,7 @@ def journal_page(versions, days, runs) -> str:
 <section class="page-head">
   <p class="eyebrow">Le Journal</p>
   <h1>The notebook, day by day</h1>
-  <p class="lede">The development log, set as an exhibition catalogue: findings, the timeline of each day, the commits, every Dhrystone run, and a second measure from a scaled 7-Zip kernel. Text follows the
+  <p class="lede">The development log, set as an exhibition catalogue: findings, the timeline of each day, the commits, every Dhrystone run, a second measure from a scaled 7-Zip kernel and a third from a JavaScript interpreter. Text follows the
   <a href="{BLOB}DEVLOG.md" rel="noopener">DEVLOG.md</a> in the repository, which remains the full record. The small tag on each entry names where its time came from.</p>
 </section>
 <section class="plate" aria-labelledby="chart-h">
@@ -1595,6 +1667,7 @@ def journal_page(versions, days, runs) -> str:
   <div class="chart-wrap">{chart}</div>
 </section>
 {sevenzip_plate()}
+{js_plate()}
 <nav class="day-nav" aria-label="Days">{"".join(f'<a href="#d-{d["date"]}">{e(fr_date(d["date"]))}</a>' for d in days)}<a href="#runs">Les Essais</a></nav>
 """]
     for d in days:
@@ -1638,7 +1711,7 @@ def journal_page(versions, days, runs) -> str:
   <tbody>{"".join(run_rows)}</tbody></table></div>
 </section>
 <p class="more-link"><a href="{BLOB}DEVLOG.md" rel="noopener">Read the full DEVLOG.md on GitHub &rarr;</a></p>""")
-    return page("Le Journal · Atelier RV64", "The development log of the RV64 research CPU project: dated entries, commits, simulated Dhrystone runs and a scaled 7-Zip kernel. No hardware measurements of this processor.",
+    return page("Le Journal · Atelier RV64", "The development log of the RV64 research CPU project: dated entries, commits, simulated Dhrystone runs, a scaled 7-Zip kernel and a JavaScript interpreter. No hardware measurements of this processor.",
                 "".join(body), "journal", "journal.html", body_class="journal")
 
 
@@ -1657,6 +1730,7 @@ def index_page(versions) -> str:
     d22 = next(r for r in SEVENZIP if r[4] == "goal" and "d22" in r[0])
     d22run = next(r for r in SEVENZIP if r[4] == "sim" and "d22" in r[0] and r[0].startswith("0.15.4"))
     d22met = next(r for r in SEVENZIP if r[4] == "sim" and "d22" in r[0] and r[0].startswith("0.16.0"))
+    jsb = next(r for r in JSBENCH if r[4] == "sim")
     body = f"""
 <section class="hero">
   <div class="hero-text">
@@ -1692,7 +1766,8 @@ def index_page(versions) -> str:
     Beside it, a second measure: a scaled 7-Zip LZMA kernel, simulated at {z7[0]:.2f} / {z7[1]:.2f} MIPS/MHz compress / decompress on version {z7v} (64 KiB caches), against a goal of about {SEVENZIP[0][2]:g} / {SEVENZIP[0][3]:g};
     a laptop's Cortex-X925 runs the same scaled kernel natively at {x925[2]:.2f} / {x925[3]:.2f}. On the full-size (d22) kernel the goal is about {d22[2]:.2f} / {d22[3]:.2f};
     in the deciding configuration version 0.15.4 reaches {d22run[2]:.2f} / {d22run[3]:.2f} in simulation with one miss at a time (75% / 91%),
-    and version 0.16.0 with four misses in flight {d22met[2]:.2f} / {d22met[3]:.2f}, the goal met in point estimate (108% / 107%).</p>
+    and version 0.16.0 with four misses in flight {d22met[2]:.2f} / {d22met[3]:.2f}, the goal met in point estimate (108% / 107%).
+    A third, a JavaScript interpreter, runs at {jsb[2]:.3f}x the laptop's rate per clock on version 0.17.0 in simulation ({jsb[3]:g}% of a goal of {JSBENCH[0][2]:g}x).</p>
     <p><a href="journal.html">Open the notebook &rarr;</a></p>
   </article>
   <article>

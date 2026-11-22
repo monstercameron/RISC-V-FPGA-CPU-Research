@@ -1679,6 +1679,331 @@
      "time": "01:11",
      "text": "**RT sampling artifact measured; deciding-config RT-T profile** (backend; hard-float rt on the 0.17.0 core, deciding config LD 4, L0 16, L2 4 MiB / 20, MEM 350, N_MISS 4). rt_run's default ooo sampling (150K pieces, 20K warm-up) against `--rt-mode full` (contiguous from reset, exact, 114-147 s per run): P 1.478 vs **3.247** rays/kclk, S closest 0.765 vs **1.717**, S any-hit 0.827 vs **1.710**, RT-P 285 vs **313** paths/Mclk. Sampling understates RT-T by 2.1-2.3x. A sampled run with a 1M warm-up did not finish in 300 s. **Correction:** the deciding-config RT-T rates in the 00:53 row and the deciding-config FP-latency deltas in the 00:59 row are withdrawn; the flat-config deltas stand. Full-mode profile per 1,000 instructions, P / S closest / S any-hit / RT-P: CPI 0.30 / 0.45 / 0.48 / 0.41; L1D misses 7.6 / 8.3 / 9.0 / 0.3; mispredicts 14.3 / 28.5 / 28.9 / 4.4 (about 15 per P ray, 35-37 per S ray). Of zero-retire clocks, the head waits on dependences (FP chains, compare to branch) in 79-87% on RT-T and 95% on RT-P, and DRAM is about 0. The scaled RT-T is not memory- or window-bound. Its levers are FP latency (0.17.1), prediction of traversal branches, and the compare-to-branch chain. **Decision:** `--rt-mode full` becomes the default for scaled rt builds on ooo, in a bench-only commit together with hard-float rt support in main (backend preparing it).",
      "kind": ""
+    },
+    {
+     "time": "01:16",
+     "text": "**IQ-256 bound on hard-float rt** (middle; 0.17.0 core with the FPU, 100k-instruction windows mid-phase, flat memory, 64 KiB L1s). Clocks, IQ 128 to 256: P 26,960 to 26,832 (-0.5%), S closest 43,809 to 43,739 (-0.2%), any-hit 42,765 to 42,679 (-0.2%), RT-P 41,055 to 40,928 (-0.3%). IQ-full clocks fell by half or more, so IQ capacity is a symptom, not the limit. Rejected. Surprise: `IQ_B = 7` is hard-coded beside `IQ_N`, so changing IQ_N alone deadlocks (`miss_store_dep_window`). That looked like a timeout at first. It doesn't affect the released configuration; IQ_B = $clog2(IQ_N) goes into the 0.17.2 cleanup. Head of the ROB when nothing retires (300k windows): RT-P fsqrt.d 35%, fdiv.d about 13%; RT-T fdiv.s 7-9%, data-dependent bnez 2-6% each. FP moves are 5.3% of P/S and 2.7% of RT-P instructions. **Decisions:** middle bounds FP move elimination at rename next (fsgnj rd,rs,rs; .s only with a per-register boxed bit); backend sources FDIV/FSQRT latencies after 0.17.1.",
+     "kind": ""
+    },
+    {
+     "time": "01:28 to 01:33",
+     "text": "**Hard-float rt bench support in main** (backend package `bench-rt-fp.diff` on cpu-v0.17.0, crediting middle's rt_fp_tools edits; touches rt_run.py and bench_checkpoint.py only). What it adds: F/D rt builds need `--core ooo --fpu`; rv_iss runs them with `--fp 1`; RVISSST2 checkpoints restore f0-f31 and fcsr before x1-x31; scaled hard-float builds on ooo default to `--rt-mode full`. Backend's proof: soft float, sampled, 12 pieces reproduces 0.3274 / 0.1997 / 0.2097 / 15.36 exactly. **Coordinator check on main**, hard-float image copied from backend's mirror (clang 23.1.5): `run_bench.py --benchmark rt --core ooo --sim verilator --fpu --differential-every 2`, Verilator 5.020, flat memory, 64 KiB L1s, full mode, 172 s. Native reference PASS (rv_iss, 10,208,721 instructions), timing mailbox PASS, differential 16 pieces PASS. Results: P **3.736** rays/kclk (IPC 3.81, 1,019 instructions per ray), S closest **1.964**, S any-hit **1.982**, RT-P **326.6** paths/Mclk, the same as backend's run. That is 60.6% / 87.7% / 73.4% / 58.0% of the scalar goals. Full mode is 4-7% above the 12-piece sampled estimate (3.57 / 1.837 / 1.943 / 315.2) at this config. The first two attempts failed before simulating: the image folder and `build/cpu/bench/rt-data` were missing in main, and both were copied from the mirror. Also fixed: rt_run's SIMD goals were stale (10.73 / 3.98) and are now 18.2 / 9.0, the 00:14 and 00:20 values.",
+     "kind": ""
+    },
+    {
+     "time": "about 00:58 to 01:07",
+     "text": "**Memory-compression survey** (research agent, web only, nothing run or downloaded): cache (FPC, BDI, C-Pack, SC2, BPC, DCC, SCC, YACC, DISH, Thesaurus, 2DCC, ZCA, Base-Victim), main memory (MXT, LCP, Compresso, Buddy; Centriq 2400, NVIDIA A100, IBM NX/z15, Intel IAA, Ampere Computing: nothing found), OS-level (zswap, zram, WKdm, Apple, Windows) and link compression, with URLs and evidence levels (no paper PDF could be text-extracted; numbers marked read, excerpt or unverified). Citation corrections: DISH is MICRO 2016, Thesaurus ASPLOS 2020. Finding: only BDI / FPC / ZCA document 1-5 cycle decompression; shipping parts compress for bandwidth and publish no latency; no mainstream shipping CPU documents a compressed L2/LLC. Report `build/research/memory-compression.md` section 2 (source: research agent)",
+     "kind": ""
+    },
+    {
+     "time": "01:09 to 01:16",
+     "text": "**Compressibility of our data, access-weighted** (research engineer; repo `540c620`, rv_iss.c from `c4da8a3` sha256 a1840e54; Ubuntu clang 18.1.3 `-O2`, Python 3.12.3, WSL Ubuntu 24.04). Tool: rv_iss.c patched with `memcomp.h` (scratchpad `memcomp/patch.py`, `memcomp.h`; unit test `test_comp.c` passed by hand-checked cases) so the `--warm-caches` L1 model (64 KiB, 8 B lines, write-through) feeds BDI / FPC / zero-line statistics on 64 B and 32 B lines and 10 L2 models (1-16 MiB plain; 4 MiB with 16 / 32 tags per set, BDI, FPC, best). Commands (in `build/research/memcomp`): `timeout 300 memcomp_iss.bin --ram 67108864 --image build/cpu/bench/lzma-d22-rv64imb-big/bench.bin --mailbox 3ffff00 --warm-caches 8192,8192,4096,8,64 --mc-out lzma-d22-{a,b}.json` with `MC_SET=a` / `b` (97 s / 164 s), the same for d12 / d16 / d18, and `--fp 1 --ram 524288 --image build/cpu/ooo-debug/council/backend/rtfd/bench.bin --mailbox 7ff00` for RT; all runs ended with the expected mailbox. Results (8 B segments, zero lines free): d22 compress L2 data reads (24.6 M) BDI 1.16, FPC 1.27, best **1.32**; DRAM reads (4.99 M) best **1.64**; footprint 50.2 MiB best 1.63; the likely son array (about 38 MiB of addresses) 2.0-2.8x, the input window 1.0-1.17. Compressed 4 MiB L2 with 16 tags: misses -5.9% (BDI), -17.6% (FPC), **-18.7% (best)**, -21.2% with 32 tags; 41.3% of hits on compressed lines; plain 6 MiB -18.2%, 8 MiB -31.8%. d22 decompress best 1.08 (L2 reads), 1.00 (DRAM reads), no miss removed. d16 / d18 fit the L2 (no miss removed; 62.8% of d18 hits compressed). RT (0.14 MiB footprint, misses identical at 1-16 MiB): RT-T L2 reads BDI 1.02-1.04, best 1.20-1.35; RT-P best 2.07. DRAM slot use at MEM_GAP 8: d22 compress 2.2%, decompress 0.39%. Outputs `build/research/memcomp/*.json`, `summary-*.md` (source: output)",
+     "kind": ""
+    },
+    {
+     "time": "01:15 to 01:31",
+     "text": "**Paired L2 capacity / latency / bandwidth bounds at d22, deciding configuration** (research engineer; copy of the 0.16.0 mirror in `build/research/memcomp/root160`, RTL equal to `cpu-v0.16.0`; Verilator 5.020, Python 3.12.3). Command per configuration (`scratchpad/memcomp/knob_runs.sh`): `timeout 300 python3 -B sim/cpu/bench/run_bench.py --benchmark lzma --core ooo --sim verilator --no-differential --ld-lat 4 --l0 16 --mem-lat 350 --n-miss 4 <L2 options> --lzma-mode sampled --warm-l2 --jobs 3 --out-dir build/cpu/bench/lzma-d22-knob-<tag> --sample-pieces 60 --warmup-instructions 3000000 --pieces A:B` for A:B in 0:3 20:23 40:43 57:60 60:63 90:93; 28 invocations, all rc 0, paired piece by piece with `lzma-d22-160-goal-w3m` (scratchpad `pair.py`, `estimate.py`). Compress (12 pieces, base 901,244 clocks) / decompress (6 pieces): L2_LAT 22 **+0.89%** / +0.70%; 6 MiB 12-way at 20 **-7.85%** (+-2.1%) / +0.18%; 6 MiB at 21 **-7.38%** / +0.42%; 8 MiB 16-way -13.97% / +0.01%; MEM_GAP 0 **-0.25%** (+-0.24%). One rv_iss final-memory read-back retried once (known drvfs flake, then passed). Conclusion: at d22 compress, capacity is worth about 0.43% clocks per 1% fewer misses and L2 latency 0.45% per clock; bandwidth is not binding. First-order estimate for a 2x-tag compressed 4 MiB L2: BDI+FPC +8.3% compress rating (+2 clk) / +7.7% (+5 clk), BDI only +2.4%, decompress -0.0 to -0.3%, RT-T -0 to -2% (BDI ~0; -5% if every hit-clock is exposed), d12-d18 -1 to -3%. Recommendation: no main-memory, link or L1 compression; one default-off SoC experiment for a compressed L2, quoted separately from the deciding configuration (no shipping precedent; the gain equals a 6 MiB L2). Report `build/research/memory-compression.md` (source: output)",
+     "kind": ""
+    },
+    {
+     "time": "01:36",
+     "text": "**Memory-compression decision** (coordinator, on the research report `build/research/memory-compression.md`; rows above pasted from its section 8). Main memory, link and OS-level compression: rejected. MEM_GAP 8 is not binding (MEM_GAP 0 gives -0.25% on d22 compress), the footprint fits, and there is no OS. L1 compression: rejected, since 8 B lines leave nothing to compress. L2 compression: a possible default-off SoC experiment, reported as its own row and never in the deciding configuration. Its whole gain is d22 compress capacity: a 6 MiB L2 at latency 21, the zero-RTL stand-in, gives -7.38% clocks (12 paired pieces, +-2.1%), with 0 to -3% elsewhere. It ranks below L2 hit-latency and L1-line work, which help every workload. First step when there is time: a 60-piece paired run of the 6 MiB / latency 21 stand-in. Uncharged cost noted: with the write-through L1, every store would recompress an L2 line. Not independently reviewed.",
+     "kind": ""
+    },
+    {
+     "time": "01:36",
+     "text": "**Vector pipe mix for the out-of-order steps** (SIMD engineer; model bounds, not RTL). Workloads: a synthetic emulator-class byte-shuffle kernel (k5, mix after the RPCS3 note) and rt. Emulated ops per clock: accepted plan (integer only on VP2) 0.367. Integer ALU, logic, shift, merge and moves also on VP0/VP1: 0.586 (+60%). Plus a second permute unit on VP1: 0.622 (+69%). With permute latency 2: 0.674 (+84%). With 2-clock vector-to-scalar as well: 0.683. A 4th ALU/permute pipe instead: 0.595. Latency cuts alone: +0.5%. Cost on rt: -0.4% P, -0.2% S. **Decision (SIMD engineer, accepted by the coordinator):** VP0/VP1 get FMA plus the full integer class, including vector-scalar moves; VP2 gets ALU, permute and reductions; a second permute unit on VP1; permute latency target 2; no 4th pipe. Estimated cost, not measured: about 3K LUT6 for the second 256-bit e8 crossbar, plus a few hundred LUTs per integer pipe. Surprise: k5 needed a tournament predictor in the model (gshare mispredicted 50%), and that predictor also moves the model's rt bounds by 4-5% (P 17.35 to 18.26, S 9.71 to 10.10 rays/kclk at N_MISS 8). The model's predictor is a +-5% uncertainty. Step 1 is unchanged.",
+     "kind": ""
+    },
+    {
+     "time": "01:18",
+     "text": "**JS research: QuickJS-ng fetched** (research agent; WSL Ubuntu 24.04 aarch64, clang/LLD 18.1.3, Python 3.12.3). `curl -sSL https://github.com/quickjs-ng/quickjs/archive/refs/tags/v0.18.0.tar.gz`, `sha256sum`: 910,210 B, SHA-256 28bcd89aa3683fd2a946537e5ce3f11cc46b5cbf3383c7561aaef3df5ff9f1dd, tag v0.18.0 = d7215b0ad3fc. Source only, in the ignored build/research/js/src.",
+     "kind": ""
+    },
+    {
+     "time": "01:19",
+     "text": "**JS research: bare-metal compile check.** `clang --target=riscv64-unknown-elf -march=rv64imfd_zba_zbb_zbs -mabi=lp64d -O2 -nostdinc ... -D__DJGPP -DNDEBUG -c` on quickjs, libregexp, libunicode and dtoa, then `llvm-nm`. All compile unmodified: 1.00 MB of text and 51 unresolved libc symbols, so a shim libc suffices.",
+     "kind": ""
+    },
+    {
+     "time": "01:24 to 01:27",
+     "text": "**JS research: first runs on rv_iss** (rv_iss from the working-tree rv_iss.c blob 17e0a038, `clang -O2 -std=c11`). `build.sh 1`; `rv_iss --ram 33554432 --image bench.bin --fp 1 --mailbox 1ffff00`. The first run was 617.5M instructions; after rescaling it was 281,314,701 for 9 original deterministic kernels (props, sched, navier, sha256, json, regex, strings, dom, funcs; 24.4-46.8M each). The output hash equals the native one (8528185c..., then 06484b07bf7fe92f after rescaling).",
+     "kind": ""
+    },
+    {
+     "time": "01:27",
+     "text": "**JS research: native instruction counts** (harness reading PMUv3 events 0x08 and 0x11, `taskset -c 19`, Cortex-X925). RV instructions per AArch64 instruction: 1.19-1.29. X925 IPC: 4.1-5.7.",
+     "kind": ""
+    },
+    {
+     "time": "01:28 to 01:30",
+     "text": "**JS research: trace statistics** (`profile_all.sh`, 1.5M-instruction window per kernel, `analyze.py`; trace models, not RTL). I-cache at 64 KiB direct-mapped with 8 B lines: 1.2-58.6 MPKI; 4-way with 64 B lines: 0-3.5. Indirect jumps: 18-41 per 1,000 instructions; last-target prediction misses 0.8-17.4 MPKI, an ideal path-history predictor 0.2-6.9. The 1K-entry direct-mapped BTB misses 7-19 per 1,000 instructions. 11-40% of branches test a value loaded within 4 instructions. Two failed first attempts (stdin consumed by the loop; a variable-shadowing bug), both fixed.",
+     "kind": ""
+    },
+    {
+     "time": "01:31 to 01:36",
+     "text": "**JS research: soft-float rv64imb build.** `ISA=rv64im_zba_zbb_zbs_zifencei ABI=lp64 SOFTFP_OBJS=<vendored compiler-rt> build.sh 1`. The first run hung: the agent's own __fixunsdfdi and compiler-rt's __fixdfdi called each other, and it was killed at 300 s. After the fix: 304,595,994 instructions with the same hash, +8% over hard float (navier +44%). The benchmark runs on the released 0.16.2 ISA.",
+     "kind": ""
+    },
+    {
+     "time": "01:35",
+     "text": "**JS research: preliminary laptop reference** (`native_ref.sh`, 5 runs, vCPU 19): per-kernel median 3.96-7.02M cycles. Provisional, with the clock not ramped. Report: `build/research/js-engines.md`. Engines: V8 (acf7e405) has every tier on riscv64 but needs rv64gc plus Linux; Node's riscv64 support is experimental; JSC (e7c46702) has LLInt, Baseline, DFG and YARR on riscv64, emits IMAFD only and flushes the I-cache on every repatch; Bun has no riscv64 target. Ranked weaknesses: I-cache (direct-mapped, 8 B lines, no prefetch), no history-based indirect predictor, the BTB, guards on just-loaded values, missing A/C/Zicond, FENCE.I clearing the whole I-cache, and no OS or MMU. A goal of laptop + 50% per clock is proposed but not set: it implies RV IPC 7.4-10.",
+     "kind": ""
+    },
+    {
+     "time": "01:41",
+     "text": "**Stand-in adversarial review of SIMD step 1** (Claude, read-only, standing in while Codex is quota-limited; candidate `cand.sv` sha256 0126bb32 against the released core 8d0357b2). No RTL-versus-golden divergence found. Findings, all accepted and assigned to the SIMD engineer before 0.18.0. (1) vset{i}vl{i} leaves vstart unchanged, but RVV 1.0 §3.7 says every vector instruction including vset resets it; the RTL, vec_ref and RVV-CONTRACT.md share the error, so the differential test can't see it. (2) The contract's \"Zve64f\" label is unsupported: fixed point, segments and vfrec7 are excluded, and step 1 makes contract-legal integer, mask, permute and indexed instructions cause 2. Remove it and list what step 1 executes. (3) The tests compare only against vec_ref, written alongside the RTL; add rv_iss_fp --vector as a second model. (4) A same-edge ordering race in tb_v.py's W queue; run under Icarus too. (5) The candidate's header line says 0.14.8. (6) Untested combinations: L0, LD_LAT 2 or more, N_MISS above 1 at VLEN 128/512, masked-off faulting elements, ff with vstart above 0, FP at LMUL 4/8. Checked correct: serialisation into an empty ROB, no VP, fusion or folding on vector entries, store write side effects, fault vstart and tval, vtype vill rules, group and mask overlap checks, FP operand order and NaN boxing. V-off identity was confirmed by an ifdef strip apart from the header line.",
+     "kind": ""
+    },
+    {
+     "time": "01:42",
+     "text": "**FP move-elimination bound** (middle; exact: fmv.d always, fmv.s only when a per-physical-register boxed bit is set; clang 23 hard-float rt image, full rt mode, 0.17.0 core plus probe). Clocks against 0.17.0, flat config: P -2.42% (3.736 to 3.829 rays/kclk), S closest -1.79%, any-hit -1.96%, RT-P -3.08% (326.6 to 337.0 paths/Mclk). Deciding config: P -1.55%, S -1.46%, any-hit -1.16%, RT-P -3.10% (313 to 323). With `--fpu`, Dhrystone 15,463 / 10,376 and 7-Zip d12 368,247 / 131,814 clocks are unchanged (clang 18 images). `test_cpu --fpu` 660/660 at both sizes, and a new directed fp_move_elim case passes; the 8 rt pieces of each full run were trace-checked. Cost: 576 bits plus a rename-time mux per slot. **Decision:** accepted as a PATCH after the FADD/FMUL PATCH. Middle moves on to 64 B lines, for both the I side and the D side given the JS I-cache evidence.",
+     "kind": ""
+    },
+    {
+     "time": "01:45",
+     "text": "**Vector golden models and contract fixed for review items 1-2** (FP ISA engineer; `build/cpu/fp/`, uncommitted, details in its NOTES.md). vset{i}vl{i} now resets vstart to 0 in vec_ref.py, rv_iss_fp.c --vector and RVV-CONTRACT.md sections 3 and 7. When vstart was non-zero, the trace adds `C 008 0` after the c20/c21 records. New directed case v_vstart_vset. Rechecks: 75 directed runs and 900 random vector programs, Python and C identical; the auto-vectorised kernel equals native AArch64 at VLEN 128, 256 and 512; F/D traces unchanged (131 integer cases, 40 fp_cases). The contract now calls itself a subset of RVV 1.0, not a complete Zve* or V. A new section 9 lists step 1's coverage: executed are vset, vector CSRs, unit-stride, strided, whole-register and mask loads/stores, and the FP32 vector instructions; still cause 2 are integer, mask-logical, permute, vmv, reductions and indexed accesses. Vector patches regenerated; they apply to the 0.17.0 files.",
+     "kind": ""
+    },
+    {
+     "time": "01:37",
+     "text": "**Matrix research: laptop features** (research agent; Ubuntu 24.04.5 in WSL2, kernel 6.18.33.2). `wsl -e bash -c 'lscpu; grep Features /proc/cpuinfo'`: NVIDIA RTX Spark N1X, Cortex-X925 (0xd85) and Cortex-A725 (0xd87); flags include i8mm, bf16, sve2, svei8mm and svebf16, but no SME. So no SME reference can be measured on this laptop.",
+     "kind": ""
+    },
+    {
+     "time": "01:45:55 to 01:46:13",
+     "text": "**Matrix research: native probe and first runs** (Ubuntu clang 18.1.3, `-O2 -march=armv9.2-a+sve2+i8mm+bf16 -fno-vectorize -fno-slp-vectorize`). The first build failed: `sched_getcpu` undeclared, fixed with `-D_GNU_SOURCE`. Probe (`taskset -c {0,6,19}`): HWCAP2 0x1873f7, no SME or SME2, SVE vector length 128 bits. First 3-run reference: run 1 ran at about 2 instructions per clock on every peak (likely vCPU placement), and the BF16 data was insensitive to accumulation order. Run 1 was dropped and the data changed.",
+     "kind": ""
+    },
+    {
+     "time": "01:46:36 to 01:46:40",
+     "text": "**Matrix research: laptop GEMM/GEMV reference** (6 runs, 4 on CPU 19 and 2 on CPU 0; mm_bench.c sha256 ac033759...; log `build/research/matrix/logs/run-20261122-014636.jsonl`; HEAD c607485; uncommitted). Peaks per clock on one X925: SDOT 95 int8 MACs, SMMLA 192, FMLA 24 FP32, BFMMLA 64, BFDOT 48. Kernels: int8 64x64x64 with SMMLA 102.8 MACs/clk (exact); FP32 ordered 19.6 (bit-exact); BF16 ordered 11.8 (bit-exact); BFMMLA 52.8 (max relative error 8.4e-5). GEMV: int8 2048x2048 23 B/clk; int8 8192x8192 from DRAM 8.1-9.0 B/clk; BF16 7-8 B/clk. One X925 core streams about our SoC's 8 B/clk bus ceiling from DRAM. 2 of 9 runs ran at about a third of peak, so the peak probe needs a filter. Report `build/research/riscv-matrix.md`. Nothing matrix-related is ratified in RISC-V. Ratified now: RVV widening MACs, Zvfh and the BF16 extensions. Zvdot4a8i is at draft v0.7. IME, VME and AME are drafts. Recommendation: the RVV route first (widening, BF16, Zvdot4a8i behind a draft define), and a small IME subset only if prefill proves the limit. Decode is memory-bound: about 0.55 tok/s for a 1B int8 model at 4 GHz at the deciding config (0.17 B/clk), about 26 tok/s at the 8 B/clk bus ceiling. Line fills plus a stream prefetcher matter more than MACs.",
+     "kind": ""
+    },
+    {
+     "time": "01:45:14",
+     "text": "**Ternary kernels, native correctness and speed** (BitNet research agent; `build/research/bitnet/`; c607485 plus an uncommitted ignored prototype; ISS rv_iss_fp sha256 b90b23f8da20; LLVM 23.1.5 for RISC-V; Ubuntu clang 18.1.3 native; WSL2 6.18.33.2). `clang -O2 -fno-vectorize -march=armv8.2-a+dotprod -DNATIVE -DSIZESET={0,1}`, under `timeout 300`. 0 mismatches. Weights per clock at 3.86 GHz: ndot (SDOT) 19.2-22.1, lut5 5.0-6.0, tmac4 1.95, i2 1.02. SDOT is about 4x the best scalar map.",
+     "kind": ""
+    },
+    {
+     "time": "01:45:42",
+     "text": "**Ternary kernels, ISS instruction counts.** `sh build.sh`; `rv_iss_fp --ram 16777216 --mailbox ffff00 [--fp 1 --vector 1 --vlen 128/256/512]`. Scalar and VLEN 128/256 exact. Surprise: 512 mismatches at VLEN 512 on the small set. Cause: the 512x640 shape broke vmad's precondition that K is a multiple of 4*VLENB, not an ISS bug. The shape was changed.",
+     "kind": ""
+    },
+    {
+     "time": "01:47:46",
+     "text": "**Ternary kernels, rerun.** `sh build.sh; bash run_iss.sh`: all exact. Instructions per weight: i2 5.50, lut5 1.50, lut5w 1.13, tmac4 3.26; vmad 0.648 / 0.328 / 0.167 at VLEN 128 / 256 / 512; vlut 0.286 / 0.145. Table maps cost about 1.1 instructions per weight, the RVV subset about 0.3 at VLEN 256.",
+     "kind": ""
+    },
+    {
+     "time": "01:48:30",
+     "text": "**Ternary kernels, native lut5w and an auto-vectorised build** (the same build with and without `-fno-vectorize`). lut5w 5.0-6.7 weights/clk, auto-vectorised i2 3.7-3.9, ndot 19.3-21.7, all exact. The auto-vectoriser does not reach SDOT.",
+     "kind": ""
+    },
+    {
+     "time": "01:51:42",
+     "text": "**Ternary kernels, bit-serial bs8** (Zbb cpop; rebuild, ISS and native). 1.078 instructions per weight (1.30 on the small set); native 3.5-4.0 weights/clk; exact. The popcount map equals the best table map in instructions.",
+     "kind": ""
+    },
+    {
+     "time": "01:55",
+     "text": "**BitNet / ternary decision notes** (coordinator, on `build/research/bitnet-ternary.md`). Decode of the shipped BitNet b1.58 2B4T is about 1.18 GB per token. On our SoC it is bound by memory-level parallelism, not by the ISA: 4 misses in flight on 8 B beats, with scalar maps already faster than memory feeds them. Widening integer vector ops and integer ALUs on every vector pipe help prefill and L2-resident weights. **Conflict to resolve:** this report estimates DRAM streaming at about 0.52 B/clk (about 1.8 tok/s at 4 GHz), while the matrix report estimates 0.17 B/clk for a streaming GEMV at the same config. The bound must be measured with the RTL streaming probe (step E1) before either figure is quoted. The two reports also differ on the Zvqdotq / Zvdot4a8i draft status (v0.7 in internal review against v0.0.2 of March 2025); the more recent source must be checked. No custom ternary CPU unit: ternary hardware, if wanted, belongs to the accelerator's GEMV engine (llm-accelerator documents).",
+     "kind": ""
+    },
+    {
+     "time": "02:02",
+     "text": "**SIMD step 1 revision v1b** (SIMD engineer; candidate cand.sv sha256 45eacd5b on the released 0.17.0 canonical; Verilator 5.020 plus an Icarus run). It fixes all six stand-in review items: vset resets vstart (and the old core fails the new directed case at exactly that record); the contract's subset wording; vtest now requires reference_fp and rv_iss_fp --vector to agree on every fault-free program, with fault cases checked against Python only because rv_iss_fp has no fault injection and there is no Spike/Sail; the W queue is captured at negedge from a posedge-only register; the header says 0.18.0; new directed cases for masked-off faulting elements, ff with vstart above 0, vstart at or above vl, and FP at LMUL 4/8. Results, 0 failing, both models agreeing: VLEN 256 390 runs; VLEN 128 and 512 with LD_LAT 4 / L0 16 / N_MISS 4, 650 each; 2-beat caches 390; Icarus 150. `test_cpu --vector` 1,050/1,050 at both cache sizes. With `--vector`: Dhrystone 15,706 / 10,127 and LZMA d12 384,788 / 133,243 clocks, unchanged. V off: the preprocessed core is identical to 0.17.0. Pending: rebase onto the latest tag and the Codex review at 02:26.",
+     "kind": ""
+    },
+    {
+     "time": "01:47 to 02:04",
+     "text": "**0.17.1 released** (coordinator; backend package `handoff-fp-lat.py` on the canonical 0.17.0, candidate `build/cpu/ooo-debug/coord/cand0171.sv`, equal to backend's c171.sv apart from the header). Coordinator checks, Verilator 5.020: `test_cpu --core ooo --fpu` at default and 2-beat caches, then `vcheck.sh` (FPU-off test_cpu at both sizes, LZMA d12 and Dhrystone ref/fast with and without `--fpu`); all PASS (666/666 FPU at both sizes; 393/393 FPU off at both sizes; LZMA d12 384,788 / 133,243 and 974,219 / 153,238 at 4 KiB; Dhrystone 15,706 / 10,127; identical with `--fpu`). rt gains are backend's full-mode runs (exact, single runs). PATCH: microarchitecture only, contract unchanged. Tag `cpu-v0.17.1`, local only.",
+     "kind": ""
+    },
+    {
+     "time": "02:05 to 02:24",
+     "text": "**0.17.2 released** (coordinator; backend `handoff-fp-div2.py` on the canonical 0.17.1, candidate `build/cpu/ooo-debug/coord/cand0172.sv`, equal to backend's c172.sv apart from the header). Coordinator checks, Verilator 5.020: `test_cpu --core ooo --fpu` 666/666 at default and 2-beat caches; `vcheck.sh` all PASS (FPU off 393/393 at both sizes; LZMA d12 384,788 / 133,243 and 974,219 / 153,238 at 4 KiB; Dhrystone 15,706 / 10,127; identical with `--fpu`). rt gains are backend's full-mode runs. PATCH. Tag `cpu-v0.17.2`, local only. Also logged: middle's dline 7-Zip run at 02:14 used `timeout 600` against the 5-minute rule; it was let finish, and middle was told to use 300 and split.",
+     "kind": ""
+    },
+    {
+     "time": "02:26:40 to 02:34:18",
+     "text": "**Codex review of released 0.17.0** (GPT 6.2 Astra via `codex exec -s read-only`, prompt `build/cpu/ooo-debug/coord/fp17review/prompt2.md`, output `review.md`; reviewed `e8eeae3..c4da8a3`, no simulations run). No RTL correctness counterexample found in CSR serialisation, NaN boxing, FP memory, f0 recovery or the prediction and folding exclusions. Findings and decisions: (1) High for reproducibility: the tagged runner rejected hard-float rt images, so the history row's rt numbers needed tooling outside the tag. Accepted; already fixed in c607485, which reproduces them in full mode (3.736 / 1.964 / 1.982 / 326.6). (2) Medium: rv_iss.c `fp_f2int` doesn't set host FPCR, so on AArch64 with FZ=1 an FCVT.W.S of a subnormal under RUP returns 0 without NX instead of 1 with NX. A real C-model bug that test_cpu can't see, because its traces come from Python. Accepted; assigned to the FP ISA engineer with a rv_iss-versus-Python check. (3) Medium: FADD.D and FSUB.D were only run at static RNE. Accepted; all-mode and DYN .D cases assigned. (4) Medium: no test for wrong-path flag leaks or for flag ordering at a trap. Accepted; directed tests assigned. (5) Medium: the architecture text called the FP trace fields exported and define-only, but they are internal signals declared in every build. Accepted; section 4 wording corrected (no version bump). (6) Low: FP register-file reads are also unlimited; the ledger now says so. The FSQRT.D initiation countdown surviving a squash is backend's gap-flush PATCH.",
+     "kind": ""
+    },
+    {
+     "time": "02:27 to 02:45",
+     "text": "**Codex review of SIMD step 1, candidate v1d** (GPT 6.2 Astra, read-only, run by the SIMD engineer; output `build/cpu/ooo-debug/council/simd/review/codex-out2.txt`; v1d sha256 d47a7eb3 on 0.17.2). Verdict: no squash or flush path reaches an executing head vector instruction, and the V-off text reproduces 0.17.2. Findings: (1) HIGH: the tb W capture still raced on the posedge that clears vx_wv; it is now sampled at negedge. (2) HIGH: **vtest exited 0 on failure, silently skipped a missing C model, and passed with zero programs.** **Correction: the vtest pass counts in the 01:12 and 02:02 rows, and for v1d, are therefore not evidence.** The test_cpu --vector counts used a different runner and stand. Fixed: vtest exits 1, errors instead of skipping, and reports how each program ended. (3) MEDIUM: v_fp_lmul48 trapped at LMUL 4 and never reached LMUL 8, and random programs starting at LMUL 4 trapped on their first load; fixed. (4) MEDIUM: V records are emitted for no-write whole-register loads and fully masked tu/mu ops; the RTL equals vec_ref but contract section 7 disagrees. Open, with fp-isa deciding before release. (5) MEDIUM: sim_v1.py could half-apply; fixed with pre-checks and a dry run. (6) Risk accepted: a wrong-path younger split read to the same beat can fill the cache before entry 0's read, the same as the released scalar path. (7) LOW: vfredosum latency off by one; fixed. New candidate v1e (sha256 ace3ad3e). **Coordinator requirements for 0.18.0:** v1e vtest counts per configuration, a negative control where a broken build makes vtest exit 1, and finding 4 closed.",
+     "kind": ""
+    },
+    {
+     "time": "about 02:40 to 02:50",
+     "text": "**Codex review of D-side 64 B lines, step 1** (GPT 6.2 Astra, read-only, run by middle; `build/cpu/ooo-debug/council/middle/hdl/codex-dline-review.txt`). Verdict: no lost retiring store, premature tag reuse or early trap, and 8-byte behaviour unchanged; hold for one fault point and test fixes. Findings: (1) High: a critical-beat error after a store wrote that beat raised cause 5, where the one-beat path retries. Fixed so that it reads again. Not directly tested, because tb_core has no one-shot read fault; **coordinator requires a one-shot fault test plus a mutant before release.** (2) High: the test report could name the wrong configuration, and the SoC burst responder isn't exercised by test_cpu. --dline above 8 now requires --core ooo and --n-miss 2 or more, and the report records dline_scope = tb_core only. The SoC path is covered by run_bench's rv_iss differentials. (3)-(6) Medium, fixed: a test case overwrote its own base register, every line case now asserts its expected end, mem_len is tied to 0 without the define, the SoC stops on lines longer than L2_LINE, the text was corrected, and cases now follow the line size and add byte-merge and two-store variants. (7) Medium: the same-edge sampling convention is inherited; noted, not changed. (8) Low: mem_len was added to tb_core's stall bundle with a check. Rebased onto cpu-v0.17.2, exactness rerun in progress.",
+     "kind": ""
+    },
+    {
+     "time": "01:49 to 01:51",
+     "text": "**JS port: QuickJS-ng fetched.** `curl -sSL https://github.com/quickjs-ng/quickjs/archive/refs/tags/v0.18.0.tar.gz` (curl 8.5.0): 910,210 B, SHA-256 28bcd89a...f9f1dd, equal to the research fetch. New `sim/cpu/bench/js/fetch_quickjs.sh` checks it and extracts into the ignored `build/third-party/quickjs-ng`. The 17 files the build compiles or includes (from `clang -MM`) and LICENSE are SHA-256 locked in `build_bench.py` (`QUICKJS_SHA256`). Licence copy `licenses/QUICKJS-NG-LICENSE.txt`, provenance.json and THIRD_PARTY_NOTICES rows added. (source: output)",
+     "kind": ""
+    },
+    {
+     "time": "01:54",
+     "text": "**JS port: native reference.** `bash sim/cpu/bench/js/js_native.sh 1` (12.8 s): engine with `-O2 -std=gnu11 -D__DJGPP -DNDEBUG -D_GNU_SOURCE` (now also natively), glibc. kernels.js now runs every kernel twice (marks 0x10+k warm, 0x20+k timed, 0x30+k end, PRNG reseeded) and requires equal results. Output hash **06484b07bf7fe92f**, 251 bytes, 9 lines, identical to the research prototype's; warm and timed calls agree on every kernel. expected.json records each line's FNV-1a hash. (source: output)",
+     "kind": ""
+    },
+    {
+     "time": "01:54 to 01:55",
+     "text": "**JS port: RV64 images.** `build_bench.py --benchmark js --isa rv64imfd_zba_zbb_zbs_zifencei` first **failed**: `-Werror` empty-body loops in the shim's fmod (fixed with `{}`). Then: hard float 1,026,888 B loaded, text to 0xfb3a8 (below 1 MiB, so the far checkpoint stub reaches every PC); soft float (`rv64im_zba_zbb_zbs_zifencei`, compiler-rt) 1,041,664 B. 32 MiB RAM, heap to 1 MiB below the mailbox. js builds drop `-ffreestanding -fno-builtin` (hosted-style code, as natively). (source: output)",
+     "kind": ""
+    },
+    {
+     "time": "01:58 to 01:59",
+     "text": "**JS laptop reference.** `python3 -B sim/cpu/bench/js/js_laptop.py --runs 7 --ramp-ms 1500`, then `--runs 9 --ramp-ms 2000`; vCPU 19 (part 0xd85), `taskset`, PMUv3 0x08/0x11 at each marker; every run's hash checked. Ramp clock 3.49-3.73 GHz by cycles/time, 3.65-3.94 GHz by add chain; load 6-7. Timed-call median cycles over 16 runs [min-max]: props 4,224,946 [4.19-4.91M], sched 4,902,544, navier 3,869,884, sha256 4,574,128, json 4,594,272, regex 3,879,336, strings 6,366,042, dom 6,141,912 [6.06-7.33M], funcs 3,544,158; sum 42.10M cycles, 217.8M instructions, IPC 4.27-5.84 (5.17 overall). Session medians agree within 1-3% (dom 9%). Node, Bun: not installed (`which` found nothing); not installed. (source: output)",
+     "kind": ""
+    },
+    {
+     "time": "02:01",
+     "text": "**Cycle-counter check**: `build/rt-bench/hwtest.c` built to scratch (`clang -O2`), 3 runs on vCPU 19: 640M dependent adds counted 640.24 / 640.27 / 640.34M cycles, 3.60-3.83 GHz. A counted cycle is a core clock. (source: output)",
+     "kind": ""
+    },
+    {
+     "time": "01:59 to 02:01",
+     "text": "**js_run smoke test** (`run_bench.py --benchmark js --core ooo --sim verilator --fpu --sample-pieces 1 --warmup-instructions 200000 --sample-instructions 100000 --pieces 0:1`, 109 s incl. the Verilator build): rv_iss result checks PASS, props piece IPC 5.2, differential PASS. Verilator speed about 45K instructions/s per piece on this core. (source: output)",
+     "kind": ""
+    },
+    {
+     "time": "02:01 to 02:06",
+     "text": "**JS warm-up study** (hard float, 0.17.0 `--fpu`, flat memory, 64 KiB L1s, 1 piece of 250K per kernel, same pieces; `--warmup-instructions` 0 / 100K / 500K / 2M / 4M, `--no-differential --jobs 5`, each under 300 s): suite clocks 54.31M / 49.15M / 48.72M / **48.66M** / 48.57M. 2M is within 0.18% of 4M in total, within 0.9% per kernel (strings 0.85%, regex 0.52%, navier -0.51%). With no warm-up the suite reads 11.6% slow. **Decision:** 2M detailed warm-up is the js default; `--warm-l2` only with an L2. (source: output)",
+     "kind": ""
+    },
+    {
+     "time": "02:03 to 02:06",
+     "text": "**Surprise: soft float faster than hard float.** Soft image on the FPU-off core, same probe at 100K warm-up: 46.04M clocks vs 49.15M hard; the soft image on the FPU-enabled core gives **identical** clocks (46,040,658), so the FPU option costs integer code nothing. An rv_iss trace of 300K props instructions in the hard image has 0.1 FP instructions per 1,000 (54% in JS_CallInternal), yet IPC is 5.3 hard vs 6.3 soft. (source: output)",
+     "kind": ""
+    },
+    {
+     "time": "02:06 to 02:12",
+     "text": "**JS differential checks**: `--sample-pieces 1 --sample-instructions 100000 --warmup-instructions 200000 --jobs 3` on copies of the build dirs (`js-s1-*-diff`): hard float on `--fpu` 9 of 9 pieces PASS against rv_iss traces (wait cycles 0/7 alternating, 169 s); soft float on the FPU-off core 9 of 9 PASS (153 s). (source: output)",
+     "kind": ""
+    },
+    {
+     "time": "02:12 to 02:16",
+     "text": "**1 MiB I-cache probe** (`--icache-beats 131072`, otherwise as the study at 500K warm-up): hard float 48.72M to **37.08M clocks (-24%)**: json -54%, props -34%, regex -32%, dom -30%, strings -27%; geomean 1.15x the laptop, 76% of goal. Soft 36.55M; the two builds come within 1.5%. Conclusion: the hard/soft gap at 64 KiB is direct-mapped I-cache conflicts from a different layout; JS results on this cache are layout-sensitive by several percent. Confirms the research report's rank 1 on RTL. (source: output)",
+     "kind": ""
+    },
+    {
+     "time": "02:06 to 02:18",
+     "text": "**JS baseline, 8 pieces per kernel**, flat config (`--sample-pieces 8 --sample-instructions 250000 --warmup-instructions 2000000 --no-differential --jobs 6`, `--pieces 0:24 24:48 48:72` then `merge`, 105-125 s each). Hard float `--fpu`: 49,817,976 clocks, IPC 5.45, geomean 0.851x laptop, **56.7% of goal**. Soft float (FPU off): 46,409,192 clocks, IPC 6.18, geomean 0.916x, **61.1%** (navier 45%, funcs 85%). (source: output)",
+     "kind": ""
+    },
+    {
+     "time": "02:18 to 02:20",
+     "text": "First 16-piece hard-float attempt **failed**: `OSError: [Errno 12] Cannot allocate memory` reading a 32 MiB rv_iss state (WSL 15 GB shared with three lzma d22 runs of 1.2 GB each). Stopped; rerun with 18-piece invocations and one retry each. (source: output)",
+     "kind": ""
+    },
+    {
+     "time": "02:20 to 02:32",
+     "text": "**JS baseline, hard float, 16 pieces per kernel** (144; `--pieces` 0:18 ... 126:144 then merge, 79-108 s each, no retries needed): props 5,298,431 clocks (53.2% of goal), sched 5,129,262 (63.7%), navier 4,383,154 (58.9%), sha256 5,141,702 (59.3%), json 6,879,020 (44.5%), regex 5,718,406 (45.2%), strings 6,242,628 (68.0%), dom 7,417,639 (55.2%, +-20%), funcs 3,741,851 (63.1%); total **49,952,093 clocks, IPC 5.43, geomean 0.844x the laptop per clock, 56.3% of the goal**. Inside the 8-piece run's intervals. (source: output)",
+     "kind": ""
+    },
+    {
+     "time": "02:17 to 02:27",
+     "text": "**JS in 7-Zip's deciding configuration** (hard float, `--ld-lat 4 --l0 16 --l2-kib 4096 --l2-lat 20 --mem-lat 350 --n-miss 4 --mem-gap 8 --warm-l2`, 4 pieces per kernel, 2M warm-up, `--pieces` by 8, 90-180 s each): 177,475,406 clocks, IPC 1.53, geomean 0.284x the laptop, **18.9% of goal**; json IPC 0.80 (7.5%), dom 0.84 (10.4%), props 1.16 (11.7%); intervals wide (4 pieces). Instruction misses to a 20-clock L2 through the blocking lowest-priority fetch dominate, as the research report predicted. (source: output)",
+     "kind": ""
+    },
+    {
+     "time": "02:33",
+     "text": "**JS goal written** (`cpu/js-benchmark-targets.md`): 1.5x the laptop per clock per kernel and as the geometric mean; goal clocks 2.36-4.24M per kernel, implying RV IPC 8.0-10.8 (hard float) and 8.0-14.8 (soft). `scripts/check_repo.py` PASS in the worktree. Not independently reviewed. (source: output)",
+     "kind": ""
+    },
+    {
+     "time": "02:41 to 02:52",
+     "text": "**JS port verified on main and committed** (coordinator; patch `build/cpu/ooo-debug/coord/js-port.diff` sha256 e2df90e63e3e applied to main at b65db0f; core 0.17.2). Commands: `fetch_quickjs.sh` (archive SHA-256 matches), `js_native.sh 1`, `build_bench.py --benchmark js --isa rv64imfd_zba_zbb_zbs_zifencei --out-dir build/cpu/bench/js-fd-main` (1,026,888 bytes), then `run_bench.py --benchmark js --core ooo --sim verilator --fpu --sample-pieces 1 --jobs 3 --pieces 0:3 / 3:6 / 6:9`, each under 300 s, then `--pieces merge`. A first single invocation of all 9 pieces with `--jobs 4` hit the 300 s timeout after 4 pieces on the loaded machine (rc 124), so the run was split. Results: native reference PASS (rv_iss, 553,272,020 instructions, output hash 06484b07bf7fe92f), differential traces PASS (9 pieces). With 1 piece per kernel, a smoke check rather than a measurement: total 48,727,364 clocks, IPC 5.570, geomean 0.873x the laptop per clock, **58.2% of the goal** (json 43.1% to funcs 76.1%).",
+     "kind": ""
+    },
+    {
+     "time": "02:56",
+     "text": "**CPU catalog and idea list** (Sonnet research agent, web only, nothing run; `build/research/cpu-catalog/catalog.json` and `catalog.csv`, `build/research/cpu-catalog.md`, `build/research/cpu-ideas.md`). 67 entries: 46 tier-1 (Intel, AMD, Apple, Arm, Qualcomm, NVIDIA, Fujitsu, Samsung, RISC-V, IBM) and 21 tier-2 designs and IP blocks. Every field carries a source and a confidence level. About a third of the numbers were fetched this session; older and tier-2 entries are tagged `recall` and must be verified before use. Zen 6, Apple M4/M5, Darkmont and most commercial RISC-V cores lack verified microarchitecture figures. Top ideas: ITTAGE indirect prediction (JS dispatch), FDIP fetch-directed I-prefetch, short-forward-branch predication (**note: a predication design was rejected earlier in this project after a cost-charged model showed a loss and a Codex review found critical problems; any revival must address those findings first**), a block BTB with a zero-bubble micro-BTB, two taken branches per fetch, a VTAGE/EVES context value predictor, branch resolution from predicted guard values (speculative), a TAGE-SC-L corrector, RRIP/SHiP L2 replacement for LZMA, and a non-scheduling dispatch queue. **Decision:** ITTAGE and the BTB upgrade join the integration docket as front-end PATCHes, measured on the js benchmark.",
+     "kind": ""
+    },
+    {
+     "time": "02:31:26-02:31:30 (output)",
+     "text": "**FFmpeg research:** **Fetch FFmpeg 9.1** — `git ls-remote --tags https://github.com/FFmpeg/FFmpeg \"n9.1*\"`; `curl -sSLO https://ffmpeg.org/releases/ffmpeg-9.1.tar.xz`; `sha256sum` — 12,557,532 B, SHA-256 1a4d394a...2433; n9.1 = 74e43935 — Pinned source for analysis; unpacked to WSL `~/ffr`",
+     "kind": ""
+    },
+    {
+     "time": "02:31-02:33 (output)",
+     "text": "**FFmpeg research:** **FFmpeg history clone** — First try inside a backgrounded subshell died with the WSL session (no output). `timeout 300 git clone -q --bare --filter=tree:0 --single-branch --branch master https://github.com/FFmpeg/FFmpeg ffgit.git` (02:32:54-02:32:57) — 38 MB, 129,220 commits; 588 RISC-V-related commit messages — Source of the published RVV numbers (1.4)",
+     "kind": ""
+    },
+    {
+     "time": "02:33-02:35 (output, approx.)",
+     "text": "**FFmpeg research:** **RVV inventory of FFmpeg 9.1** — `bash scripts/assemble_all.sh ~/ffr/ffmpeg-9.1 ~/ffr/inv; python3 -B scripts/classify.py ~/ffr/inv/dis out/rvv_inventory.json; python -B scripts/summary.py out/rvv_inventory.json` — 69/69 files assembled. Exported entry points: 647 (626 vector); step 1 20, contract 97, need more 529; widening 423, fixed point 377, narrowing 155, segment 105, FP64 6, vrgatherei16 5, Zvbb 3 — Three failed passes first: LLVM 18 rejects `.irp n 19,` (fixed in an analysis copy); per-object disassembly left cross-symbol jumps unresolved (fixed by linking); `-shared` failed on PCREL and local labels split functions (fixed with a static `ld.lld -X` link)",
+     "kind": ""
+    },
+    {
+     "time": "02:36:31-02:36:37 (output)",
+     "text": "**FFmpeg research:** **Fetch dav1d 1.5.5, x264 0480cb05, x265 b81f650e** — curl from code.videolan.org and bitbucket.org; `sha256sum` — afc5378d..., f05c59f2..., 540de59b... — `tar xjf` failed (no bzip2/lbzip2 in WSL); extracted with Python `tarfile` (filter \"data\")",
+     "kind": ""
+    },
+    {
+     "time": "about 02:37-02:38 (approx.)",
+     "text": "**FFmpeg research:** **dav1d and x265 inventory** — `bash scripts/assemble_other.sh ...; classify.py` on each; `python -B scripts/orders.py` — dav1d 22/22 objects, 324 vector functions: step 1 4, contract 40, need more 280 (fixed point 262, widening 220, segment 146). x265 8/11 files (dct, loopfilter, pixel-util fail in LLVM 18), 157 vector functions, 134 contract — dav1d needs the same MINORs plus segments; x265 is mostly contract-level",
+     "kind": ""
+    },
+    {
+     "time": "02:39:47-02:40:12 (output)",
+     "text": "**FFmpeg research:** **Native configure for config.h** — `../ffmpeg-9.1/configure --cc=clang --disable-everything --disable-programs --disable-doc --disable-asm --disable-pthreads --disable-autodetect` — rc 0; 825 defines; HAVE_FAST_UNALIGNED 0, ARCH_* 0 — Generic C config for bare-metal C references (HAVE_INLINE_ASM and HAVE_PRCTL set to 0, HAVE_FAST_64BIT 1 by hand)",
+     "kind": ""
+    },
+    {
+     "time": "02:43:03-02:43:52 (output)",
+     "text": "**FFmpeg research:** **FFmpeg kernels bare-metal on rv_iss_fp** — `bash harness/build_ffk.sh ~/ffr/ffmpeg-9.1 ~/ffr/ffk`; `clang -O2 -std=c11 -o ~/ffr/bin/rv_iss_fp build/cpu/fp/rv_iss_fp.c -lm`; `timeout 300 rv_iss_fp --ram 33554432 --image ffk<k>.bin --fp 1 --vector 1 --vlen {128,256,512} --mailbox 1ffff00` — Table 4.1. C hash = native 5ce909d056c6918d; RVV fmul 170, scalarproduct 144, shuffle 222, qpel mc00 87 instructions per call at VLEN 256, all equal to C; pix_abs16 cause 2 at vwsubu.vv; idct_add cause 2 at vlseg4e16.v — Failures first: shim errno lacked ENOSYS (added to the copy); unresolved symbols from unused me_cmp functions (fixed with -ffunction-sections and --gc-sections); the native link needed `-Wl,--gc-sections`",
+     "kind": ""
+    },
+    {
+     "time": "02:44:38-02:46:30 (output)",
+     "text": "**FFmpeg research:** **Native checkasm build** — `configure --cc=clang --disable-programs --disable-doc --disable-autodetect`; `make -j20 checkasm` — First try failed: WSL has no `make` (rc 127). Then built with the vendored GNU Make 4.3 in 48 s — Laptop checkasm available in `~/ffr/nat`",
+     "kind": ""
+    },
+    {
+     "time": "02:46:47 (output)",
+     "text": "**FFmpeg research:** **CABAC bin probe** — `bash harness/build_cabac.sh ~/ffr/ffmpeg-9.1 ~/ffr/cab ~/ffr/bin/rv_iss_fp` — rv64imb: 7,457,936 instructions for 200,000 bins = 37.3 per bin; output 2751741801 = native. Zicond build: 7 instead of 9 conditional branches and 5 czero in main; it traps cause 2 on rv_iss (no Zicond), as expected — The CABAC engine is mostly branchless already; Zicond gains little. First attempt trapped cause 6 in start.S (unaligned `.bss` start in the shared link.ld); fixed in a local copy",
+     "kind": ""
+    },
+    {
+     "time": "02:47:21-02:48:30 (output)",
+     "text": "**FFmpeg research:** **Laptop checkasm timings** — `taskset -c {19; 0,6,10,19} ./tests/checkasm/checkasm --bench --duration={20000,50000} --test=<t> --function=<f> 1234`; `cntfrq_el0` probe — Table 4.2 (ns; cntvct, 1 GHz); no PMU or perf timer available to checkasm — Surprise: the first unpinned run was 4x faster than every pinned run; numbers are provisional until taken with PMU cycles",
+     "kind": ""
+    },
+    {
+     "time": "02:48 (output)",
+     "text": "**FFmpeg research:** **Unaligned-read code size** — `clang --target=riscv64-unknown-elf -march=rv64imfd_zba_zbb_zbs -O2 [-mno-strict-align] -c harness/rb.c` with FFmpeg's intreadwrite.h — AV_RB32 12 against 3 instructions; whole object 37 against 7 — Misaligned support saves about 9 instructions per bitstream read",
+     "kind": ""
+    },
+    {
+     "time": "02:55",
+     "text": "**FFmpeg decisions** (coordinator, on `build/research/ffmpeg.md`; FFmpeg n9.1 = 74e43935, LGPL/GPL, kept out of the repository). Of 647 RISC-V entry points, vector step 1 can run 20 (3%) and the full RVV-CONTRACT 97 (15%). The rest need widening (423), fixed point with vxrm (377), narrowing (155) or segments (105). The step-1 vector unit drains the ROB on every vector instruction and moves one element per clock, so it will likely be slower than scalar C on streaming kernels until the pipelined, beat-wide vector unit lands; that unit is the precondition for any FFmpeg gain. No A or Zicond is needed except for threading. Proposed `--benchmark ff` (part A, about 14 FFmpeg DSP kernels driven the way checkasm drives them; part B, an H.264 CABAC decode of a generated QCIF clip, FLAC, then dav1d) is noted for later and not started. Integer-vector, widening/narrowing, fixed-point and segment MINORs are confirmed as the vector roadmap after 0.18.0.",
+     "kind": ""
+    },
+    {
+     "time": "02:39 to 02:56",
+     "text": "**FP test and model fixes from the Codex review of 0.17.0** (FP ISA engineer; package `build/cpu/fp/fp17fix/fp17-review-fixes.diff` sha256 9126d8d46096 against b65db0f; sim only, no version bump; details and run table in `fp17fix/HANDOFF.md`). (2) rv_iss.c: the FP-to-integer path now sets host FPCR itself. The defect reproduced first with the new `--host-fz 1` switch (02:39:56: FCVT.W.S RUP of the smallest subnormal gave 0 without NX); after the fix, 159 runs had 0 mismatches. New case fp_cvt_subnormal_first, and `test_cpu --fpu` now replays every fault-free FP program on rv_iss (`--fp 1`, `--fp-soft 1`, `--host-fz 1`) against reference.py. (3) New case fp_rm_add_sub_d: FADD.D and FSUB.D in all five static modes and DYN. (4) New cases fp_wrong_path_flags and fp_trap_flag_order_load/_store; tb_core's DONE line now prints the final fcsr (FPU builds only), checked against the golden model. Mutant (flags accrued at completion) caught by both new flag tests (fcsr 18 against 10, and 1d against 08). No mutant was run for item 3. **Coordinator checks on main** (02:53:14 to 02:55:27, Verilator 5.020, released core 0.17.2): `test_cpu --fpu` 227 programs x 3 = 681 PASS at default and 2-beat caches, rv_iss F/D check 171 traces identical in all three modes; FPU off at 2-beat caches 393 PASS; Icarus 12 elaborates tb_core with and without RV64_OOO_FPU, 0 errors.",
+     "kind": ""
+    },
+    {
+     "time": "02:53 to 03:00",
+     "text": "**0.17.3 vcheck: first attempt failed on stale bench images; rebuilt byte-identical** (coordinator). Candidate `cand0173.sv` (backend cleanup (a)+(b) on the canonical 0.17.2, equal to backend's ab.sv apart from the header). `test_cpu` passed: 393/393 at both sizes and `--fpu` 681/681 at both sizes. Every bench step failed with 'Stale build: sim/cpu/bench/build_bench.py changed since build_bench.py ran', because the JS commit 4c64892 changed build_bench.py (backend had warned at 02:52). A first rebuild from WSL picked up Ubuntu clang 18.1.3 and gave different images (bench.bin b4191535 / d75f25bd / 2aaa6bb3 against d9abd1b8 / 97f52c42 / 4e4943b1), so those were discarded. Rebuilt from Windows Python with `C:\\Program Files\\LLVM\\bin\\clang.exe` 23.1.5, the compiler of the original images: `python -B sim/cpu/bench/build_bench.py --benchmark lzma|dhrystone [--runtime fast] --isa rv64im_zba_zbb_zbs_zifencei --out-dir build/cpu/ooo-debug/coord/bench/...`. bench.bin is byte-identical to the originals (d9abd1b8, 97f52c42, 4e4943b1). **Lesson:** rebuild the release bench images from Windows with LLVM 23.1.5 whenever build_bench.py changes. vcheck rerun started at 03:00:40.",
+     "kind": ""
+    },
+    {
+     "time": "03:08",
+     "text": "**Standards review** (Sonnet research agent, web only; `build/research/standards.md`; the paywalled IEEE 754 text was not read, and a few items are marked unverified). Governing documents: IEEE 754-2019 plus RISC-V F/D/Zfh/Zfa for binary16/32/64; RISC-V Zfbfmin/Zvfbfmin/Zvfbfwma for BF16 (not IEEE); OCP OFP8 and MX v1.0; IEEE P3109 is still a draft; the RISC-V V spec for fixed point (vxrm, vxsat); int4/ternary/GGUF packings are de facto only. Metrics: IEC 80000-13 / IEEE 1541 prefixes; Weicker and the 1757 VAX constant for DMIPS; the 7-Zip rating is defined in Bench.cpp and is nominal, not retired instructions; SPEC CPU 2017 reporting rules; SMARTS and SimPoint for sampling. Top gaps: (1) no independent FP oracle, since fracoracle is our own code and Sail/Spike were cited but never run; fix with Berkeley TestFloat/SoftFloat 3e (BSD), **which needs the user's approval because it is not on the official-source list**. (2) No operation x rounding-mode x boundary matrix. (3) Tininess checked only against our own models. (4) FP-CONTRACT and architecture cite IEEE 754-2008 but use 2019 min/max (wording). (5) The JS geomean has no CI (wording/test). (6) The 7-Zip doc calls the rating MIPS and says 4 MB for 4 MiB (wording). (7) RVV fixed point and (8) Zfa/Zfhmin/BF16 are contract MINORs. (9) KB/KiB mixing and the 'fast runtime' Dhrystone labelling (wording). (10) No SystemVerilog version statement (wording). Plan: test items first, one wording commit with no version bump, then the contract MINORs.",
+     "kind": ""
+    },
+    {
+     "time": "03:09",
+     "text": "**User approval: Berkeley SoftFloat 3e and TestFloat 3e as an independent FP oracle** (user, in chat). It answers standards-review gaps 1-3 and the ISA roadmap's open TestFloat question. Assigned to the FP ISA engineer: fetch from jhauser.us/arithmetic into the ignored build/third-party with SHA-256 locks, add BSD licence and provenance entries, and build a cross-check harness covering every F/D operation in all five rounding modes against fp_ref_core.py, rv_iss.c and the RTL fp_exec. Each run under 300 s.",
+     "kind": ""
     }
    ],
    "commits": []

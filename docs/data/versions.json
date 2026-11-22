@@ -6063,5 +6063,366 @@
   "dmips_fast": null,
   "ref_run": null,
   "art": "art/v0.17.0.svg"
+ },
+ {
+  "no": 61,
+  "version": "0.17.1",
+  "title": "Le Pas Pressé",
+  "caption": "A quicker step for numbers that float: an add now takes two clocks and a multiply three, where they took three and four, and the fused multiply-add keeps four, the latencies of Lion Cove and Zen 5. Ray tracing in hard float, run whole from reset, finds 4.020 primary rays per thousand clocks where it found 3.736, and 367.9 paths per million clocks where it found 326.6, in simulation; Dhrystone and 7-Zip clocks do not move.",
+  "date": "2026-11-22",
+  "date_fr": "22 novembre 2026",
+  "kind": "ooo",
+  "status": "tagged",
+  "tag": "cpu-v0.17.1",
+  "register": "FP add 2 clocks and FP multiply 3 (were 3 and 4), FMA stays 4, with RV64_OOO_FPU (backend; Lion Cove and Zen 5 latencies, uops.info). test_cpu --fpu 666/666 at both cache sizes with the new fadd/fmul timing expectations; FPU off 393/393 at both sizes, identical to 0.17.0. Dhrystone 15,706 / 10,127 and 7-Zip d12 384,788 / 133,243 clocks unchanged with and without the FPU. Hard-float ray tracing, full mode: flat P 3.736 to 4.020 rays/kclk (-7.1% clocks), S closest 1.964 to 2.152 (-8.7%), any-hit 1.982 to 2.181 (-9.1%), RT-P 326.6 to 367.9 paths/Mclk (-11.2%); deciding config P 3.247 to 3.459, S 1.717 to 1.880, any-hit 1.710 to 1.861, RT-P 313.0 to 353.1",
+  "breaking": "No",
+  "units": [
+   [
+    "Organisation",
+    "Out of order (rtl/cpu/rv64_ooo.sv)"
+   ],
+   [
+    "Fetch / rename / retire",
+    "32 / 32 / 32 per clock"
+   ],
+   [
+    "Reorder buffer",
+    "512 entries"
+   ],
+   [
+    "Physical registers",
+    "544"
+   ],
+   [
+    "Issue queue",
+    "128 entries"
+   ],
+   [
+    "ALUs",
+    "8, of which 4 full (branch, multiply, divide)"
+   ],
+   [
+    "Memory ports",
+    "4 load, 3 store-address"
+   ],
+   [
+    "Branch target buffer",
+    "1,024 entries, with return stack; hits used only for branch, JAL and JALR; targets as signed PC-relative offsets (±2 GiB)"
+   ],
+   [
+    "Caches",
+    "128 KiB instruction, 128 KiB data, two-way data cache"
+   ],
+   [
+    "Taken transfers per fetch",
+    "4"
+   ],
+   [
+    "Loop predictor",
+    "1,024 entries"
+   ],
+   [
+    "Branch bias",
+    "a branch that has gone one way at least 4 times with no exit is predicted that way"
+   ],
+   [
+    "Instruction fusion",
+    "a simple integer producer and the next instruction reading it, also across rename groups (one pending producer held into the next clock)"
+   ],
+   [
+    "Store writes",
+    "paired on the bus"
+   ],
+   [
+    "Value prediction",
+    "loads, multiplies, divides"
+   ],
+   [
+    "Fetch predecode",
+    "direct jumps, calls, returns, backward branches"
+   ],
+   [
+    "Global-history predictor",
+    "6 tagged tables, histories 4 to 128, about 22.4 KiB in all; aging covers every entry"
+   ],
+   [
+    "Prediction confidence",
+    "32 equal results to predict, doubled per wrong prediction up to 64"
+   ],
+   [
+    "Multiply latency",
+    "2 clocks (behavioural; DSP timing unproven)"
+   ],
+   [
+    "Load-to-use latency",
+    "a knob, RV64_OOO_LD_LAT, default 1 clock"
+   ],
+   [
+    "Memory hierarchy",
+    "optional SoC L2 and memory latency (L2_KIB, L2_WAYS, L2_LINE, L2_LAT, MEM_LAT); defaults keep timing"
+   ],
+   [
+    "Recent-beat buffer",
+    "a knob, RV64_OOO_L0_N (default 0, off), latency RV64_OOO_L0_LAT (default 2)"
+   ],
+   [
+    "Load-wait table",
+    "4,096 entries, cleared every 65,536 clocks"
+   ],
+   [
+    "Data misses in flight",
+    "N_MISS 1 to 8 (default 1); split reads with tags on mem_tag, rsp_valid, rsp_tag, rsp_data, rsp_error; younger missed loads sleep until their beat's answer (wake on fill)"
+   ],
+   [
+    "Floating point",
+    "RV64F and RV64D behind the define RV64_OOO_FPU, default off: four FP ports (two FMA, two misc), pipelined divide and square root, a 64-entry rename map (x and f) on one physical register file, fflags at retirement"
+   ],
+   [
+    "FP latencies, clocks",
+    "add 2, multiply 3, fused multiply-add 4"
+   ]
+  ],
+  "marks": [
+   "a one-beat fetch buffer",
+   "requests issue from EXECUTE",
+   "writes acknowledged in the same clock",
+   "second slot across beats",
+   "second data-cache port",
+   "jump in the second slot",
+   "slot-to-slot forwarding",
+   "branch folding",
+   "registered multiplier",
+   "fetch queue and X stage",
+   "store-to-load forwarding",
+   "stores finish at retirement",
+   "cross-beat fetch",
+   "instruction fusion",
+   "1,024-entry predictors",
+   "fixed-direction bias",
+   "sixteen lanes",
+   "one rule for stores and retirement",
+   "four taken turns",
+   "folded at rename",
+   "four stores a write",
+   "four loads, three stores a clock",
+   "512 in flight",
+   "thirty-two retire",
+   "thirty-two lanes",
+   "mended after review",
+   "constants and branches decided at rename",
+   "64-entry return stack",
+   "front-end depth dial",
+   "four branch-capable ports",
+   "two-clock multiply",
+   "the offset clock paid",
+   "return stack restored whole",
+   "load-latency dial",
+   "displaced returns",
+   "offset clock after slow loads",
+   "fetch in the recovery clock",
+   "second level and distant memory",
+   "value prediction earns trust",
+   "global-history predictor",
+   "BTB hits for transfers only",
+   "recent-beat buffer dial",
+   "PC-relative targets",
+   "load-wait table",
+   "six tagged tables",
+   "several reads in flight",
+   "split read channel",
+   "fusion across rename groups",
+   "wake on fill",
+   "F and D, off by default",
+   "fflags at retirement",
+   "add in two, multiply in three"
+  ],
+  "width": 32,
+  "alus": 8,
+  "dmips_ref": null,
+  "clocks_ref": null,
+  "dmips_fast": null,
+  "ref_run": null,
+  "art": "art/v0.17.1.svg"
+ },
+ {
+  "no": 62,
+  "version": "0.17.2",
+  "title": "La Racine",
+  "caption": "Division and the square root at Lion Cove's pace: a single-precision divide in 7 clocks and a double in 10, roots in 10 and 15, where they took 11, 13, 12 and 18, and a new single divide may start every second clock. Paths per million clocks rise from 367.9 to 394.6 and primary rays from 4.020 to 4.136 per thousand, in simulation; Dhrystone and 7-Zip clocks do not move.",
+  "date": "2026-11-22",
+  "date_fr": "22 novembre 2026",
+  "kind": "ooo",
+  "status": "tagged",
+  "tag": "cpu-v0.17.2",
+  "register": "FP divide 7 / 10 and square root 10 / 15 clocks (single / double; were 11 / 13 / 12 / 18), single divide starts every 2 clocks (was 3), with RV64_OOO_FPU (backend; Lion Cove, uops.info). test_cpu --fpu 666/666 at both cache sizes; FPU off 393/393 at both sizes. Dhrystone 15,706 / 10,127 and 7-Zip d12 384,788 / 133,243 clocks unchanged with and without the FPU. Hard-float ray tracing, full mode, against 0.17.1: flat P 4.020 to 4.136 rays/kclk, S closest 2.152 to 2.208, any-hit 2.181 to 2.225, RT-P 367.9 to 394.6 paths/Mclk (-6.8% clocks); deciding config P 3.459 to 3.531, S 1.880 to 1.907, any-hit 1.861 to 1.900, RT-P 353.1 to 375.0",
+  "breaking": "No",
+  "units": [
+   [
+    "Organisation",
+    "Out of order (rtl/cpu/rv64_ooo.sv)"
+   ],
+   [
+    "Fetch / rename / retire",
+    "32 / 32 / 32 per clock"
+   ],
+   [
+    "Reorder buffer",
+    "512 entries"
+   ],
+   [
+    "Physical registers",
+    "544"
+   ],
+   [
+    "Issue queue",
+    "128 entries"
+   ],
+   [
+    "ALUs",
+    "8, of which 4 full (branch, multiply, divide)"
+   ],
+   [
+    "Memory ports",
+    "4 load, 3 store-address"
+   ],
+   [
+    "Branch target buffer",
+    "1,024 entries, with return stack; hits used only for branch, JAL and JALR; targets as signed PC-relative offsets (±2 GiB)"
+   ],
+   [
+    "Caches",
+    "128 KiB instruction, 128 KiB data, two-way data cache"
+   ],
+   [
+    "Taken transfers per fetch",
+    "4"
+   ],
+   [
+    "Loop predictor",
+    "1,024 entries"
+   ],
+   [
+    "Branch bias",
+    "a branch that has gone one way at least 4 times with no exit is predicted that way"
+   ],
+   [
+    "Instruction fusion",
+    "a simple integer producer and the next instruction reading it, also across rename groups (one pending producer held into the next clock)"
+   ],
+   [
+    "Store writes",
+    "paired on the bus"
+   ],
+   [
+    "Value prediction",
+    "loads, multiplies, divides"
+   ],
+   [
+    "Fetch predecode",
+    "direct jumps, calls, returns, backward branches"
+   ],
+   [
+    "Global-history predictor",
+    "6 tagged tables, histories 4 to 128, about 22.4 KiB in all; aging covers every entry"
+   ],
+   [
+    "Prediction confidence",
+    "32 equal results to predict, doubled per wrong prediction up to 64"
+   ],
+   [
+    "Multiply latency",
+    "2 clocks (behavioural; DSP timing unproven)"
+   ],
+   [
+    "Load-to-use latency",
+    "a knob, RV64_OOO_LD_LAT, default 1 clock"
+   ],
+   [
+    "Memory hierarchy",
+    "optional SoC L2 and memory latency (L2_KIB, L2_WAYS, L2_LINE, L2_LAT, MEM_LAT); defaults keep timing"
+   ],
+   [
+    "Recent-beat buffer",
+    "a knob, RV64_OOO_L0_N (default 0, off), latency RV64_OOO_L0_LAT (default 2)"
+   ],
+   [
+    "Load-wait table",
+    "4,096 entries, cleared every 65,536 clocks"
+   ],
+   [
+    "Data misses in flight",
+    "N_MISS 1 to 8 (default 1); split reads with tags on mem_tag, rsp_valid, rsp_tag, rsp_data, rsp_error; younger missed loads sleep until their beat's answer (wake on fill)"
+   ],
+   [
+    "Floating point",
+    "RV64F and RV64D behind the define RV64_OOO_FPU, default off: four FP ports (two FMA, two misc), pipelined divide and square root, a 64-entry rename map (x and f) on one physical register file, fflags at retirement"
+   ],
+   [
+    "FP latencies, clocks",
+    "add 2, multiply 3, fused multiply-add 4; divide 7 / 10 and square root 10 / 15 (single / double), a single divide every 2 clocks"
+   ]
+  ],
+  "marks": [
+   "a one-beat fetch buffer",
+   "requests issue from EXECUTE",
+   "writes acknowledged in the same clock",
+   "second slot across beats",
+   "second data-cache port",
+   "jump in the second slot",
+   "slot-to-slot forwarding",
+   "branch folding",
+   "registered multiplier",
+   "fetch queue and X stage",
+   "store-to-load forwarding",
+   "stores finish at retirement",
+   "cross-beat fetch",
+   "instruction fusion",
+   "1,024-entry predictors",
+   "fixed-direction bias",
+   "sixteen lanes",
+   "one rule for stores and retirement",
+   "four taken turns",
+   "folded at rename",
+   "four stores a write",
+   "four loads, three stores a clock",
+   "512 in flight",
+   "thirty-two retire",
+   "thirty-two lanes",
+   "mended after review",
+   "constants and branches decided at rename",
+   "64-entry return stack",
+   "front-end depth dial",
+   "four branch-capable ports",
+   "two-clock multiply",
+   "the offset clock paid",
+   "return stack restored whole",
+   "load-latency dial",
+   "displaced returns",
+   "offset clock after slow loads",
+   "fetch in the recovery clock",
+   "second level and distant memory",
+   "value prediction earns trust",
+   "global-history predictor",
+   "BTB hits for transfers only",
+   "recent-beat buffer dial",
+   "PC-relative targets",
+   "load-wait table",
+   "six tagged tables",
+   "several reads in flight",
+   "split read channel",
+   "fusion across rename groups",
+   "wake on fill",
+   "F and D, off by default",
+   "fflags at retirement",
+   "add in two, multiply in three",
+   "divide and root at Lion Cove's pace"
+  ],
+  "width": 32,
+  "alus": 8,
+  "dmips_ref": null,
+  "clocks_ref": null,
+  "dmips_fast": null,
+  "ref_run": null,
+  "art": "art/v0.17.2.svg"
  }
 ]
