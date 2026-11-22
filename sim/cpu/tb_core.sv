@@ -53,7 +53,7 @@ module tb_core #(parameter integer MEM_BYTES=16384, parameter integer ICACHE_BEA
     assign mlen = 3'd0;
 `endif
     integer sp_b, line_overlaps=0, line_errors=0, sp_ov;
-    integer fault5_fired=0, fault5_slot=-1, fault5_answered=0, fault5_reads=0;
+    integer fault5_fired=0, fault5_slot=-1, fault5_answered=0, fault5_reads=0, fault5_late=0, fault5_acyc=0;
     reg [2:0] sp_lmk [0:63];
     reg [63:0] sp_ba;
     function sp_first(input integer q);   // no earlier beat of q's tag is still queued
@@ -274,7 +274,7 @@ module tb_core #(parameter integer MEM_BYTES=16384, parameter integer ICACHE_BEA
 `endif
 `ifdef WIDE_TRACE
                 if (N_MISS > 1) $display("SPLIT split_reads=%0d split_ireads=%0d split_reorders=%0d split_stale=%0d%s",split_reads,split_ireads,split_reorders,split_stale,
-                    line_overlaps+line_errors+fault5_fired != 0 ? $sformatf(" line_store_overlaps=%0d line_error_beats=%0d fault_once_fired=%0d fault_once_answered=%0d fault_once_reads=%0d",line_overlaps,line_errors,fault5_fired,fault5_answered,fault5_reads) : "");
+                    line_overlaps+line_errors+fault5_fired != 0 ? $sformatf(" line_store_overlaps=%0d line_error_beats=%0d fault_once_fired=%0d fault_once_answered=%0d fault_once_reads=%0d fault_once_late=%0d",line_overlaps,line_errors,fault5_fired,fault5_answered,fault5_reads,fault5_late) : "");
 `endif
                 $finish;
             end
@@ -291,7 +291,7 @@ module tb_core #(parameter integer MEM_BYTES=16384, parameter integer ICACHE_BEA
                             sp_min=sp_seq[sp_k];
                             for (sp_j=0;sp_j<64;sp_j=sp_j+1) if (sp_v[sp_j] && sp_seq[sp_j]<sp_min) sp_min=sp_seq[sp_j];
                             if (sp_min!=sp_seq[sp_k]) split_reorders=split_reorders+1;
-                            rsp_valid=1; rsp_tag=sp_tag[sp_k]; rsp_data=sp_data[sp_k]; rsp_error=sp_err[sp_k]; sp_v[sp_k]=0; if (sp_k==fault5_slot) begin fault5_answered=1; fault5_slot=-1; end
+                            rsp_valid=1; rsp_tag=sp_tag[sp_k]; rsp_data=sp_data[sp_k]; rsp_error=sp_err[sp_k]; sp_v[sp_k]=0; if (sp_k==fault5_slot) begin fault5_answered=1; fault5_slot=-1; fault5_acyc=cycles; end
                         end
                         sp_n=sp_n+1;
                     end
@@ -351,7 +351,7 @@ module tb_core #(parameter integer MEM_BYTES=16384, parameter integer ICACHE_BEA
                 sp_data[sp_pick]=0; sp_beat[sp_pick]=addr[63:3]; sp_ord[sp_pick]=0; sp_lmk[sp_pick]=mlen;
 `ifdef RV64_OOO_DLINE
                 if (fault_kind==5 && fault5_fired==0 && !instr && addr==fault_addr) begin sp_err[sp_pick]=1; fault5_fired=1; fault5_slot=sp_pick; end
-                if (fault_kind==5 && !instr && addr[63:3]==fault_addr[63:3]) fault5_reads=fault5_reads+1;
+                if (fault_kind==5 && !instr && addr[63:3]==fault_addr[63:3]) begin fault5_reads=fault5_reads+1; if (fault5_answered && cycles>fault5_acyc+1) fault5_late=fault5_late+1; end
 `endif
                 if (!error) for (lane=0;lane<8;lane=lane+1) sp_data[sp_pick][8*lane+:8]=memory[addr-MEM_BASE+lane];
                 // A line read (mem_len > 0): the following beats of the line, wrapping, each queued with its

@@ -74,6 +74,19 @@ def cases():
           store(3, 29, 21, 0x3d8), store(3, 29, 22, 0x3c8), 0x100073]
     yield 'line_fault_younger_sleeps', p, 2, fy
     END['line_fault_younger_sleeps'] = (5, fy)
+    # S3 (Codex review of S3, item 1): a persistent read fault on a beat that a younger load's read brings while
+    # the older load L (late address) misses on it and may adopt that read. The error is not L's; L must read the
+    # line itself and fault (cause 5) as the oldest load, never wait on repeated younger reads. The failed beat is
+    # the younger read's critical beat (first) or its last beat (the line wraps).
+    fl = 0x3700 + 8 * (lb - 1)
+    for name, l_off, y_off, fa in (('line_fault_adopted_first', 0x700, 0x700, 0x3700),
+                                   ('line_fault_adopted_last', fl - 0x3000, 0x700, fl)):
+        p = prefix() + [LUI29, i_type(0x13, 27, 0, 0, 1)] + _fill(0x700, lb) + _late_base(20)
+        p += [i_type(3, 21, 3, 20, l_off),                             # L: older, late address, the failed beat
+              i_type(3, 22, 3, 29, y_off),                             # Y: younger, early address, same line
+              store(3, 29, 21, 0x3d8), store(3, 29, 22, 0x3c8), 0x100073]
+        yield name, p, 2, fa
+        END[name] = (5, fa)
     # Many loads to few lines: the first of each line misses, the rest find the line in flight and wait.
     # Destinations x5-x18 (the base x20 is never overwritten: Codex review, item 3).
     p = prefix() + [LUI29, i_type(0x13, 27, 0, 0, 1)] + _fill(0x780, 16) + _late_base(20)
@@ -101,3 +114,19 @@ def fault_once_program():
         store(3, 29, 7, FAULT_ONCE_ADDR - 0x3000),              # S: sd x7, its data at once, retires late
         i_type(3, 23, 3, 29, FAULT_ONCE_ADDR - 0x3000),         # L: forwarded from S, reads its beat (entry 0)
         _add(25, 23, 24), store(3, 29, 25, 0x108), 0x100073]
+
+
+FAULT_ADOPT_ADDR = 0x3100
+
+
+def fault_adopt_program():
+    """S3 (entry 0 adopts an in-flight line): the older load L (late address, 0x3100) and the younger load Y (early
+    address, 0x3108, the same line at 16, 32 and 64 bytes). Y's line read (critical beat 0x3108, then wrapping, 0x3100
+    last) is accepted first, and tb_core +fault_kind=5 gives its 0x3100 beat an error, once. L becomes the oldest load
+    while that read is out (its address comes from a divide chain, with no older load): with adoption it takes Y's
+    read, but the error is not L's, so L reads the beat again and retires, as in the golden model (no fault). Without
+    adoption L reads the line itself. Run with stall 0 and split latency 80 (test_cpu does)."""
+    return [LUI29, i_type(0x13, 27, 0, 0, 1), _add(20, 29, 0)] + [r_type(0x33, 20, 4, 20, 27, 1)] * 6 + [
+        i_type(3, 21, 3, 20, FAULT_ADOPT_ADDR - 0x3000),        # L: older, late address
+        i_type(3, 22, 3, 29, FAULT_ADOPT_ADDR + 8 - 0x3000),    # Y: younger, early address, same line
+        _add(25, 21, 22), store(3, 29, 25, 0x208), 0x100073]

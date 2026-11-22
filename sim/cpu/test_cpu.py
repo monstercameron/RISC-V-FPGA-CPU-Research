@@ -1332,6 +1332,30 @@ def main():
                 if a != e: raise AssertionError(f'{name} event {index}:\nactual {a}\nexpect {e}')
         records.append({'case': name, 'max_wait_cycles': 0, 'events': len(actual), 'result': 'PASS',
                         'simulator_summary': output.strip()})
+        # S3: the oldest load adopts a younger load's line read whose beat for it then fails once; the error is
+        # not the oldest load's, which reads the beat again (no fault, as in the golden model).
+        name = 'line_fault_once_adopted'
+        image = image_for(line_cases.fault_adopt_program())
+        expected, covered = execute(image, 0, MASK, fp=args.fpu)
+        hexfile = OUT / (name + '.hex')
+        hexfile.write_text(''.join(f'{b:02x}\n' for b in image), encoding='ascii')
+        trace = OUT / (name + '-stall0-lat80.trace')
+        output = command([*executable, f'+image={hexfile}', f'+trace={trace}', '+stall=0', '+seed=1', '+fault_kind=5',
+                          f'+fault_addr={line_cases.FAULT_ADOPT_ADDR:x}', '+split_lat=80'])
+        got = dict(re.findall(r'(fault_once_[a-z]+)=([0-9]+)', output))
+        # fault_once_late: the oldest load's own read of the beat was accepted strictly after the clock edge that
+        # sampled the error answer, as with adoption
+        # (a core that read the beat itself before the younger read's error would not show it; Codex S3 item 3).
+        if got.get('fault_once_fired') != '1' or got.get('fault_once_answered') != '1' or int(got.get('fault_once_late', 0)) < 1:
+            raise AssertionError(f'{name}: the one-shot read fault did not fire and answer before a re-read: {output}')
+        actual = trace.read_text().splitlines()
+        if actual != expected:
+            for index in range(max(len(actual), len(expected))):
+                a = actual[index] if index < len(actual) else '<missing>'
+                e = expected[index] if index < len(expected) else '<missing>'
+                if a != e: raise AssertionError(f'{name} event {index}:\nactual {a}\nexpect {e}')
+        records.append({'case': name, 'max_wait_cycles': 0, 'events': len(actual), 'result': 'PASS',
+                        'simulator_summary': output.strip()})
     # Wake-on-fill (middle hand-off 10): with N_MISS 4 the 20 independent misses of
     # wake_many_misses overlap instead of replaying; a core without the wakeup takes 103
     # clocks at stall 0 (default caches), with it 76.

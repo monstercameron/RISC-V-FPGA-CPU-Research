@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Original CPU foundation, wide out-of-order implementation (architecture 0.19.4).
+// Original CPU foundation, wide out-of-order implementation (architecture 0.19.5).
 // RV64IM + B execution (RV64F and D with define RV64_OOO_FPU, default off; with RV64_OOO_V
 // also the RVV subset of the vector contract, step 1, executed in order),
 // serialized FENCE.I, terminal EEI. Same module name and
@@ -1092,6 +1092,7 @@ module rv64_core #(
     reg [7:0] lb_wm [0:PM_N-1][0:LB-1];
     reg [3:0] lb_cnt [0:PM_N-1];
     reg [PM_N-1:0] lb_bad;
+    reg mu_adopt, mu_adone, ad_now; reg [3:0] mu_adk; integer ad_k, ad_b, ad_pos;   // S3: entry 0 adopts entry mu_adk's read
     integer lt, lk;
     reg [63:0] la;
     reg pf_v;                   // this clock's oldest younger miss (to allocate)
@@ -2018,7 +2019,7 @@ module rv64_core #(
             halted = 0; started = 0; f_pc = RESET_PC; fe_clk = 0; f_err = 0; f_hold = 0; f_stale = 0;
             bus_hold = 0; hold_addr = 0; hold_pair = 0; hold_nx = 0; mu_valid = 0; mu_beat = 0; mu_errv = 0; mu_err_beat = 0;
             fb_valid = 0; fb_beat = 0; fb_data = 0; mu_owner = 0; fb_owner = 0; fb_lock = 0; mu_owner_v = 0;
-            mu_sent = 0; mu_stale = 0; pm_valid = 0; pm_sent = 0; pm_stale = 0; hold_tag = 0; sf_wait = 0; iq_slp = 0; iq_wany = 0;
+            mu_sent = 0; mu_stale = 0; pm_valid = 0; pm_sent = 0; pm_stale = 0; hold_tag = 0; sf_wait = 0; iq_slp = 0; iq_wany = 0; mu_adopt = 0; mu_adone = 0;
             for (i = 0; i < PRF_N; i = i + 1) prf[i] = 0;
             prf_ready = {PRF_N{1'b1}}; prf_written = {PRF_N{1'b1}}; prf_late = 0;
             free_mask = {PRF_N{1'b1}}; for (i = 0; i < NAR; i = i + 1) free_mask[i] = 0;
@@ -2130,6 +2131,13 @@ module rv64_core #(
                     if (rsp_error) begin if (lb_wm[0][lk] == 0) begin mu_errv = mu_owner_v; mu_err_beat = mu_beat; mu_err_owner = mu_owner; end end
                     else begin fb_valid = 1; fb_beat = mu_beat; fb_data = lb_data[0][lk]; fb_owner = mu_owner; fb_lock = mu_owner_v; end
                 end
+                if (mu_adopt && !mu_adone && lt != 0 && lt == mu_adk && lk == (mu_beat >> 3) % LB) begin
+                    mu_adone = 1;
+                    // After an error in this read (this beat or an earlier one) the beat is not the owner's:
+                    // entry 0 gives up the adoption and reads the line itself (tag 0), keeping the line in flight.
+                    if (lb_bad[lt]) begin mu_adopt = 0; mu_sent = 0; if (!mu_owner_v) mu_valid = 0; end
+                    else begin wake_exact(mu_beat[63:3]); fb_valid = 1; fb_beat = mu_beat; fb_data = lb_data[lt][lk]; fb_owner = mu_owner; fb_lock = mu_owner_v; end
+                end
                 lb_cnt[lt] = lb_cnt[lt] + 4'd1;
                 if (lb_cnt[lt] == LB) begin
                     // Complete: install unless a beat failed (entry 0 rewrites a present line, a younger
@@ -2146,6 +2154,7 @@ module rv64_core #(
                     end
                     wake_beat(la[63:3]);
                     if (lt == 0) begin mu_valid = 0; mu_sent = 0; end else begin pm_valid[lt] = 0; pm_sent[lt] = 0; end
+                    if (mu_adopt && lt == mu_adk) begin mu_valid = 0; mu_sent = 0; mu_adopt = 0; end
                 end
             end
             // ================= phase 1: decisions from the state at the clock start =====
@@ -2618,8 +2627,21 @@ module rv64_core #(
             // The oldest load always takes entry 0, even when a younger entry reads the same
             // beat (that entry has no owner; a fault it gets is dropped, so the oldest load must
             // read the beat itself to fault precisely: Codex review of hand-off 2, item 1).
+            ad_now = 0;
             if (miss_v && !mu_valid && !fb_lock) begin
                 mu_valid = 1; mu_beat = miss_beat; mu_errv = 0; mu_owner = miss_owner; mu_owner_v = 1; mu_sent = 0; mu_stale = 0;
+                // S3: adopt a younger entry's accepted read of this line that has had no error so far.
+                mu_adopt = 0; mu_adone = 0;
+                if (LB > 1) for (ad_k = PM_N - 1; ad_k >= 1; ad_k = ad_k - 1)
+                    if (!mu_adopt && pm_valid[ad_k] && pm_sent[ad_k] && !lb_bad[ad_k] && dl_ln(pm_beat[ad_k]) == dl_ln(miss_beat)) begin
+                        mu_adopt = 1; mu_adk = ad_k; mu_sent = 1;
+                        ad_b = (miss_beat >> 3) % LB;
+                        ad_pos = (((miss_beat >> 3) - (pm_beat[ad_k] >> 3)) % LB + LB) % LB;
+                        if (ad_pos < lb_cnt[ad_k]) begin   // the beat has arrived: deliver it now
+                            mu_adone = 1; ad_now = 1; wake_exact(miss_beat[63:3]);
+                            fb_valid = 1; fb_beat = miss_beat; fb_data = lb_data[ad_k][ad_b]; fb_owner = miss_owner; fb_lock = 1;
+                        end
+                    end
             end
             // The oldest of this clock's younger misses whose beat no entry reads takes a free entry.
             for (pc_i = 0; pc_i < N_LD; pc_i = pc_i + 1)
@@ -2643,7 +2665,7 @@ module rv64_core #(
                     if (SPLIT && pm_valid[pm_k] && dl_ln(pm_beat[pm_k]) == (ms_beat[ms_k] >> LBB)) ms_infl = 1;
                     if (SPLIT && !pm_valid[pm_k]) ms_free = 1;
                 end
-                if (ms_infl || !ms_free) begin
+                if ((ms_infl || !ms_free) && !(ad_now && ms_beat[ms_k] == miss_beat[63:3])) begin
                     iq_slp[ms_iq[ms_k]] = 1; iq_wany[ms_iq[ms_k]] = !ms_infl; iq_wb[ms_iq[ms_k]] = ms_beat[ms_k];
                 end
             end
