@@ -4605,5 +4605,1119 @@
   "dmips_fast": null,
   "ref_run": null,
   "art": "art/v0.15.2.svg"
+ },
+ {
+  "no": 52,
+  "version": "0.15.3",
+  "title": "Le Garde-Fou",
+  "caption": "A guard rail for the branch buffer: a hit is believed only where a branch, a jump or a jump-and-link truly stands. An old entry left behind by rewritten code no longer turns fetch aside; in the new test, twenty wrong redirects become none. 7-Zip and Dhrystone do not move.",
+  "date": "2026-11-21",
+  "date_fr": "21 novembre 2026",
+  "kind": "ooo",
+  "status": "tagged",
+  "tag": "cpu-v0.15.3",
+  "register": "Fix (frontend engineer, Codex 1724-2): BTB hits used only for branch / JAL / JALR opcodes. Test btb_stale_after_fencei (20 wrong redirects before, 0 after). 7-Zip and Dhrystone unchanged",
+  "breaking": "No",
+  "units": [
+   [
+    "Organisation",
+    "Out of order (rtl/cpu/rv64_ooo.sv)"
+   ],
+   [
+    "Fetch / rename / retire",
+    "32 / 32 / 32 per clock"
+   ],
+   [
+    "Reorder buffer",
+    "512 entries"
+   ],
+   [
+    "Physical registers",
+    "544"
+   ],
+   [
+    "Issue queue",
+    "128 entries"
+   ],
+   [
+    "ALUs",
+    "8, of which 4 full (branch, multiply, divide)"
+   ],
+   [
+    "Memory ports",
+    "4 load, 3 store-address"
+   ],
+   [
+    "Branch target buffer",
+    "1,024 entries, with return stack; hits used only for branch, JAL and JALR"
+   ],
+   [
+    "Caches",
+    "128 KiB instruction, 128 KiB data, two-way data cache"
+   ],
+   [
+    "Taken transfers per fetch",
+    "4"
+   ],
+   [
+    "Loop predictor",
+    "1,024 entries"
+   ],
+   [
+    "Branch bias",
+    "a branch that has gone one way at least 4 times with no exit is predicted that way"
+   ],
+   [
+    "Instruction fusion",
+    "a simple integer producer and the next instruction reading it"
+   ],
+   [
+    "Store writes",
+    "paired on the bus"
+   ],
+   [
+    "Value prediction",
+    "loads, multiplies, divides"
+   ],
+   [
+    "Fetch predecode",
+    "direct jumps, calls, returns, backward branches"
+   ],
+   [
+    "Global-history predictor",
+    "4 × 1,024 tagged entries, histories 5 / 15 / 44 / 128, about 18.4 KiB"
+   ],
+   [
+    "Prediction confidence",
+    "32 equal results to predict, doubled per wrong prediction up to 64"
+   ],
+   [
+    "Multiply latency",
+    "2 clocks (behavioural; DSP timing unproven)"
+   ],
+   [
+    "Load-to-use latency",
+    "a knob, RV64_OOO_LD_LAT, default 1 clock"
+   ],
+   [
+    "Memory hierarchy",
+    "optional SoC L2 and memory latency (L2_KIB, L2_WAYS, L2_LINE, L2_LAT, MEM_LAT); defaults keep timing"
+   ]
+  ],
+  "marks": [
+   "a one-beat fetch buffer",
+   "requests issue from EXECUTE",
+   "writes acknowledged in the same clock",
+   "second slot across beats",
+   "second data-cache port",
+   "jump in the second slot",
+   "slot-to-slot forwarding",
+   "branch folding",
+   "registered multiplier",
+   "fetch queue and X stage",
+   "store-to-load forwarding",
+   "stores finish at retirement",
+   "cross-beat fetch",
+   "instruction fusion",
+   "1,024-entry predictors",
+   "fixed-direction bias",
+   "sixteen lanes",
+   "one rule for stores and retirement",
+   "four taken turns",
+   "folded at rename",
+   "four stores a write",
+   "four loads, three stores a clock",
+   "512 in flight",
+   "thirty-two retire",
+   "thirty-two lanes",
+   "mended after review",
+   "constants and branches decided at rename",
+   "64-entry return stack",
+   "front-end depth dial",
+   "four branch-capable ports",
+   "two-clock multiply",
+   "the offset clock paid",
+   "return stack restored whole",
+   "load-latency dial",
+   "displaced returns",
+   "offset clock after slow loads",
+   "fetch in the recovery clock",
+   "second level and distant memory",
+   "value prediction earns trust",
+   "global-history predictor",
+   "BTB hits for transfers only"
+  ],
+  "width": 32,
+  "alus": 8,
+  "dmips_ref": null,
+  "clocks_ref": null,
+  "dmips_fast": null,
+  "ref_run": null,
+  "art": "art/v0.15.3.svg"
+ },
+ {
+  "no": 53,
+  "version": "0.15.4",
+  "title": "La Mémoire Proche",
+  "caption": "A dial for a near memory: the beats most recently read by loads may be kept close at hand, answering in two clocks when the first level is made slower. Off by default, and nothing moves; with loads at four clocks on 0.15.1, sixteen beats save 6.5% / 8.5% of the scaled kernel's clocks, thirty-two save 8.3% / 9.3%.",
+  "date": "2026-11-21",
+  "date_fr": "21 novembre 2026",
+  "kind": "ooo",
+  "status": "tagged",
+  "tag": "cpu-v0.15.4",
+  "register": "L0 recent-beat buffer knob (backend engineer): defines RV64_OOO_L0_N (default 0, off) and RV64_OOO_L0_LAT (default 2); test_cpu.py --l0 N --l0-lat L; test ld_far_chain with timing checks. Default unchanged (7-Zip 395,001 / 134,501; Dhrystone 15,732 / 10,139). At LD 4 on 0.15.1: L0 16 -6.5% / -8.5%, L0 32 -8.3% / -9.3%",
+  "breaking": "No",
+  "units": [
+   [
+    "Organisation",
+    "Out of order (rtl/cpu/rv64_ooo.sv)"
+   ],
+   [
+    "Fetch / rename / retire",
+    "32 / 32 / 32 per clock"
+   ],
+   [
+    "Reorder buffer",
+    "512 entries"
+   ],
+   [
+    "Physical registers",
+    "544"
+   ],
+   [
+    "Issue queue",
+    "128 entries"
+   ],
+   [
+    "ALUs",
+    "8, of which 4 full (branch, multiply, divide)"
+   ],
+   [
+    "Memory ports",
+    "4 load, 3 store-address"
+   ],
+   [
+    "Branch target buffer",
+    "1,024 entries, with return stack; hits used only for branch, JAL and JALR"
+   ],
+   [
+    "Caches",
+    "128 KiB instruction, 128 KiB data, two-way data cache"
+   ],
+   [
+    "Taken transfers per fetch",
+    "4"
+   ],
+   [
+    "Loop predictor",
+    "1,024 entries"
+   ],
+   [
+    "Branch bias",
+    "a branch that has gone one way at least 4 times with no exit is predicted that way"
+   ],
+   [
+    "Instruction fusion",
+    "a simple integer producer and the next instruction reading it"
+   ],
+   [
+    "Store writes",
+    "paired on the bus"
+   ],
+   [
+    "Value prediction",
+    "loads, multiplies, divides"
+   ],
+   [
+    "Fetch predecode",
+    "direct jumps, calls, returns, backward branches"
+   ],
+   [
+    "Global-history predictor",
+    "4 × 1,024 tagged entries, histories 5 / 15 / 44 / 128, about 18.4 KiB"
+   ],
+   [
+    "Prediction confidence",
+    "32 equal results to predict, doubled per wrong prediction up to 64"
+   ],
+   [
+    "Multiply latency",
+    "2 clocks (behavioural; DSP timing unproven)"
+   ],
+   [
+    "Load-to-use latency",
+    "a knob, RV64_OOO_LD_LAT, default 1 clock"
+   ],
+   [
+    "Memory hierarchy",
+    "optional SoC L2 and memory latency (L2_KIB, L2_WAYS, L2_LINE, L2_LAT, MEM_LAT); defaults keep timing"
+   ],
+   [
+    "Recent-beat buffer",
+    "a knob, RV64_OOO_L0_N (default 0, off), latency RV64_OOO_L0_LAT (default 2)"
+   ]
+  ],
+  "marks": [
+   "a one-beat fetch buffer",
+   "requests issue from EXECUTE",
+   "writes acknowledged in the same clock",
+   "second slot across beats",
+   "second data-cache port",
+   "jump in the second slot",
+   "slot-to-slot forwarding",
+   "branch folding",
+   "registered multiplier",
+   "fetch queue and X stage",
+   "store-to-load forwarding",
+   "stores finish at retirement",
+   "cross-beat fetch",
+   "instruction fusion",
+   "1,024-entry predictors",
+   "fixed-direction bias",
+   "sixteen lanes",
+   "one rule for stores and retirement",
+   "four taken turns",
+   "folded at rename",
+   "four stores a write",
+   "four loads, three stores a clock",
+   "512 in flight",
+   "thirty-two retire",
+   "thirty-two lanes",
+   "mended after review",
+   "constants and branches decided at rename",
+   "64-entry return stack",
+   "front-end depth dial",
+   "four branch-capable ports",
+   "two-clock multiply",
+   "the offset clock paid",
+   "return stack restored whole",
+   "load-latency dial",
+   "displaced returns",
+   "offset clock after slow loads",
+   "fetch in the recovery clock",
+   "second level and distant memory",
+   "value prediction earns trust",
+   "global-history predictor",
+   "BTB hits for transfers only",
+   "recent-beat buffer dial"
+  ],
+  "width": 32,
+  "alus": 8,
+  "dmips_ref": null,
+  "clocks_ref": null,
+  "dmips_fast": null,
+  "ref_run": null,
+  "art": "art/v0.15.4.svg"
+ },
+ {
+  "no": 54,
+  "version": "0.15.5",
+  "title": "Le Chemin Relatif",
+  "caption": "Branch targets are remembered as a signed distance from the branch, two gibibytes either way, and an entry that cannot reach is forgotten. Of eight branch and target pairs, the old way was wrong for five. The benchmarks do not move.",
+  "date": "2026-11-21",
+  "date_fr": "21 novembre 2026",
+  "kind": "ooo",
+  "status": "tagged",
+  "tag": "cpu-v0.15.5",
+  "register": "Fix (frontend engineer, Codex 1639-4): BTB targets are PC-relative offsets (+-2 GiB), beyond-reach entries invalidated. New check sim/cpu/check_btb_reach.py (8 branch / target pairs: passes; the old encoding is wrong for 5 of 8). 7-Zip and Dhrystone unchanged",
+  "breaking": "No",
+  "units": [
+   [
+    "Organisation",
+    "Out of order (rtl/cpu/rv64_ooo.sv)"
+   ],
+   [
+    "Fetch / rename / retire",
+    "32 / 32 / 32 per clock"
+   ],
+   [
+    "Reorder buffer",
+    "512 entries"
+   ],
+   [
+    "Physical registers",
+    "544"
+   ],
+   [
+    "Issue queue",
+    "128 entries"
+   ],
+   [
+    "ALUs",
+    "8, of which 4 full (branch, multiply, divide)"
+   ],
+   [
+    "Memory ports",
+    "4 load, 3 store-address"
+   ],
+   [
+    "Branch target buffer",
+    "1,024 entries, with return stack; hits used only for branch, JAL and JALR; targets as signed PC-relative offsets (±2 GiB)"
+   ],
+   [
+    "Caches",
+    "128 KiB instruction, 128 KiB data, two-way data cache"
+   ],
+   [
+    "Taken transfers per fetch",
+    "4"
+   ],
+   [
+    "Loop predictor",
+    "1,024 entries"
+   ],
+   [
+    "Branch bias",
+    "a branch that has gone one way at least 4 times with no exit is predicted that way"
+   ],
+   [
+    "Instruction fusion",
+    "a simple integer producer and the next instruction reading it"
+   ],
+   [
+    "Store writes",
+    "paired on the bus"
+   ],
+   [
+    "Value prediction",
+    "loads, multiplies, divides"
+   ],
+   [
+    "Fetch predecode",
+    "direct jumps, calls, returns, backward branches"
+   ],
+   [
+    "Global-history predictor",
+    "4 × 1,024 tagged entries, histories 5 / 15 / 44 / 128, about 18.4 KiB"
+   ],
+   [
+    "Prediction confidence",
+    "32 equal results to predict, doubled per wrong prediction up to 64"
+   ],
+   [
+    "Multiply latency",
+    "2 clocks (behavioural; DSP timing unproven)"
+   ],
+   [
+    "Load-to-use latency",
+    "a knob, RV64_OOO_LD_LAT, default 1 clock"
+   ],
+   [
+    "Memory hierarchy",
+    "optional SoC L2 and memory latency (L2_KIB, L2_WAYS, L2_LINE, L2_LAT, MEM_LAT); defaults keep timing"
+   ],
+   [
+    "Recent-beat buffer",
+    "a knob, RV64_OOO_L0_N (default 0, off), latency RV64_OOO_L0_LAT (default 2)"
+   ]
+  ],
+  "marks": [
+   "a one-beat fetch buffer",
+   "requests issue from EXECUTE",
+   "writes acknowledged in the same clock",
+   "second slot across beats",
+   "second data-cache port",
+   "jump in the second slot",
+   "slot-to-slot forwarding",
+   "branch folding",
+   "registered multiplier",
+   "fetch queue and X stage",
+   "store-to-load forwarding",
+   "stores finish at retirement",
+   "cross-beat fetch",
+   "instruction fusion",
+   "1,024-entry predictors",
+   "fixed-direction bias",
+   "sixteen lanes",
+   "one rule for stores and retirement",
+   "four taken turns",
+   "folded at rename",
+   "four stores a write",
+   "four loads, three stores a clock",
+   "512 in flight",
+   "thirty-two retire",
+   "thirty-two lanes",
+   "mended after review",
+   "constants and branches decided at rename",
+   "64-entry return stack",
+   "front-end depth dial",
+   "four branch-capable ports",
+   "two-clock multiply",
+   "the offset clock paid",
+   "return stack restored whole",
+   "load-latency dial",
+   "displaced returns",
+   "offset clock after slow loads",
+   "fetch in the recovery clock",
+   "second level and distant memory",
+   "value prediction earns trust",
+   "global-history predictor",
+   "BTB hits for transfers only",
+   "recent-beat buffer dial",
+   "PC-relative targets"
+  ],
+  "width": 32,
+  "alus": 8,
+  "dmips_ref": null,
+  "clocks_ref": null,
+  "dmips_fast": null,
+  "ref_run": null,
+  "art": "art/v0.15.5.svg"
+ },
+ {
+  "no": 55,
+  "version": "0.15.6",
+  "title": "Le Registre des Attentes",
+  "caption": "A ledger of loads that once ran ahead of a store and were caught: 4,096 entries, wiped clean every 65,536 clocks. The scaled kernel compresses at 9.20 MIPS per MHz and decompresses at 3.28, in simulation.",
+  "date": "2026-11-21",
+  "date_fr": "21 novembre 2026",
+  "kind": "ooo",
+  "status": "tagged",
+  "tag": "cpu-v0.15.6",
+  "register": "Load-wait table (middle engineer; Codex review, simple variant): 4096 entries, cleared every 65,536 clocks. Test mdp_learnt_store_only (corrected: the 0.15.6 commit named it mdp_store_sets). 7-Zip 64 KiB: compress 395,001 to 393,569 (9.20 MIPS/MHz), decompress 134,501 to 133,854 (3.28); d16 compress -0.71% (engineer); Dhrystone 15,698 / 10,127",
+  "breaking": "No",
+  "units": [
+   [
+    "Organisation",
+    "Out of order (rtl/cpu/rv64_ooo.sv)"
+   ],
+   [
+    "Fetch / rename / retire",
+    "32 / 32 / 32 per clock"
+   ],
+   [
+    "Reorder buffer",
+    "512 entries"
+   ],
+   [
+    "Physical registers",
+    "544"
+   ],
+   [
+    "Issue queue",
+    "128 entries"
+   ],
+   [
+    "ALUs",
+    "8, of which 4 full (branch, multiply, divide)"
+   ],
+   [
+    "Memory ports",
+    "4 load, 3 store-address"
+   ],
+   [
+    "Branch target buffer",
+    "1,024 entries, with return stack; hits used only for branch, JAL and JALR; targets as signed PC-relative offsets (±2 GiB)"
+   ],
+   [
+    "Caches",
+    "128 KiB instruction, 128 KiB data, two-way data cache"
+   ],
+   [
+    "Taken transfers per fetch",
+    "4"
+   ],
+   [
+    "Loop predictor",
+    "1,024 entries"
+   ],
+   [
+    "Branch bias",
+    "a branch that has gone one way at least 4 times with no exit is predicted that way"
+   ],
+   [
+    "Instruction fusion",
+    "a simple integer producer and the next instruction reading it"
+   ],
+   [
+    "Store writes",
+    "paired on the bus"
+   ],
+   [
+    "Value prediction",
+    "loads, multiplies, divides"
+   ],
+   [
+    "Fetch predecode",
+    "direct jumps, calls, returns, backward branches"
+   ],
+   [
+    "Global-history predictor",
+    "4 × 1,024 tagged entries, histories 5 / 15 / 44 / 128, about 18.4 KiB"
+   ],
+   [
+    "Prediction confidence",
+    "32 equal results to predict, doubled per wrong prediction up to 64"
+   ],
+   [
+    "Multiply latency",
+    "2 clocks (behavioural; DSP timing unproven)"
+   ],
+   [
+    "Load-to-use latency",
+    "a knob, RV64_OOO_LD_LAT, default 1 clock"
+   ],
+   [
+    "Memory hierarchy",
+    "optional SoC L2 and memory latency (L2_KIB, L2_WAYS, L2_LINE, L2_LAT, MEM_LAT); defaults keep timing"
+   ],
+   [
+    "Recent-beat buffer",
+    "a knob, RV64_OOO_L0_N (default 0, off), latency RV64_OOO_L0_LAT (default 2)"
+   ],
+   [
+    "Load-wait table",
+    "4,096 entries, cleared every 65,536 clocks"
+   ]
+  ],
+  "marks": [
+   "a one-beat fetch buffer",
+   "requests issue from EXECUTE",
+   "writes acknowledged in the same clock",
+   "second slot across beats",
+   "second data-cache port",
+   "jump in the second slot",
+   "slot-to-slot forwarding",
+   "branch folding",
+   "registered multiplier",
+   "fetch queue and X stage",
+   "store-to-load forwarding",
+   "stores finish at retirement",
+   "cross-beat fetch",
+   "instruction fusion",
+   "1,024-entry predictors",
+   "fixed-direction bias",
+   "sixteen lanes",
+   "one rule for stores and retirement",
+   "four taken turns",
+   "folded at rename",
+   "four stores a write",
+   "four loads, three stores a clock",
+   "512 in flight",
+   "thirty-two retire",
+   "thirty-two lanes",
+   "mended after review",
+   "constants and branches decided at rename",
+   "64-entry return stack",
+   "front-end depth dial",
+   "four branch-capable ports",
+   "two-clock multiply",
+   "the offset clock paid",
+   "return stack restored whole",
+   "load-latency dial",
+   "displaced returns",
+   "offset clock after slow loads",
+   "fetch in the recovery clock",
+   "second level and distant memory",
+   "value prediction earns trust",
+   "global-history predictor",
+   "BTB hits for transfers only",
+   "recent-beat buffer dial",
+   "PC-relative targets",
+   "load-wait table"
+  ],
+  "width": 32,
+  "alus": 8,
+  "dmips_ref": null,
+  "clocks_ref": null,
+  "dmips_fast": null,
+  "ref_run": null,
+  "art": "art/v0.15.6.svg"
+ },
+ {
+  "no": 56,
+  "version": "0.15.7",
+  "title": "Les Six Mémoires",
+  "caption": "The long-memory predictor gains two tables: six, looking back from 4 to 128 steps, about 22.4 KiB in all, and now every entry ages. Compression on the scaled kernel reaches 9.37 MIPS per MHz.",
+  "date": "2026-11-21",
+  "date_fr": "21 novembre 2026",
+  "kind": "ooo",
+  "status": "tagged",
+  "tag": "cpu-v0.15.7",
+  "register": "Global-history predictor with 6 tagged tables (frontend engineer; TG_N 4 to 6, histories 4-128, tables 8 to 12 KiB, about 22.4 KiB in all; aging fixed to cover every entry). 7-Zip 64 KiB: compress 393,569 to 386,369 clocks (9.37 MIPS/MHz), decompress 133,854 to 133,976 (3.27); 4 KiB 974,370 / 154,514; Dhrystone 15,703 / 10,127",
+  "breaking": "No",
+  "units": [
+   [
+    "Organisation",
+    "Out of order (rtl/cpu/rv64_ooo.sv)"
+   ],
+   [
+    "Fetch / rename / retire",
+    "32 / 32 / 32 per clock"
+   ],
+   [
+    "Reorder buffer",
+    "512 entries"
+   ],
+   [
+    "Physical registers",
+    "544"
+   ],
+   [
+    "Issue queue",
+    "128 entries"
+   ],
+   [
+    "ALUs",
+    "8, of which 4 full (branch, multiply, divide)"
+   ],
+   [
+    "Memory ports",
+    "4 load, 3 store-address"
+   ],
+   [
+    "Branch target buffer",
+    "1,024 entries, with return stack; hits used only for branch, JAL and JALR; targets as signed PC-relative offsets (±2 GiB)"
+   ],
+   [
+    "Caches",
+    "128 KiB instruction, 128 KiB data, two-way data cache"
+   ],
+   [
+    "Taken transfers per fetch",
+    "4"
+   ],
+   [
+    "Loop predictor",
+    "1,024 entries"
+   ],
+   [
+    "Branch bias",
+    "a branch that has gone one way at least 4 times with no exit is predicted that way"
+   ],
+   [
+    "Instruction fusion",
+    "a simple integer producer and the next instruction reading it"
+   ],
+   [
+    "Store writes",
+    "paired on the bus"
+   ],
+   [
+    "Value prediction",
+    "loads, multiplies, divides"
+   ],
+   [
+    "Fetch predecode",
+    "direct jumps, calls, returns, backward branches"
+   ],
+   [
+    "Global-history predictor",
+    "6 tagged tables, histories 4 to 128, about 22.4 KiB in all; aging covers every entry"
+   ],
+   [
+    "Prediction confidence",
+    "32 equal results to predict, doubled per wrong prediction up to 64"
+   ],
+   [
+    "Multiply latency",
+    "2 clocks (behavioural; DSP timing unproven)"
+   ],
+   [
+    "Load-to-use latency",
+    "a knob, RV64_OOO_LD_LAT, default 1 clock"
+   ],
+   [
+    "Memory hierarchy",
+    "optional SoC L2 and memory latency (L2_KIB, L2_WAYS, L2_LINE, L2_LAT, MEM_LAT); defaults keep timing"
+   ],
+   [
+    "Recent-beat buffer",
+    "a knob, RV64_OOO_L0_N (default 0, off), latency RV64_OOO_L0_LAT (default 2)"
+   ],
+   [
+    "Load-wait table",
+    "4,096 entries, cleared every 65,536 clocks"
+   ]
+  ],
+  "marks": [
+   "a one-beat fetch buffer",
+   "requests issue from EXECUTE",
+   "writes acknowledged in the same clock",
+   "second slot across beats",
+   "second data-cache port",
+   "jump in the second slot",
+   "slot-to-slot forwarding",
+   "branch folding",
+   "registered multiplier",
+   "fetch queue and X stage",
+   "store-to-load forwarding",
+   "stores finish at retirement",
+   "cross-beat fetch",
+   "instruction fusion",
+   "1,024-entry predictors",
+   "fixed-direction bias",
+   "sixteen lanes",
+   "one rule for stores and retirement",
+   "four taken turns",
+   "folded at rename",
+   "four stores a write",
+   "four loads, three stores a clock",
+   "512 in flight",
+   "thirty-two retire",
+   "thirty-two lanes",
+   "mended after review",
+   "constants and branches decided at rename",
+   "64-entry return stack",
+   "front-end depth dial",
+   "four branch-capable ports",
+   "two-clock multiply",
+   "the offset clock paid",
+   "return stack restored whole",
+   "load-latency dial",
+   "displaced returns",
+   "offset clock after slow loads",
+   "fetch in the recovery clock",
+   "second level and distant memory",
+   "value prediction earns trust",
+   "global-history predictor",
+   "BTB hits for transfers only",
+   "recent-beat buffer dial",
+   "PC-relative targets",
+   "load-wait table",
+   "six tagged tables"
+  ],
+  "width": 32,
+  "alus": 8,
+  "dmips_ref": null,
+  "clocks_ref": null,
+  "dmips_fast": null,
+  "ref_run": null,
+  "art": "art/v0.15.7.svg"
+ },
+ {
+  "no": 57,
+  "version": "0.16.0",
+  "title": "Les Lettres en Vol",
+  "caption": "Several letters in flight: the data side may send up to eight reads at once, each with its own tag, and their answers return on a channel of their own, in any order. The oldest load keeps its reserved place. At the default of one, every count is as before; with a 1 MiB second level, a memory a hundred clocks away and four in flight, compression on the scaled kernel rises from 7.56 to 8.30 MIPS per MHz, under stated optimistic assumptions.",
+  "date": "2026-11-21",
+  "date_fr": "21 novembre 2026",
+  "kind": "ooo",
+  "status": "tagged",
+  "tag": "cpu-v0.16.0",
+  "register": "Several data misses in flight (memory hand-off 2; Codex reviewed three times, all findings fixed): core parameter N_MISS (1-8, default 1) with split data reads on new ports mem_tag, rsp_valid, rsp_tag, rsp_data, rsp_error; entry 0 stays the oldest load's miss with the fill-buffer lock, entries 1..N_MISS-1 fill the data cache for younger loads, stores make in-flight reads of their beat stale, traps wait for outstanding reads and a store fault latched meanwhile traps after the drain. SoC parameters N_MISS, MEM_GAP, WRITE_FILL; tb_core split reads (+split_lat, fault_kind 4); test_cpu.py --n-miss with 16 new cases and fixed-latency patterns; run_bench --n-miss. Defaults keep timing exactly: 7-Zip 64 KiB 386,369 / 133,976, 4 KiB 974,370 / 154,514, Dhrystone 15,703 / 10,127. L2 1 MiB / 12 / MEM_LAT 100, d12 64 KiB: compress 478,916 to 435,898 clocks at N_MISS 4 (-9.0%; 7.56 to 8.30 MIPS/MHz), decompress 162,955 to 158,999 (-2.4%), with the optimistic assumptions of section 3",
+  "breaking": "No for existing users (new parameter and ports, defaults unchanged); MINOR because the bus contract gains split reads",
+  "units": [
+   [
+    "Organisation",
+    "Out of order (rtl/cpu/rv64_ooo.sv)"
+   ],
+   [
+    "Fetch / rename / retire",
+    "32 / 32 / 32 per clock"
+   ],
+   [
+    "Reorder buffer",
+    "512 entries"
+   ],
+   [
+    "Physical registers",
+    "544"
+   ],
+   [
+    "Issue queue",
+    "128 entries"
+   ],
+   [
+    "ALUs",
+    "8, of which 4 full (branch, multiply, divide)"
+   ],
+   [
+    "Memory ports",
+    "4 load, 3 store-address"
+   ],
+   [
+    "Branch target buffer",
+    "1,024 entries, with return stack; hits used only for branch, JAL and JALR; targets as signed PC-relative offsets (±2 GiB)"
+   ],
+   [
+    "Caches",
+    "128 KiB instruction, 128 KiB data, two-way data cache"
+   ],
+   [
+    "Taken transfers per fetch",
+    "4"
+   ],
+   [
+    "Loop predictor",
+    "1,024 entries"
+   ],
+   [
+    "Branch bias",
+    "a branch that has gone one way at least 4 times with no exit is predicted that way"
+   ],
+   [
+    "Instruction fusion",
+    "a simple integer producer and the next instruction reading it"
+   ],
+   [
+    "Store writes",
+    "paired on the bus"
+   ],
+   [
+    "Value prediction",
+    "loads, multiplies, divides"
+   ],
+   [
+    "Fetch predecode",
+    "direct jumps, calls, returns, backward branches"
+   ],
+   [
+    "Global-history predictor",
+    "6 tagged tables, histories 4 to 128, about 22.4 KiB in all; aging covers every entry"
+   ],
+   [
+    "Prediction confidence",
+    "32 equal results to predict, doubled per wrong prediction up to 64"
+   ],
+   [
+    "Multiply latency",
+    "2 clocks (behavioural; DSP timing unproven)"
+   ],
+   [
+    "Load-to-use latency",
+    "a knob, RV64_OOO_LD_LAT, default 1 clock"
+   ],
+   [
+    "Memory hierarchy",
+    "optional SoC L2 and memory latency (L2_KIB, L2_WAYS, L2_LINE, L2_LAT, MEM_LAT); defaults keep timing"
+   ],
+   [
+    "Recent-beat buffer",
+    "a knob, RV64_OOO_L0_N (default 0, off), latency RV64_OOO_L0_LAT (default 2)"
+   ],
+   [
+    "Load-wait table",
+    "4,096 entries, cleared every 65,536 clocks"
+   ],
+   [
+    "Data misses in flight",
+    "N_MISS 1 to 8 (default 1); split reads with tags on mem_tag, rsp_valid, rsp_tag, rsp_data, rsp_error"
+   ]
+  ],
+  "marks": [
+   "a one-beat fetch buffer",
+   "requests issue from EXECUTE",
+   "writes acknowledged in the same clock",
+   "second slot across beats",
+   "second data-cache port",
+   "jump in the second slot",
+   "slot-to-slot forwarding",
+   "branch folding",
+   "registered multiplier",
+   "fetch queue and X stage",
+   "store-to-load forwarding",
+   "stores finish at retirement",
+   "cross-beat fetch",
+   "instruction fusion",
+   "1,024-entry predictors",
+   "fixed-direction bias",
+   "sixteen lanes",
+   "one rule for stores and retirement",
+   "four taken turns",
+   "folded at rename",
+   "four stores a write",
+   "four loads, three stores a clock",
+   "512 in flight",
+   "thirty-two retire",
+   "thirty-two lanes",
+   "mended after review",
+   "constants and branches decided at rename",
+   "64-entry return stack",
+   "front-end depth dial",
+   "four branch-capable ports",
+   "two-clock multiply",
+   "the offset clock paid",
+   "return stack restored whole",
+   "load-latency dial",
+   "displaced returns",
+   "offset clock after slow loads",
+   "fetch in the recovery clock",
+   "second level and distant memory",
+   "value prediction earns trust",
+   "global-history predictor",
+   "BTB hits for transfers only",
+   "recent-beat buffer dial",
+   "PC-relative targets",
+   "load-wait table",
+   "six tagged tables",
+   "several reads in flight",
+   "split read channel"
+  ],
+  "width": 32,
+  "alus": 8,
+  "dmips_ref": null,
+  "clocks_ref": null,
+  "dmips_fast": null,
+  "ref_run": null,
+  "art": "art/v0.16.0.svg"
+ },
+ {
+  "no": 58,
+  "version": "0.16.1",
+  "title": "Le Trait d'Union",
+  "caption": "A simple operation and the one that reads it are welded even when they arrive a clock apart: the waiting producer is held over, in a single register, into the next rename. The scaled kernel reaches 9.41 / 3.29 MIPS per MHz, and a larger waiting room is no longer slower.",
+  "date": "2026-11-21",
+  "date_fr": "21 novembre 2026",
+  "kind": "ooo",
+  "status": "tagged",
+  "tag": "cpu-v0.16.1",
+  "register": "ALU-pair fusion across rename groups (middle engineer): the pending producer survives into the next rename clock, cleared by recovery and reset. Test fusion_across_groups. 7-Zip 64 KiB: 386,369 / 133,976 to 384,720 / 133,233 (9.41 / 3.29 MIPS/MHz); 4 KiB 973,966 / 152,756; Dhrystone 15,703 / 10,127; a 256-entry IQ is no longer slower than 128",
+  "breaking": "No",
+  "units": [
+   [
+    "Organisation",
+    "Out of order (rtl/cpu/rv64_ooo.sv)"
+   ],
+   [
+    "Fetch / rename / retire",
+    "32 / 32 / 32 per clock"
+   ],
+   [
+    "Reorder buffer",
+    "512 entries"
+   ],
+   [
+    "Physical registers",
+    "544"
+   ],
+   [
+    "Issue queue",
+    "128 entries"
+   ],
+   [
+    "ALUs",
+    "8, of which 4 full (branch, multiply, divide)"
+   ],
+   [
+    "Memory ports",
+    "4 load, 3 store-address"
+   ],
+   [
+    "Branch target buffer",
+    "1,024 entries, with return stack; hits used only for branch, JAL and JALR; targets as signed PC-relative offsets (±2 GiB)"
+   ],
+   [
+    "Caches",
+    "128 KiB instruction, 128 KiB data, two-way data cache"
+   ],
+   [
+    "Taken transfers per fetch",
+    "4"
+   ],
+   [
+    "Loop predictor",
+    "1,024 entries"
+   ],
+   [
+    "Branch bias",
+    "a branch that has gone one way at least 4 times with no exit is predicted that way"
+   ],
+   [
+    "Instruction fusion",
+    "a simple integer producer and the next instruction reading it, also across rename groups (one pending producer held into the next clock)"
+   ],
+   [
+    "Store writes",
+    "paired on the bus"
+   ],
+   [
+    "Value prediction",
+    "loads, multiplies, divides"
+   ],
+   [
+    "Fetch predecode",
+    "direct jumps, calls, returns, backward branches"
+   ],
+   [
+    "Global-history predictor",
+    "6 tagged tables, histories 4 to 128, about 22.4 KiB in all; aging covers every entry"
+   ],
+   [
+    "Prediction confidence",
+    "32 equal results to predict, doubled per wrong prediction up to 64"
+   ],
+   [
+    "Multiply latency",
+    "2 clocks (behavioural; DSP timing unproven)"
+   ],
+   [
+    "Load-to-use latency",
+    "a knob, RV64_OOO_LD_LAT, default 1 clock"
+   ],
+   [
+    "Memory hierarchy",
+    "optional SoC L2 and memory latency (L2_KIB, L2_WAYS, L2_LINE, L2_LAT, MEM_LAT); defaults keep timing"
+   ],
+   [
+    "Recent-beat buffer",
+    "a knob, RV64_OOO_L0_N (default 0, off), latency RV64_OOO_L0_LAT (default 2)"
+   ],
+   [
+    "Load-wait table",
+    "4,096 entries, cleared every 65,536 clocks"
+   ],
+   [
+    "Data misses in flight",
+    "N_MISS 1 to 8 (default 1); split reads with tags on mem_tag, rsp_valid, rsp_tag, rsp_data, rsp_error"
+   ]
+  ],
+  "marks": [
+   "a one-beat fetch buffer",
+   "requests issue from EXECUTE",
+   "writes acknowledged in the same clock",
+   "second slot across beats",
+   "second data-cache port",
+   "jump in the second slot",
+   "slot-to-slot forwarding",
+   "branch folding",
+   "registered multiplier",
+   "fetch queue and X stage",
+   "store-to-load forwarding",
+   "stores finish at retirement",
+   "cross-beat fetch",
+   "instruction fusion",
+   "1,024-entry predictors",
+   "fixed-direction bias",
+   "sixteen lanes",
+   "one rule for stores and retirement",
+   "four taken turns",
+   "folded at rename",
+   "four stores a write",
+   "four loads, three stores a clock",
+   "512 in flight",
+   "thirty-two retire",
+   "thirty-two lanes",
+   "mended after review",
+   "constants and branches decided at rename",
+   "64-entry return stack",
+   "front-end depth dial",
+   "four branch-capable ports",
+   "two-clock multiply",
+   "the offset clock paid",
+   "return stack restored whole",
+   "load-latency dial",
+   "displaced returns",
+   "offset clock after slow loads",
+   "fetch in the recovery clock",
+   "second level and distant memory",
+   "value prediction earns trust",
+   "global-history predictor",
+   "BTB hits for transfers only",
+   "recent-beat buffer dial",
+   "PC-relative targets",
+   "load-wait table",
+   "six tagged tables",
+   "several reads in flight",
+   "split read channel",
+   "fusion across rename groups"
+  ],
+  "width": 32,
+  "alus": 8,
+  "dmips_ref": null,
+  "clocks_ref": null,
+  "dmips_fast": null,
+  "ref_run": null,
+  "art": "art/v0.16.1.svg"
  }
 ]

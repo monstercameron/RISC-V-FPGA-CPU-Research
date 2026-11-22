@@ -261,6 +261,7 @@ DEFAULTS = dict(
     fwd=False, snapshots=False, taken=0, loop=False, vp=False, predecode=False, paired=False,
     marks=[], fuse=False, bias=False, btb_n=256, lp_n=256,
     mul_lat=0, ld_knob=False, l2=False, vp_conf=False, tage=False,
+    tg_n=4, btb_guard=False, btb_rel=False, l0=False, ldwait=False, n_miss=False, fuse_x=False,
 )
 
 # (version, era, French title, caption, medium, overrides)
@@ -444,6 +445,37 @@ WORKS = [
      "A predictor that remembers the road: four tagged tables of 1,024 entries, looking back 5, 15, 44 and 128 steps of global history, about 18.4 KiB. "
      "Compression on the scaled kernel leaps from 7.97 to 9.16 MIPS per MHz; Dhrystone's reference run is half a percent slower.",
      dict(tage=True, marks=["global-history predictor"])),
+    # Salle IX: mendings and second memories. Figures from the 0.15.3 to 0.16.1 history rows
+    # (and, for the six history lengths drawn in 0.15.7, the RTL's tg_len at tag cpu-v0.15.7).
+    ("0.15.3", "Le Garde-Fou",
+     "A guard rail for the branch buffer: a hit is believed only where a branch, a jump or a jump-and-link truly stands. "
+     "An old entry left behind by rewritten code no longer turns fetch aside; in the new test, twenty wrong redirects become none. 7-Zip and Dhrystone do not move.",
+     dict(btb_guard=True, marks=["BTB hits for transfers only"])),
+    ("0.15.4", "La Mémoire Proche",
+     "A dial for a near memory: the beats most recently read by loads may be kept close at hand, answering in two clocks when the first level is made slower. "
+     "Off by default, and nothing moves; with loads at four clocks on 0.15.1, sixteen beats save 6.5% / 8.5% of the scaled kernel's clocks, thirty-two save 8.3% / 9.3%.",
+     dict(l0=True, marks=["recent-beat buffer dial"])),
+    ("0.15.5", "Le Chemin Relatif",
+     "Branch targets are remembered as a signed distance from the branch, two gibibytes either way, and an entry that cannot reach is forgotten. "
+     "Of eight branch and target pairs, the old way was wrong for five. The benchmarks do not move.",
+     dict(btb_rel=True, marks=["PC-relative targets"])),
+    ("0.15.6", "Le Registre des Attentes",
+     "A ledger of loads that once ran ahead of a store and were caught: 4,096 entries, wiped clean every 65,536 clocks. "
+     "The scaled kernel compresses at 9.20 MIPS per MHz and decompresses at 3.28, in simulation.",
+     dict(ldwait=True, marks=["load-wait table"])),
+    ("0.15.7", "Les Six Mémoires",
+     "The long-memory predictor gains two tables: six, looking back from 4 to 128 steps, about 22.4 KiB in all, and now every entry ages. "
+     "Compression on the scaled kernel reaches 9.37 MIPS per MHz.",
+     dict(tg_n=6, marks=["six tagged tables"])),
+    ("0.16.0", "Les Lettres en Vol",
+     "Several letters in flight: the data side may send up to eight reads at once, each with its own tag, and their answers return on a channel of their own, in any order. "
+     "The oldest load keeps its reserved place. At the default of one, every count is as before; with a 1 MiB second level, a memory a hundred clocks away and four in flight, "
+     "compression on the scaled kernel rises from 7.56 to 8.30 MIPS per MHz, under stated optimistic assumptions.",
+     dict(n_miss=True, marks=["several reads in flight", "split read channel"])),
+    ("0.16.1", "Le Trait d'Union",
+     "A simple operation and the one that reads it are welded even when they arrive a clock apart: the waiting producer is held over, in a single register, into the next rename. "
+     "The scaled kernel reaches 9.41 / 3.29 MIPS per MHz, and a larger waiting room is no longer slower.",
+     dict(fuse_x=True, marks=["fusion across rename groups"])),
 ]
 
 ERAS = [
@@ -455,6 +487,7 @@ ERAS = [
     ("VI", "Salle VI", "Le Grand Format", "Sixteen wide, and then a council of engineers.", "0.12.0", "0.13.0"),
     ("VII", "Salle VII", "Le Conseil", "The council widens everything at once: doors, room and breath, then a mending, a deeper memory for returns, and a fourth hand for branches.", "0.13.1", "0.14.6"),
     ("VIII", "Salle VIII", "L'Archive", "The council turns to a second measure, the LZMA kernel of 7-Zip: a quicker multiply, honest offsets, a mended way home, floors of memory below, and a predictor with a long memory.", "0.14.7", "0.15.2"),
+    ("IX", "Salle IX", "Les Lettres en Vol", "Mendings for the branch buffer, a near memory and a ledger of waiting loads, six tables of long memory, then several reads in flight at once and a weld that spans two clocks.", "0.15.3", "0.16.1"),
 ]
 
 
@@ -518,7 +551,12 @@ def unit_lines(s: dict) -> list[tuple[str, str]]:
             u.append(("Memory port", "one load/store port, memory issued in program order"))
         else:
             u.append(("Memory ports", f"{s['loads']} load, {s['stores']} store-address"))
-        u.append(("Branch target buffer", f"{s['btb_n']:,} entries, with return stack"))
+        btb = f"{s['btb_n']:,} entries, with return stack"
+        if s["btb_guard"]:
+            btb += "; hits used only for branch, JAL and JALR"
+        if s["btb_rel"]:
+            btb += "; targets as signed PC-relative offsets (±2 GiB)"
+        u.append(("Branch target buffer", btb))
         u.append(("Caches", f"{s['icache_kb'] or 4} KiB instruction, {s['dcache_kb'] or 4} KiB data"
                   + (", two-way data cache" if s["dc_ways"] == 2 else "")))
         if s["taken"]:
@@ -528,14 +566,17 @@ def unit_lines(s: dict) -> list[tuple[str, str]]:
         if s["bias"]:
             u.append(("Branch bias", "a branch that has gone one way at least 4 times with no exit is predicted that way"))
         if s["fuse"]:
-            u.append(("Instruction fusion", "a simple integer producer and the next instruction reading it"))
+            u.append(("Instruction fusion", "a simple integer producer and the next instruction reading it"
+                      + (", also across rename groups (one pending producer held into the next clock)" if s["fuse_x"] else "")))
         if s["paired"]:
             u.append(("Store writes", "paired on the bus"))
         if s["vp"]:
             u.append(("Value prediction", "loads, multiplies, divides"))
         if s["predecode"]:
             u.append(("Fetch predecode", "direct jumps, calls, returns, backward branches"))
-        if s["tage"]:
+        if s["tage"] and s["tg_n"] == 6:
+            u.append(("Global-history predictor", "6 tagged tables, histories 4 to 128, about 22.4 KiB in all; aging covers every entry"))
+        elif s["tage"]:
             u.append(("Global-history predictor", "4 × 1,024 tagged entries, histories 5 / 15 / 44 / 128, about 18.4 KiB"))
         if s["vp_conf"]:
             u.append(("Prediction confidence", "32 equal results to predict, doubled per wrong prediction up to 64"))
@@ -545,6 +586,12 @@ def unit_lines(s: dict) -> list[tuple[str, str]]:
             u.append(("Load-to-use latency", "a knob, RV64_OOO_LD_LAT, default 1 clock"))
         if s["l2"]:
             u.append(("Memory hierarchy", "optional SoC L2 and memory latency (L2_KIB, L2_WAYS, L2_LINE, L2_LAT, MEM_LAT); defaults keep timing"))
+        if s["l0"]:
+            u.append(("Recent-beat buffer", "a knob, RV64_OOO_L0_N (default 0, off), latency RV64_OOO_L0_LAT (default 2)"))
+        if s["ldwait"]:
+            u.append(("Load-wait table", "4,096 entries, cleared every 65,536 clocks"))
+        if s["n_miss"]:
+            u.append(("Data misses in flight", "N_MISS 1 to 8 (default 1); split reads with tags on mem_tag, rsp_valid, rsp_tag, rsp_data, rsp_error"))
     return u
 
 
@@ -646,11 +693,16 @@ class Art:
             self.a(f'<circle cx="{cx}" cy="{cy}" r="{56 * (i + 1) / rings:.1f}" fill="none" stroke="{INK}" stroke-width="{1.6 if i % 2 == 0 else 0.8}"/>')
         self.disc(cx, cy, 9, OXBLOOD, off=2)
         if s["tage"]:
-            # four tagged tables as arcs around the rings; each arc's sweep follows its
-            # history length (5, 15, 44, 128), so the longest memory nearly closes the circle
-            for i, (hist, col) in enumerate(zip((5, 15, 44, 128), (OCHRE, OXBLOOD, SLATE, SAGE))):
+            # tagged tables as arcs around the rings; each arc's sweep follows its history
+            # length (5, 15, 44, 128 for four tables; 4 to 128 by doubling for six, the RTL's
+            # tg_len at cpu-v0.15.7), so the longest memory nearly closes the circle
+            if s["tg_n"] == 6:
+                hists, cols, step = (4, 8, 16, 32, 64, 128), (OCHRE, OXBLOOD, SLATE, SAGE, GOLD, OXBLOOD), 5
+            else:
+                hists, cols, step = (5, 15, 44, 128), (OCHRE, OXBLOOD, SLATE, SAGE), 7
+            for i, (hist, col) in enumerate(zip(hists, cols)):
                 sweep = 40 + 270 * hist / 128
-                self.arc(cx, cy, 64 + i * 7, 150, 150 + sweep, col, sw=4, op=0.9)
+                self.arc(cx, cy, 64 + i * step, 150, 150 + sweep, col, sw=4, op=0.9)
         if s["ras"]:
             for i in range(4):
                 self.box(cx - 30 + i * 4, cy + 74 - i * 7, 60, 6, SAGE, sw=1, off=0)
@@ -662,6 +714,14 @@ class Art:
             self.path("M" + " L".join(pts), sw=1.8, col=GOLD)
         if s["predecode"]:
             self.line(cx + 60, cy + 40, cx + 130, cy - 6, sw=3, col=GOLD)
+        if s["btb_guard"]:
+            # a small gate across the predictor's way out: only transfers pass
+            self.line(cx - 6, cy - 62, cx + 6, cy - 50, sw=2.2, col=OXBLOOD)
+            self.line(cx + 6, cy - 62, cx - 6, cy - 50, sw=2.2, col=OXBLOOD)
+        if s["btb_rel"]:
+            # a measured distance from the centre: targets kept relative to the branch
+            self.line(cx, cy, cx - 50, cy + 30, sw=1.2, col=INK, dash="2 3")
+            self.disc(cx - 50, cy + 30, 3.2, GOLD, off=0)
 
     def retire_col(self, y0, y1, x=725):
         n = self.s["retire"]
@@ -861,6 +921,12 @@ class Art:
             self.line(dx0 + i * dp + dw / 2, 130, dx0 + i * dp + dw / 2, 178, sw=0.9, op=0.7)
             self.a(f'<line x1="{dx0 + i * dp + dw * 0.15:.1f}" y1="200" x2="{dx0 + i * dp + dw * 0.85:.1f}" y2="184" stroke="{INK}" stroke-width="0.8" stroke-opacity="0.6"/>')
         self.text(400, 232, "rename", 18, op=0.8)
+        if s["fuse_x"]:
+            # one held-over producer: a gold register under the last rename slot, hooked back
+            # to the first slot of the next clock's group
+            lx = dx0 + (n - 1) * dp + dw / 2
+            self.box(lx - 9, 214, 18, 11, GOLD, sw=1.2, off=1)
+            self.path(f"M{lx - 10} 222 C{lx - 60} 252 {dx0 + 60} 252 {dx0 + dw / 2} 210", sw=1.4, col=GOLD, dash="4 3")
         if s["snapshots"]:
             self.box(dx0 - 10, 170, n * dp + 14, 44, None, sw=1.2, dash="3 4", off=0)
         # window: reorder buffer, register file, issue queue
@@ -949,6 +1015,31 @@ class Art:
                           112 + 18 * math.cos(a), ly - 16 + 18 * math.sin(a), sw=1)
             a = math.radians(200)
             self.line(112, ly - 16, 112 + 15 * math.cos(a), ly - 16 + 15 * math.sin(a), sw=2, col=OXBLOOD)
+        if s["l0"]:
+            # the recent-beat buffer: sixteen small cells under the load ports, dashed
+            # because the knob is off by default
+            for k in range(16):
+                self.box(142 + k * 10, 756, 8, 8, OCHRE, op=0.6, sw=0.8, dash="2 2", off=0)
+        if s["ldwait"]:
+            # the load-wait ledger: a grid of bits (symbolic for 4,096) beside a clock hand
+            # that sweeps it clean every 65,536 clocks
+            for j in range(4):
+                for i in range(8):
+                    on = (i * 7 + j * 3) % 5 == 0
+                    self.box(592 + i * 9, 648 + j * 9, 7, 7, OXBLOOD if on else PAPER, op=0.8, sw=0.6, off=0)
+            self.disc(700, 664, 13, None, sw=1.2)
+            self.line(700, 664, 700, 653, sw=1.6, col=OXBLOOD)
+            self.line(700, 664, 708, 668, sw=1.2)
+        if s["n_miss"]:
+            # up to eight reads in flight: entry 0 solid (the oldest load's), the rest dashed
+            # (N_MISS defaults to 1); the split answer channel climbs back from the bus
+            for k in range(8):
+                self.box(560 + k * 21, 762, 16, 12, OXBLOOD if k == 0 else PAPER, op=0.85,
+                         sw=1.1, dash=None if k == 0 else "3 2", off=0)
+            self.path("M748 936 L748 768 L730 768", sw=1.6, col=OXBLOOD, dash="5 3")
+            self.a(f'<path d="M730 768 l7 -4 l0 8z" fill="{OXBLOOD}" stroke="{INK}" stroke-width="0.8"/>')
+            for k in range(4):
+                self.line(744, 800 + k * 32, 752, 800 + k * 32, sw=1.2)
         self.caches(796)
         if s["l2"]:
             self.memory_floors(796)
@@ -1142,24 +1233,35 @@ PROBE_DHRYSTONE = {
     "0.14.13": ("15,654 / 10,177", ""),
     "0.15.0": ("15,654 / 10,177", "defaults keep all timing"),
     "0.15.2": ("15,732 / 10,139", "reference 0.5% slower than 0.15.1"),
+    "0.15.3": ("15,732 / 10,139", "unchanged"),
+    "0.15.4": ("15,732 / 10,139", "unchanged with the buffer off"),
+    "0.15.5": ("15,732 / 10,139", "unchanged"),
+    "0.15.6": ("15,698 / 10,127", ""),
+    "0.15.7": ("15,703 / 10,127", ""),
+    "0.16.0": ("15,703 / 10,127", "defaults keep timing exactly"),
+    "0.16.1": ("15,703 / 10,127", ""),
 }
 
 # The second measure: the LZMA benchmark kernel of 7-Zip, scaled down to fit the
 # simulator. Compress / decompress MIPS/MHz, from the DEVLOG.md rows of
 # 2026-11-21 (16:00 to 16:50, 16:55, 17:20, 18:05 to 18:10). Simulation of a scaled
 # kernel, except the native row; none of these is a 7-Zip benchmark score.
-# The 0.15.2 row is from its history row; the full-size (d22) goal from the DEVLOG.md
-# row of 2026-11-21 20:34 (cpu/7zip-benchmark-targets.md).
+# The 0.16.1 row is from its history row; the full-size (d22) goal from the DEVLOG.md
+# row of 2026-11-21 20:34 (cpu/7zip-benchmark-targets.md), and the d22 goal run in the
+# deciding configuration on 0.15.4 from the DEVLOG.md row of 2026-11-21 21:24 to 21:53.
 SEVENZIP = [
     # (label, note, compress, decompress, style)
     ("Goal, scaled kernel", "about; derived from 10,000 MIPS in 7-Zip at 4 GHz", 10.9, 3.35, "goal"),
     ("Cortex-X925, native", "laptop core running the same scaled kernel natively; not a simulation", 8.34, 2.59, "native"),
-    ("0.15.2 out of order, 64 KiB caches", "simulated, scaled kernel; the newest version", 9.16, 3.26, "sim"),
+    ("0.16.1 out of order, 64 KiB caches", "simulated, scaled kernel; the newest version", 9.41, 3.29, "sim"),
     ("0.14.6 out of order, 64 KiB caches", "simulated, scaled kernel; where the council's 7-Zip phase began", 7.46, 2.89, "sim"),
     ("0.14.6 out of order, 4 KiB caches", "simulated, scaled kernel; the FPGA-class configuration", 3.39, 2.56, "sim"),
     ("Multicycle core", "simulated, scaled kernel; 0.14.6 tree", 1.61, 1.69, "sim"),
     ("Pipelined core", "simulated, scaled kernel; 0.14.6 tree", 0.96, 0.89, "sim"),
     ("Goal, full-size (d22) kernel", "about; the same 10,000 MIPS goal, calibrated on the full-size kernel, a different and larger workload", 2.03, 2.18, "goal"),
+    ("0.15.4 out of order, full-size (d22) kernel, deciding configuration",
+     "simulated, sampled (30 pieces per phase, 95% CI ±10.9% / ±22.9%); loads at four clocks, a 16-beat recent-beat buffer, 4 MiB L2 at 20 clocks, "
+     "memory 350 clocks away, one miss at a time; goal not met, 75% / 91%", 1.53, 1.98, "sim"),
 ]
 
 # Per version: (compress, decompress MIPS/MHz at 64 KiB caches, or None, and the rest
@@ -1176,6 +1278,16 @@ SEVENZIP_BY_VERSION = {
     "0.15.0": (None, None, "466,256 / 134,773 clocks at 64 KiB caches with the default SoC; 6.43 / 2.67 MIPS/MHz with a 1 MiB L2 and MEM_LAT 100"),
     "0.15.1": (7.97, 3.26, "at 64 KiB caches (1,051,391 / 156,124 clocks at 4 KiB)"),
     "0.15.2": (9.16, 3.26, "at 64 KiB caches (983,418 / 155,941 clocks at 4 KiB)"),
+    "0.15.3": (None, None, "395,001 / 134,501 clocks at 64 KiB caches, unchanged"),
+    "0.15.4": (None, None, "395,001 / 134,501 clocks at 64 KiB caches with the buffer off, unchanged; "
+                           "with loads at four clocks on 0.15.1, a 16-beat buffer saves 6.5% / 8.5% of clocks, 32 beats 8.3% / 9.3%"),
+    "0.15.5": (None, None, "395,001 / 134,501 clocks at 64 KiB caches, unchanged"),
+    "0.15.6": (9.20, 3.28, "at 64 KiB caches (393,569 / 133,854 clocks)"),
+    "0.15.7": (9.37, 3.27, "at 64 KiB caches (974,370 / 154,514 clocks at 4 KiB)"),
+    "0.16.0": (None, None, "386,369 / 133,976 clocks at 64 KiB caches with the default single miss, exactly as 0.15.7; "
+                           "with a 1 MiB L2 at 12 clocks, MEM_LAT 100 and N_MISS 4, compression 7.56 to 8.30 MIPS/MHz (-9.0% clocks) "
+                           "and decompression -2.4% clocks, under the stated optimistic assumptions"),
+    "0.16.1": (9.41, 3.29, "at 64 KiB caches (973,966 / 152,756 clocks at 4 KiB)"),
 }
 
 
@@ -1229,7 +1341,8 @@ def sevenzip_plate() -> str:
   <p class="small">A second measure beside Dhrystone: the LZMA benchmark kernel of 7-Zip, scaled down to run in the simulator, in instructions per clock
   (MIPS per MHz) for compression and decompression. Every row is a simulation of that scaled kernel except the Cortex-X925 row, a native run of the same kernel on a laptop core.
   None of these is a 7-Zip benchmark score or a hardware result for this processor. The goal is about 10.9 / 3.35 on the scaled kernel, derived from a 10,000 MIPS single-thread 7-Zip rating at 4 GHz;
-  the same goal on the full-size (d22) kernel is about 2.03 / 2.18, shown last because that kernel is a different, larger workload and its bars do not compare with the rows above.</p>
+  the same goal on the full-size (d22) kernel is about 2.03 / 2.18. The last two rows are that full-size kernel, a different, larger workload whose bars do not compare with the rows above;
+  in the deciding configuration (slow loads, a large and distant memory, one miss at a time) version 0.15.4 reaches 1.53 / 1.98 in simulation, so the goal is not met there (75% / 91%).</p>
   <p class="legend small"><span class="sw z-c"></span>compress <span class="sw z-d"></span>decompress <span class="sw z-goal"></span>goal (outlined)</p>
   <ol class="zchart">{"".join(rows)}</ol>
   <p class="small">Scale: 0 to {top:g} MIPS/MHz, linear. Out-of-order rows under Verilator, whole program; multicycle and pipelined under Icarus.</p>
@@ -1253,9 +1366,17 @@ def alt_text(v: dict, s: dict) -> str:
         parts.append(f"Blocks for a {s['rob']}-entry reorder buffer, {s['prf']} physical registers, a {s['iq']}-entry issue queue, "
                      f"{s['alus']} integer units, and instruction and data caches above a bus.")
         if s["tage"]:
-            parts.append("Four coloured arcs around the predictor rings stand for the tagged global-history tables, longer arcs for longer histories.")
+            parts.append(f"{'Six' if s['tg_n'] == 6 else 'Four'} coloured arcs around the predictor rings stand for the tagged global-history tables, longer arcs for longer histories.")
         if s["l2"]:
             parts.append("A dashed second-level cache sits between the two caches, with a zig-zag delay line down to the bus for the distant memory.")
+        if s["l0"]:
+            parts.append("A dashed row of sixteen small cells under the load ports is the recent-beat buffer, off by default.")
+        if s["ldwait"]:
+            parts.append("A small grid of bits with a clock hand beside it is the load-wait table that is cleared at intervals.")
+        if s["n_miss"]:
+            parts.append("Eight small slots above the data cache, one solid and seven dashed, are the reads that may be in flight, and a dashed line climbing from the bus is the split answer channel.")
+        if s["fuse_x"]:
+            parts.append("A gold register under the last rename slot hooks back to the first slot: fusion carried into the next rename clock.")
     elif s["kind"] == "pipe":
         parts.append(f"{len(s['stages'])} pipeline stages as coloured slabs, a branch target buffer drawn as rings, and two caches above a bus.")
     else:
@@ -1379,7 +1500,7 @@ def chart_svg(versions) -> str:
         out.append(f'<text x="{l - 10}" y="{y + 5:.1f}" text-anchor="end" class="ct-lab">{val:g}</text>')
     out.append(f'<text x="18" y="{(t + Hc - b) / 2:.0f}" transform="rotate(-90 18 {(t + Hc - b) / 2:.0f})" text-anchor="middle" class="ct-lab">DMIPS per MHz, simulated (log scale)</text>')
     for i, v in enumerate(versions):
-        if i % 2 == 0 or i == n - 1:
+        if (i % 2 == 0 and i < n - 2) or i == n - 1:  # every other label; the last never crowded
             x = xs[v["version"]]
             out.append(f'<text x="{x:.1f}" y="{Hc - b + 26}" text-anchor="end" transform="rotate(-50 {x:.1f} {Hc - b + 26})" class="ct-lab">{v["version"]}</text>')
     fast = [v for v in versions if v["dmips_fast"] is not None]
@@ -1474,7 +1595,8 @@ def index_page(versions) -> str:
               key=lambda k: tuple(int(x) for x in k.split(".")))
     z7 = SEVENZIP_BY_VERSION[z7v]
     x925 = next(r for r in SEVENZIP if r[4] == "native")
-    d22 = SEVENZIP[-1]
+    d22 = next(r for r in SEVENZIP if r[4] == "goal" and "d22" in r[0])
+    d22run = next(r for r in SEVENZIP if r[4] == "sim" and "d22" in r[0])
     body = f"""
 <section class="hero">
   <div class="hero-text">
@@ -1508,7 +1630,8 @@ def index_page(versions) -> str:
     <p class="eyebrow">II.</p><h2>Le Journal</h2>
     <p>The development log as a catalogue: findings, timelines and commits by day, and a chart of simulated Dhrystone performance from {fmt_dm(first['dmips_ref'])} to {fmt_dm(best['dmips_ref'])} DMIPS/MHz.
     Beside it, a second measure: a scaled 7-Zip LZMA kernel, simulated at {z7[0]:.2f} / {z7[1]:.2f} MIPS/MHz compress / decompress on version {z7v} (64 KiB caches), against a goal of about {SEVENZIP[0][2]:g} / {SEVENZIP[0][3]:g};
-    a laptop's Cortex-X925 runs the same scaled kernel natively at {x925[2]:.2f} / {x925[3]:.2f}. On the full-size (d22) kernel the goal is about {d22[2]:.2f} / {d22[3]:.2f}.</p>
+    a laptop's Cortex-X925 runs the same scaled kernel natively at {x925[2]:.2f} / {x925[3]:.2f}. On the full-size (d22) kernel the goal is about {d22[2]:.2f} / {d22[3]:.2f};
+    in the deciding configuration version 0.15.4 reaches {d22run[2]:.2f} / {d22run[3]:.2f} in simulation, not met (75% / 91%).</p>
     <p><a href="journal.html">Open the notebook &rarr;</a></p>
   </article>
   <article>
