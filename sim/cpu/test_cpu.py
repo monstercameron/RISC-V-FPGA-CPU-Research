@@ -82,7 +82,7 @@ def ras_wrong_path_call_program():
     PAD = 640    # more than ROB + fetch queue: the wrong path cannot reach the next call of f
     f = 48 + 4 * PAD + 16                                              # address of f
     g = f + 48
-    p = [i_type(0x13, 10, 0, 0, 24),                                   # 0: x10 = 24 iterations
+    p = [i_type(0x13, 10, 0, 0, 12),                                   # 0: x10 = 12 iterations (24 until 2026-11-21: too slow under Icarus)
          i_type(0x13, 11, 0, 0, 0x5a5),                                # 4: x11 = seed
          (3 << 12) | (2 << 7) | 0x37,                                  # 8: x2 = 0x3000 (lui; was x12 = 1)
          slli(13, 11, 13), xor(11, 11, 13),                            # 12: xorshift64
@@ -802,8 +802,15 @@ def cases():
     yield 'ret_displacement', ret_displacement_program(), 0, MASK
     yield from rc_fetch_cases(i_type, r_type, store, branch, jal, MASK)
 
-def command(args, timeout=60):
-    result = subprocess.run([str(x) for x in args], capture_output=True, text=True, timeout=timeout)
+# Wall-clock guard per simulation. Real hangs end at tb_core's cycle limit; this only backs it
+# up, so Icarus (100-400x slower than Verilator) gets more time: under Icarus with 2-line caches
+# and heavy bus waits ras_wrong_path_call took 192 s (2026-11-21).
+HANG_SECONDS = 60
+
+
+def command(args, timeout=None):
+    result = subprocess.run([str(x) for x in args], capture_output=True, text=True,
+                            timeout=HANG_SECONDS if timeout is None else timeout)
     if result.returncode:
         raise RuntimeError(result.stdout + result.stderr)
     return result.stdout
@@ -829,6 +836,8 @@ def main():
     cache |= {'DCACHE_BEATS': args.dcache_beats} if args.dcache_beats else {}
     try:
         sim = simulator.get(args.sim)
+        global HANG_SECONDS
+        HANG_SECONDS = 60 if args.sim == 'verilator' else 300
     except simulator.SimulatorMissing as missing:
         parser.error(str(missing))
     # Icarus compiles in seconds; a Verilator build gets the 5-minute step limit.
