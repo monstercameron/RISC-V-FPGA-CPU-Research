@@ -1059,6 +1059,41 @@ def command(args, timeout=None):
     return result.stdout
 
 
+def iss_fp_check(workloads):
+    """rv_iss.c --fp 1 against reference.py on every fault-free FP workload, trace for trace: the RTL
+    regression takes its expected traces from Python, so it cannot see a C model defect (Codex review of
+    0.17.0, item 2). Paths: the host FPU, --fp-soft 1, and on AArch64 a host left with flush-to-zero."""
+    import platform
+    import shutil
+    cc = next((c for c in ('clang', 'gcc', 'cc') if shutil.which(c)), None)
+    if cc is None:
+        return {'status': 'SKIPPED', 'reason': 'no C compiler on PATH'}
+    exe = OUT / 'rv_iss_fpcheck'
+    command([cc, '-O2', '-std=c11', '-Wall', '-Wextra', '-Werror', '-o', exe, ROOT / 'sim/cpu/bench/rv_iss.c'])
+    configs = [['--fp', '1'], ['--fp', '1', '--fp-soft', '1']]
+    if platform.machine() in ('aarch64', 'arm64'):
+        configs.append(['--fp', '1', '--host-fz', '1'])
+    fp_names = {n for n, *_ in __import__('fp_cases').fp_cases()} | {n for n, *_ in __import__('fp_ooo_cases').cases()}
+    runs = 0
+    for name, image, kind, address in workloads:
+        if kind or name not in fp_names:
+            continue
+        expected, _ = execute(image, 0, MASK, fp=True)
+        img, trc = OUT / (name + '.bin'), OUT / (name + '.iss.trace')
+        img.write_bytes(bytes(image))
+        for extra in configs:
+            command([exe, '--ram', len(image), '--image', img, '--trace', trc, '--max', 200000, *extra])
+            got = trc.read_text().splitlines()
+            if got != expected:
+                diff = next(i for i in range(max(len(got), len(expected)))
+                            if (got[i:i + 1] or ['<missing>']) != (expected[i:i + 1] or ['<missing>']))
+                raise AssertionError(f'rv_iss {" ".join(extra)} {name} event {diff}:\n'
+                                     f'rv_iss {got[diff] if diff < len(got) else "<missing>"}\n'
+                                     f'expect {expected[diff] if diff < len(expected) else "<missing>"}')
+            runs += 1
+    return {'status': 'PASS', 'runs': runs, 'configs': [' '.join(c) for c in configs], 'compiler': cc}
+
+
 def main():
     global OUT
     parser = argparse.ArgumentParser(description=__doc__)
@@ -1131,8 +1166,10 @@ def main():
         if not bram.is_file(): raise ValueError('Missing companion firmware-bram.hex')
         soc_results.append(command([*soc_sim,f'+image={bram}','+expected=24','+second']).strip())
     records,coverage = [],set()
+    iss_fp = iss_fp_check(workloads) if args.fpu else None   # rv_iss --fp 1 against the golden model
     for name, image, kind, address in workloads:
-        expected, covered = execute(image, 3 if kind == 4 else kind, address, fp=args.fpu)  # kind 4: store faults once
+        final = {}
+        expected, covered = execute(image, 3 if kind == 4 else kind, address, fp=args.fpu, state=final)  # kind 4: store faults once
         if name == 'compiled_firmware':
             if 'W 0000000000003000 0000000000000024 ff' not in expected:
                 raise AssertionError('Compiled firmware did not produce the known sum 36')
@@ -1147,6 +1184,12 @@ def main():
                               f'+stall={stalls}',f'+seed={seed}',f'+fault_kind={kind}',f'+fault_addr={address:x}']
                              + ([f'+split_lat={slat}'] if args.n_miss > 1 else []))
             actual=trace.read_text().splitlines()
+            if args.fpu:
+                # Final fcsr at the halt (tb_core's DONE line): flags of squashed or post-trap instructions
+                # never reach the trace, so compare the architectural state with the golden model's.
+                got = re.search(r'fcsr=([0-9a-f]{2})', output)
+                if not got or int(got[1], 16) != final['fcsr']:
+                    raise AssertionError(f'{name} stall={stalls}: final fcsr {got[1] if got else None}, expect {final["fcsr"]:02x}')
             if actual!=expected:
                 for index in range(max(len(actual),len(expected))):
                     a=actual[index] if index<len(actual) else '<missing>'
@@ -1198,7 +1241,7 @@ def main():
     for branch_name in ('beq','bne','blt','bge','bltu','bgeu'):
         for outcome in ('taken','not_taken'):
             if branch_name+':'+outcome not in coverage: raise AssertionError('Missing branch outcome')
-    report={'status':'PASS','cases':len(workloads),'runs':len(records),'instruction_names_covered':len(required),
+    report={'status':'PASS','cases':len(workloads),'runs':len(records),'iss_fp_check':iss_fp,'instruction_names_covered':len(required),
             'core':args.core,'fpu':args.fpu,'ld_lat':args.ld_lat or 1,'l0_n':args.l0 or 0,'l0_lat':args.l0_lat if args.l0 else None,'core_source':str(args.core_source) if args.core_source else CORES[args.core],
             'icache_beats':args.icache_beats or 'tb_core default (512)','dcache_beats':args.dcache_beats or 'tb_core default (512)',
             'reset_test':reset_result,'bram_soc_tests':soc_results,
@@ -1208,6 +1251,9 @@ def main():
             **sim.info(),'results':records}
     (OUT/'verification.json').write_text(json.dumps(report,indent=2)+'\n',encoding='utf-8')
     print(f'PASS ({args.core} core, {sim.label}): {len(workloads)} programs x 3 wait patterns = {len(records)} runs; {len(required)} instruction names covered.')
+    if iss_fp:
+        print(f'rv_iss F/D check: {iss_fp["status"]}' + (f', {iss_fp["runs"]} traces identical ({"; ".join(iss_fp["configs"])})'
+                                                          if iss_fp['status'] == 'PASS' else f' ({iss_fp["reason"]})'))
     print('Includes precise traps, invalid encodings, bus faults, x0, all memory lanes, branch outcomes and ordered retirement.')
 
 

@@ -699,6 +699,119 @@ def rm_cases():
     yield 'fp_rm_cvt_ff', case_rm_cvt_ff(), 0, MASK
 
 
+# ---- Codex review of 0.17.0, items 2-4 (FP ISA engineer) ------------------------------------------------
+def case_rm_add_sub_d():
+    """FADD.D / FSUB.D in all five static modes and DYN (each mode's first instruction directly after its
+    fsrmi): ties, just above a tie, both signs, overflow and an exact zero."""
+    p = Prog()
+    p.fd(1, D_ONE); p.fd(2, f64(2.0 ** -53)); p.fd(3, f64(2.0 ** -53 + 2.0 ** -80)); p.fd(4, D_ONE | NEG64)
+    p.fd(5, f64(2.0 ** -53) | NEG64); p.fd(6, f64(2.0 ** -54)); p.fd(7, D_MAX); p.fd(8, f64(3 * 2.0 ** -54))
+    def body(rm):
+        p.emit(fadd(D, 20, 1, 2, rm)); p.save_f(20)          # 1 + 2^-53: tie (RUP and RMM: 0x3ff0000000000001)
+        p.emit(fadd(D, 20, 4, 5, rm)); p.save_f(20)          # -1 - 2^-53
+        p.emit(fadd(D, 20, 1, 3, rm)); p.save_f(20)          # just above the tie
+        p.emit(fsub(D, 20, 1, 5, rm)); p.save_f(20)          # 1 - (-2^-53)
+        p.emit(fsub(D, 20, 1, 6, rm)); p.save_f(20)          # 1 - 2^-54: tie below 1
+        p.emit(fsub(D, 20, 4, 8, rm)); p.save_f(20)          # -1 - 3*2^-54
+        p.emit(fadd(D, 20, 7, 7, rm)); p.save_f(20)          # overflow
+        p.emit(fsub(D, 20, 4, 7, rm)); p.save_f(20)          # -1 - MAX: -MAX or -inf by mode
+        p.emit(fsub(D, 20, 1, 1, rm)); p.save_f(20)          # exact zero: -0 only in RDN
+    _modes(p, body)
+    return p.words()
+
+
+# Expected first result of each mode of fp_rm_add_sub_d (static RNE RTZ RDN RUP RMM, then DYN with the same
+# frm values): FADD.D(1, 2^-53), every one inexact. Ten stores (nine results, then fflags) per mode.
+ADD_D_TIE = [0x3ff0000000000000, 0x3ff0000000000000, 0x3ff0000000000000, 0x3ff0000000000001,
+             0x3ff0000000000001] * 2
+
+
+def case_cvt_subnormal_first():
+    """FLW of the smallest subnormal, then FCVT.W.S with RUP as the program's first FP arithmetic: 1 with NX.
+    (rv_iss.c skipped its FPCR set-up on this path, so on a host left with flush-to-zero it returned 0
+    without NX; test_cpu --fpu runs rv_iss with --host-fz 1 on AArch64 to keep that covered.)"""
+    p = Prog()
+    p.fs(1, S_MINSUB); p.fs(2, S_MINSUB | NEG32)
+    p.emit(fcvt_to_int(S, 5, 1, 0, RUP)); p.save_x(5)
+    p.flags()
+    p.emit(fcvt_to_int(S, 6, 2, 2, RDN), fcvt_to_int(S, 7, 1, 3, RUP), fcvt_to_int(D, 8, 1, 0, RUP))
+    p.save_x(6); p.save_x(7); p.save_x(8)
+    p.flags()
+    return p.words()
+
+
+def _jal(rd, offset):
+    offset &= (1 << 21) - 1
+    return (offset >> 20) << 31 | ((offset >> 1) & 1023) << 21 | ((offset >> 11) & 1) << 20 | \
+        ((offset >> 12) & 255) << 12 | rd << 7 | 0x6f
+
+
+def _slow_zero(p, rd):
+    """rd = 0, available only after four 63-step divides (a late branch condition or address)."""
+    p.emit(r_type(0x33, rd, 4, 10, 11, 1), r_type(0x33, rd, 4, rd, 11, 1), r_type(0x33, rd, 4, rd, 11, 1),
+           r_type(0x33, rd, 4, rd, 11, 1), i_type(0x13, rd, 7, rd, 0))
+
+
+def _flag_setup(p):
+    p.fd(1, D_ONE); p.fd(2, 0); p.fd(3, D_ONE | NEG64); p.fd(9, D_MAX)
+    p.x(10, 0x7fffffffffffff00); p.x(11, 1)
+
+
+def case_wrong_path_flags():
+    """Wrong-path FP instructions must not leak flags. Eight cold forward branches resolve late (after slow
+    divides) and are always taken; their fall-through holds FDIV.D 1/0 and FSQRT.D -1, which a not-taken
+    prediction executes before the squash. Then a loop with a pseudo-random branch direction: one side divides
+    by zero (DZ), the other takes the square root of -1 (NV); fflags is cleared before the branch and read after
+    the join, so every stored value is exactly 0x08 or 0x10, and the first eight are 0."""
+    p = Prog()
+    _flag_setup(p)
+    for _ in range(8):
+        p.emit(csr(1, 0, FFLAGS, 0))                                   # fsflags x0
+        _slow_zero(p, 6)
+        p.emit(branch(0, 6, 0, 12), fdiv(D, 4, 1, 2), fsqrt(D, 5, 3))  # beq -> skip both (always taken)
+        p.emit(csr(2, 7, FFLAGS, 0)); p.save_x(7)                      # frflags: must be 0
+    p.x(12, 0x9e3779b97f4a7c15)
+    p.emit(addi(20, 0, 24), addi(21, 29, 512))
+    loop = len(p.code)
+    p.emit(i_type(0x13, 13, 1, 12, 13), r_type(0x33, 12, 4, 12, 13),  # xorshift64 on x12
+           i_type(0x13, 13, 5, 12, 7), r_type(0x33, 12, 4, 12, 13),
+           i_type(0x13, 13, 1, 12, 17), r_type(0x33, 12, 4, 12, 13),
+           csr(1, 0, FFLAGS, 0),
+           r_type(0x33, 6, 4, 12, 11, 1), r_type(0x33, 6, 4, 6, 11, 1), r_type(0x33, 6, 4, 6, 11, 1),
+           i_type(0x13, 6, 7, 6, 1),                                   # x6 = (x12 / 1 / 1 / 1) & 1, late
+           branch(0, 6, 0, 12),                                         # beq -> B
+           fdiv(D, 4, 1, 2), _jal(0, 8),                                # A: DZ, then j J
+           fsqrt(D, 5, 3),                                              # B: NV
+           csr(2, 7, FFLAGS, 0), sd(7, 21, 0), addi(21, 21, 8),         # J: frflags, store
+           addi(20, 20, -1))
+    p.emit(branch(1, 20, 0, 4 * (loop - len(p.code))))
+    return p.words()
+
+
+def case_trap_flag_order(kind):
+    """A flagging divide retires before a faulting FP access whose address resolves late; an invalid square
+    root and an overflowing multiply follow it and may execute first, but must not retire: at the halt
+    fflags holds DZ only (test_cpu compares the core's final fcsr with the golden model's)."""
+    p = Prog()
+    _flag_setup(p)
+    p.emit(csr(1, 0, FFLAGS, 0), fdiv(D, 4, 1, 2))                      # DZ: retires
+    _slow_zero(p, 6)
+    if kind == 'load':
+        p.emit(lui(27, 0x4000), r_type(0x33, 6, 0, 6, 27), fld(5, 6, 0))       # beyond RAM: access fault (5)
+    else:
+        p.emit(addi(6, 6, 0x7fc), r_type(0x33, 6, 0, 6, 29), fsd(1, 6, 0))     # misaligned store (6)
+    p.emit(fsqrt(D, 6, 3), fmul(D, 7, 9, 9), EBREAK)                    # NV, OF|NX: younger than the fault
+    return p.words()
+
+
+def review_cases():
+    yield 'fp_rm_add_sub_d', case_rm_add_sub_d(), 0, MASK
+    yield 'fp_cvt_subnormal_first', case_cvt_subnormal_first(), 0, MASK
+    yield 'fp_wrong_path_flags', case_wrong_path_flags(), 0, MASK
+    yield 'fp_trap_flag_order_load', case_trap_flag_order('load'), 0, MASK
+    yield 'fp_trap_flag_order_store', case_trap_flag_order('store'), 0, MASK
+
+
 def fp_cases():
     yield 'fp_move_box', case_move_box(), 0, MASK
     yield 'fp_lanes', case_lanes(), 0, MASK
@@ -720,6 +833,7 @@ def fp_cases():
         yield name, words, 0, MASK
     yield from fault_cases()
     yield from rm_cases()
+    yield from review_cases()
 
 
 FP_REQUIRED = set('''flw fld fsw fsd fadd.s fsub.s fmul.s fdiv.s fsqrt.s fadd.d fsub.d fmul.d fdiv.d fsqrt.d
@@ -754,11 +868,13 @@ def main():
         from reference import execute             # sim/cpu/reference.py
     covered, total = set(), 0
     for name, words, kind, address in fp_cases():
-        trace, coverage = execute(image_for(words), kind, address, fp=True)
+        state = {}
+        trace, coverage = execute(image_for(words), kind, address, fp=True, state=state)
         covered |= coverage
         total += 1
         last = trace[-1]
-        expect_trap = name.startswith('fp_illegal') or 'misaligned' in name or 'fault' in name or 'beyond' in name
+        expect_trap = name.startswith(('fp_illegal', 'fp_trap')) or 'misaligned' in name or 'fault' in name \
+            or 'beyond' in name
         cause = int(last.split()[2], 16) if last.startswith('T ') else None
         if expect_trap == (cause == 3):
             raise AssertionError(f'{name}: unexpected stop {last}')
@@ -775,6 +891,19 @@ def main():
                 got.append((t & 0xffffffff, u >> 32, v & 0xffffffff, hit))
             if got != [tuple(x) for x in MT_EXPECTED]:
                 raise AssertionError('fp_ray_triangle differs from the native AArch64 results')
+        if name == 'fp_rm_add_sub_d':
+            w = stores(trace)
+            got = [w[10 * k] for k in range(10)]
+            if got != ADD_D_TIE or any(not w[10 * k + 9] & 1 for k in range(10)):
+                raise AssertionError(f'fp_rm_add_sub_d: FADD.D(1, 2^-53) by mode {[hex(x) for x in got]}')
+        if name == 'fp_cvt_subnormal_first' and stores(trace)[:2] != [1, 1]:
+            raise AssertionError(f'fp_cvt_subnormal_first: {stores(trace)[:2]}, want 1 with NX')
+        if name == 'fp_wrong_path_flags':
+            w = stores(trace)
+            if w[:8] != [0] * 8 or any(v not in (0x08, 0x10) for v in w[8:32]) or len(set(w[8:32])) != 2:
+                raise AssertionError(f'fp_wrong_path_flags: {[hex(v) for v in w]}')
+        if name.startswith('fp_trap_flag_order') and (state['fcsr'], cause) != (0x08, 5 if 'load' in name else 6):
+            raise AssertionError(f'{name}: fcsr {state["fcsr"]:02x}, cause {cause}')
         print(f'{name}: {len(trace)} records, stop {last[:2]}{cause if cause is not None else ""}')
     missing = FP_REQUIRED - covered
     if missing:

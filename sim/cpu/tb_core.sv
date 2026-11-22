@@ -204,8 +204,15 @@ module tb_core #(parameter integer MEM_BYTES=16384, parameter integer ICACHE_BEA
                 if (pending_write4!="") $fdisplay(fd,"%s",pending_write4);
                 $fdisplay(fd,"T %016h %016h %016h",tpc,cause,tval);
                 $fclose(fd);
+`ifdef RV64_OOO_FPU
+                // The final fcsr (test_cpu --fpu compares it with the golden model's: flags of squashed or
+                // post-trap instructions never reach the trace).
+                $display("DONE retirements=%0d cycles=%0d slot2=%0d slot3=%0d slot3_branches=%0d lane2=%0d lane3=%0d lane4=%0d fault_lane2=%0d fault_lane3=%0d fault_lane4=%0d fcsr=%02h",
+                         retire_count,cycles,slot2_count,slot3_count,slot3_branches,lane2,lane3,lane4,fault_lane2,fault_lane3,fault_lane4,dut.fcsr);
+`else
                 $display("DONE retirements=%0d cycles=%0d slot2=%0d slot3=%0d slot3_branches=%0d lane2=%0d lane3=%0d lane4=%0d fault_lane2=%0d fault_lane3=%0d fault_lane4=%0d",
                          retire_count,cycles,slot2_count,slot3_count,slot3_branches,lane2,lane3,lane4,fault_lane2,fault_lane3,fault_lane4);
+`endif
 `ifdef WIDE_TRACE
                 if (N_MISS > 1) $display("SPLIT split_reads=%0d split_ireads=%0d split_reorders=%0d split_stale=%0d",split_reads,split_ireads,split_reorders,split_stale);
 `endif

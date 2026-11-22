@@ -73,7 +73,7 @@ static const char *dump_prefix = "state-";
  * Sign injection, min/max, compares, classify and moves are bit logic shared by both. */
 typedef unsigned __int128 u128;
 
-static int fp_on, fp_soft;
+static int fp_on, fp_soft, host_fz;
 #define fregs (regs + 32)
 static u32 fcsr;
 
@@ -494,6 +494,10 @@ static u64 fp_f2int(u64 a, const fmt_t *f, int kind, int rm, unsigned *fl) {
     if (!fp_soft) {
         if (is_nan_bits(a, f)) { *fl |= FL_NV; return sat_result(0, bits, uns); }
         u64 out = 0;
+        /* The rounding is in the opcode, but FPCR must still be ours (FZ, AH, FIZ and DN cleared): set it up
+         * if no other hardware path has yet (Codex review of 0.17.0: a host left with FZ = 1 flushed a
+         * subnormal input to 0 here). */
+        if (hw_rm < 0) hw_mode(RM_RNE);
         hw_clear();
         if (f == &FMT_D) { double x = d_of(a); CVTI_ALL("d"); }
         else { float x = s_of(a); CVTI_ALL("s"); }
@@ -1095,10 +1099,21 @@ int main(int argc, char **argv) {
         else if (!strcmp(k, "--warm-caches")) warm_init(v);
         else if (!strcmp(k, "--fp")) fp_on = (int)strtol(v, NULL, 0);
         else if (!strcmp(k, "--fp-soft")) fp_soft = (int)strtol(v, NULL, 0);
+        else if (!strcmp(k, "--host-fz")) host_fz = (int)strtol(v, NULL, 0);
         else die("unknown option");
     }
     if (!ram || (ram & 7) || (!image == !state)) die("need --ram and one of --image / --state");
     mem = calloc(1, ram + 8); /* +8: an aligned 4-byte fetch or load never reads past the end */
+#ifdef FP_HW
+    if (host_fz) {
+        /* Test hook: start from a host FPCR with flush-to-zero on (FZ = 1, AH = 0), as another program or
+         * runtime might leave it; every hardware path must still give exact RISC-V results. */
+        u64 c;
+        __asm__ volatile("mrs %0, fpcr" : "=r"(c));
+        c = (c | (u64)1 << 24) & ~(u64)2;
+        __asm__ volatile("msr fpcr, %0" :: "r"(c));
+    }
+#endif
     if (!mem) die("out of memory");
     if (image) {
         FILE *f = fopen(image, "rb");
