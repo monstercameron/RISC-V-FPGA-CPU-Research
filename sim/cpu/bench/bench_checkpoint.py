@@ -15,6 +15,7 @@ SPDX-License-Identifier: MIT
 """
 from pathlib import Path
 import sys
+import time
 
 STUB_INSTRUCTIONS = 34  # jal at the reset vector, auipc, 31 loads, jal to the saved PC
 # (the near layout; images above 1 MiB use FAR_STUB_INSTRUCTIONS, see build_from_state)
@@ -181,10 +182,19 @@ def write_binaries(memory, directory, stem, little=True):
     if little:
         paths[directory / f'{stem}-le.bin'] = bytes(memory)
     for path, blob in paths.items():
-        for _ in range(3):
-            path.write_bytes(blob)
-            if path.stat().st_size == len(blob) and path.read_bytes() == blob:
-                break
+        for attempt in range(5):
+            try:
+                # In 8 MiB chunks: one 64 MiB write through WSL's /mnt/c failed once with
+                # ENOMEM while other simulations ran (2026-11-21 20:47).
+                with open(path, 'wb') as f:
+                    for i in range(0, len(blob), 8 << 20):
+                        f.write(blob[i:i + (8 << 20)])
+                if path.stat().st_size == len(blob) and path.read_bytes() == blob:
+                    break
+            except OSError:
+                if attempt == 4:
+                    raise
+                time.sleep(1 + attempt)
         else:
             raise OSError(f'{path} does not read back as written')
     return tuple(paths) if little else (next(iter(paths)), None)
