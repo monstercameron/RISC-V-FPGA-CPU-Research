@@ -2456,6 +2456,26 @@
      "kind": "output"
     },
     {
+     "time": "09:16:23 to 09:22",
+     "text": "**Bandwidth:** **RSPW test_cpu, rerun from the start after the disk recovery** (`bw/t-rspw.sh bw/jobs-t.txt`, 2 at a time, each `timeout 300 python3 -B sim/cpu/test_cpu.py --core ooo --sim verilator ...` in bw/wtw = 0.19.1 + (a) + (c) + `bw/rspw.py`, main's bounded-cache simulator.py 6ff788e copied in; Verilator 5.020). **All PASS:** DLINE 64 / N_MISS 4 at RSPW 2, 4, 8 with default caches and with 2-beat I / 16-beat D caches, 138 programs x 3 wait patterns = 829 runs each; RSPW 8 with N_MISS 8: 829; DLINE 16 / N_MISS 2 / RSPW 2: 829; DLINE 64 at RSPW 1 (the refactored fill loop): 829; default build (no defines): 134 programs, 402 runs. The 08:55 and ~09:05 batches are void (Verilator not linked; full disk). C: 185 GB free after. Stream bounds and the Codex review running.",
+     "kind": "output"
+    },
+    {
+     "time": "09:22 to 09:40",
+     "text": "**Bandwidth:** **RSPW bounds on the stream probe** (`bw/b-rspw.sh bw/jobs-b.txt`, 2 at a time, `timeout 300 python3 -B sim/cpu/bench/run_bench.py --benchmark stream --core ooo --sim verilator ...` in bw/wtw, deciding knobs; RSPW rev 1). Default build: every call equal to 0.17.4's (read 193,320 clocks, 0.170 B/clk). DLINE 64 + N_MISS 8 + D1 (DIST 64, N 64), RSPW 1: read 5,561 clocks (5.892 B/clk) = the 0.17.4 + dline value, so the rewritten fill loop is cycle-identical at RSPW 1. Cold DRAM read / copy / triad (element B/clk), MEM_GAP 8: RSPW 1 5.89 / 13.7 / 10.1; RSPW 4 6.48 / 16.3 / 11.8; RSPW 8 6.48 / 16.4 / 11.9 (DRAM capped at 8 B/clk). **Sourced wide DRAM (MEM_GAP 2, 32 B/clk): RSPW 1 6.03 / 13.7 / 10.1; RSPW 4 8.85 / 22.8 / 16.5; RSPW 8 8.86 / 23.0 / 16.3** — the next caps: the prefetcher's 64 fills in flight (64 x 64 B / ~370 clk = 11 B/clk) and N_MISS 8. **L2-resident (128 KiB) read / copy / triad: RSPW 1 6.71 / 13.9 / 10.5; RSPW 4 14.34 / 28.0 / 21.5; RSPW 8 14.23 / 29.7 / 21.9** (Little bound at N_MISS 8: 8 x 64 B / ~26 clk = 19.7 B/clk; measured 73%). Conclusion: wider answers double L2-resident streaming; reaching 20-32 B/clk from DRAM needs more lines in flight on both sides (16 data tags, step 2; and a prefetch / L2_MSHR depth of about 185 lines, which D1's L2_PF_N limit of 64 does not allow).",
+     "kind": "output"
+    },
+    {
+     "time": "09:17 to 09:25",
+     "text": "**Bandwidth:** **Codex review of RSPW** (`codex exec -s read-only -C bw/wtw -` with `bw/codex-rspw-prompt.txt`; output `bw/codex-rspw-review.txt`). Core fill loop, lb_wm merge, entry-0 critical-beat fault path and completion: no error found. Findings and actions (rev 2, `bw/rspw.py`): (H) the SoC took the wide path for a one-beat split read with RSPW > 1 and stopped at `$fatal`: one-beat reads now use the 8-byte path in lane 0; (M) short lines differed between tb_core (zero lanes) and the SoC (fatal): both now stop at acceptance unless mem_len + 1 is a multiple of RSPW, and tb_core stops if a lane is not queued; (M) tb_core's fixed latency spaced beats, not answers: answers of a line now one clock apart; (M) rspw missing from test_cpu's shard key / verification.json and lzma_run's scopes: added; (M) no directed fault in a lane above 0 and no store into a non-zero lane on the sampling edge: **open** (a test gap; planned as a line_cases addition); contract text: sampling edge, per-tag order exactly once, tag outstanding until the last answer, one-beat lane convention, short-line rule and \"cycle-compatible\" wording added to `bw/architecture-rspw.md`; the unrelated simulator.py copy is kept out of the package diff. Rev 2 tests and a bounds subset are running.",
+     "kind": "output"
+    },
+    {
+     "time": "09:42 to ~10:00",
+     "text": "**Bandwidth:** **RSPW rev 2 (Codex fixes), rerun** (`bw/t-rspw.sh bw/jobs-t.txt; bw/b-rspw.sh bw/jobs-b2.txt` in bw/wtw, 2 sims at a time, `timeout 300`, Verilator 5.020). **test_cpu all PASS:** RSPW 2 / 4 / 8 with DLINE 64 and N_MISS 4 at default and 2-beat I / 16-beat D caches, RSPW 8 at N_MISS 8, DLINE 16 / RSPW 2, DLINE 64 / RSPW 1: 829 runs each; default build 402 runs. **Stream, unchanged from rev 1:** default read 193,320 clocks; DLINE 64 + N_MISS 8 + D1 (DIST 64, N 64) RSPW 1 5,561 (5.892 B/clk); the same at MEM_GAP 2 and RSPW 4 3,702 (8.851 B/clk); L2-resident read at RSPW 4 9,140 (14.340 B/clk). Package `bw/rspw-on-0191-after-a-c.diff` (rev 2). Not done: a second Codex review, the lane-above-0 fault and store tests, the release-minor suite (see bw/HANDOFF-SONNET.md).",
+     "kind": "output"
+    },
+    {
      "time": "04:20",
      "text": "**Prefetch decisions** (coordinator, on `build/research/prefetch.md`). Why there is none: three tries were measured where they couldn't pay off (13:11 I-prefetch on flat memory; 19:16 split-channel I-prefetch, superseded by the I-line plan; 21:25 next-line plus PC-stride, parked because BT4's hash and son loads are random); the streaming benchmarks that need one only arrived at 03:03-03:40. Offline: a 16-line L2 stream prefetcher covers 100% of mm GEMV and ternary DRAM misses at accuracy 1.00; nothing reaches d22 compress misses (stream +2.5%, SMS, Markov and DMP worse or polluting). **Surprise:** a zero-RTL perfect-L2 stand-in (MEM_LAT 21) gives d22 compress **-57.6%** (12 pieces), so d22 compress is DRAM-latency bound but not prefetchable. That gap belongs to L2 capacity (docket 6) and to more misses in flight; N_MISS 8 at d22 is the next cheap bound (bandwidth engineer). Docket: D1, the L2 stream prefetcher, refines item 11 (bandwidth engineer; 16 streams x 16 lines, MEM_GAP-charged; expected mm -75 to -84%, T-2B4T -60 to -75%, decompress -8 to -10%); D3 keeps I lines plus next-line, with next-line sent with the demand miss (middle); D4, FDIP, is new as item 12 (front end, after items 7-10); D5, L1D per-PC stride on 64 B lines, is new as item 13, low priority (middle, after dline). Rejected with data: SMS, Markov, DMP (also the GoFetch side channel); Zicbop parked.",
      "kind": ""
@@ -3248,6 +3268,56 @@
     {
      "time": "09:13 to 09:15",
      "text": "**Verilator build cache bounded** (coordinator; sim/cpu/simulator.py). A cache hit touches its build.json, and before each new build the least recently used builds beyond RV64_SIM_CACHE_MAX (default 300, about 14 GB) are removed, but only those unused for 6 h, so no folder another run may launch is deleted. Checks: a unit test of _evict (5 builds of 10/9/8/7/0.5 h, cap 3 -> the two oldest removed; cap 0 -> the 0.5 h build kept; temp and json-less folders untouched) PASS; `python -B sim/cpu/suite.py release-patch --only dhry-fast --jobs 1` (09:14 to 09:15) PASS, 10,127 cycles as the baseline; check_repo PASS. Test infrastructure only, no version bump. Also at 09:13, at the user's request, deleted C:/Users/mreca/Desktop/Game Development Studio/models/MiniMax-H3 (9 downloaded model files, 74.38 GB; outside this repository). C: now has 187.35 GB free.",
+     "kind": ""
+    },
+    {
+     "time": "09:32",
+     "text": "**Codex reviewer moved to hourly** (user request). periodic.ps1 now waits 3600 s, not 900 s. periodic_prompt.md asks for three ranked lists: completeness (promised but unimplemented or untested pieces, stale docs and baselines, integration debts), bugs and risks, and performance improvements toward the 7-Zip goal first, then the rt, JS, mm and ternary goals. AGENTS.md is updated to match. The loop was restarted, and the first hourly review runs now. Also at 09:26, at the user's request, every subagent moves to Sonnet (site updates stay on Haiku): the five Opus engineers wrote HANDOFF-SONNET files and stopped, and their running jobs continue. A Sonnet system-mode engineer took over item 15, and a Sonnet cleanup agent is removing unused worktrees and generated folders.",
+     "kind": ""
+    },
+    {
+     "time": "07:17 to 07:20",
+     "text": "(system-mode engineer, P0; entered by the coordinator from p0-devlog.md) Spike probe of subset machines (`--isa=rv64im_zba_zbb_zbs_zicsr_zifencei_zicntr`, `--priv=m/mu/msu`, a hand-written M-mode CSR probe): misa 0x8000000000001102 (I, M and **B**: Spike sets misa.B for Zba+Zbb+Zbs), +U 0x...101102, +S+U 0x...141102; mstatus all-ones reads 0x1888 (m: MIE, MPIE, MPP read-only 3), 0x200221888 (mu: + MPRV, TW, UXL), 0x8000000a007e79aa (msu); in m, mcounteren, menvcfg, fflags and medeleg are cause 2; mie all-ones 0x888 (m) / 0xaaa (msu)",
+     "kind": "output"
+    },
+    {
+     "time": "07:20 to 07:24",
+     "text": "(system-mode engineer, P0; entered by the coordinator from p0-devlog.md) **rv_iss `--sys --isa <string> --priv m|mu|msu`** (rv_iss.c `set_isa`): misa from the string (B with Zba+Zbb+Zbs), mstatus WARL fields and MPP legalisation per configuration, S CSRs/delegation/satp/SRET/SFENCE.VMA absent without S, mcounteren/menvcfg absent without U, IALIGN 32 without C (cause 0 on jumps and taken branches to 2-byte targets, xepc bits 1:0 read 0), A/F-D/B/Zicntr encodings and CSRs cause 2 when absent, Zba/Zbb/Zbs added to the system-mode ALU. Default configuration unchanged: `suite.py sys` 4/4 PASS with M1's numbers (132 riscv-tests; boot 44,049,836; Spike boot lockstep 43,139,225)",
+     "kind": "output"
+    },
+    {
+     "time": "07:24 to 07:27",
+     "text": "(system-mode engineer, P0; entered by the coordinator from p0-devlog.md) Subset vs Spike (`riscv_tests.py --isa rv64im_zba_zbb_zbs_zicsr_zifencei_zicntr --priv m|mu --spike auto`, tests assembled for the subset): first run 1 \"mismatch\" (rv64mi-ma_fetch: the known misa.C difference cannot occur without C) and ma_data's status compared without the 8-bit truncation of Spike's exit code; both fixed. Then rv64ui, um, mi (84 tests) and rv64uzba/b/s (40) at `m` and `mu`: **all commit logs equal**, 122 pass, ma_data and pmpaddr fail identically on both",
+     "kind": "output"
+    },
+    {
+     "time": "07:27 to 07:34",
+     "text": "(system-mode engineer, P0; entered by the coordinator from p0-devlog.md) **tb_core.sv** parameter `MEM_BASE` (memory byte 0, also the core's `RESET_PC`; default 0) and `+tohost=ADDR` (the run ends after a store leaves the tohost word non-zero, `TOHOST value=` line, no trap record). Default build checked: Dhrystone traces and DONE lines (retirements, cycles, slot counters) md5/text-identical to `HEAD`'s tb_core on multicycle, pipe and ooo at stalls 0 and 7 (Verilator); Icarus builds of all three. With `MEM_BASE=0x8000_0000` and `+tohost` a test program linked at 0x8000_0000 ends with `TOHOST value=1` after its store retires (Icarus, multicycle). `sim/cpu/spike_lockstep.py penv` (p environment at 0x8000_0000 vs Spike, `--model rtl|iss`), `sim/cpu/trace_to_commitlog.py` (Spike-format log from a lab trace; round trip on rv64mi-csr equal to Spike's log), `commit_compare.py --ignore-loads/--iss-prefix`. `penv --model iss`: 124 runs, 45,694 records equal; `--model rtl --core multicycle`: runs from 0x8000_0000 and stops, as expected, at its first CSR (`csrr a0, mhartid`, cause 2), the work of item 15. New `sys` steps `sys-subset-m`, `sys-subset-mu`, `sys-penv-iss`: `suite.py sys` 7/7 PASS",
+     "kind": "output"
+    },
+    {
+     "time": "07:37:48 to 07:43:34",
+     "text": "(system-mode engineer, P0; entered by the coordinator from p0-devlog.md) **Codex review of P0** (`coord/p0review/`, GPT 6.2 Astra read-only): the first 300 s slice ended without a report (`rc=124`); resumed with `codex exec resume` for the findings (32 s). 12 findings. Fixed: (1) HTIF exit when the 64-bit tohost word is non-zero after a store (rv_iss and tb_core; a store to tohost+4 or one whose low word is 0 no longer ends or passes), and penv lets Spike run to its own exit and requires its status to match; (2) with `--priv m` Spike must stay in M on every compared record (privilege is otherwise not in the lab trace; documented); (3) U-mode counters gated by scounteren only with S (Spike); (4) subset failures are excused only for listed tests with their exact tohost value, and a listed test that passes fails; the ma_data \"case 668\" text corrected; (5) tb_core detects tohost after a store on any write lane, from memory; (6) `--isa` without M makes M cause 2 and clears misa.M; Spike's writable misa (B, M too) documented; (7) RVISSST3 records the configuration and refuses a restore under another; (8) counter-enable/inhibit masks without Zicntr read 0 and medeleg bit 19 with Zicntr, as Spike; (9) without S the PLIC has only the M context; (10) contract text: an xRET resumes at the aligned xepc, no cause 0; (11) penv runs rv_iss with Spike's 64 KiB and time model; (12) penv has a watchdog that also releases a FIFO open. Not changed: load addresses and E-record causes are still not comparable in penv (no Spike counterpart; trap causes are seen through handler CSR reads)",
+     "kind": "output"
+    },
+    {
+     "time": "07:48:42 to 07:50:26",
+     "text": "(system-mode engineer, P0; entered by the coordinator from p0-devlog.md) After the fixes: `suite.py sys --jobs 3` 7/7 PASS (sys-subset-m/mu 122 pass each, sys-penv-iss 45,694 records), `spike_lockstep.py self-test` 13 checks, penv RTL multicycle as before; rv_iss user-mode Dhrystone trace and state md5 unchanged. Patch `coord/p0-on-item14.diff` (applies after `item14-spike-lockstep.diff` on `871d3fd`, 0.19.1; sha256 `b1936273...625e`)",
+     "kind": "output"
+    },
+    {
+     "time": "09:16 to 09:33",
+     "text": "**P0 (privilege test infrastructure) integrated** (coordinator; build/cpu/ooo-debug/coord/p0-on-item14.diff on main: rv_iss --sys --isa/--priv, tb_core MEM_BASE and +tohost, spike_lockstep.py penv, trace_to_commitlog.py, the sys subset steps, PRIV-CONTRACT section 1.1). Check: `python -B sim/cpu/suite.py release-patch sys --expect sim/cpu/baselines/0.17.2-release-patch.json --jobs 2` (09:16 to 09:32): 37 of 41 steps; isa-ooo and isa-ooo-2beat PASS with DIFF in counts only (131 -> 134 programs and 393 -> 402 runs, the 0.19.1 front-end cases); every bench number the same as the baseline; sys-riscv-tests 132, sys-boot 44,049,836 instructions, sys-riscv-tests-spike 132, and the subset steps PASS. spike-js-pieces-ooo-fpu and spike-negative-xor-or failed with FileNotFoundError on their /tmp/spike-lockstep-* inputs, deleted mid-run by another agent's WSL cleanup (under question). A rerun (09:32 to 09:33, `--only spike-js-pieces-ooo-fpu,spike-negative-xor-or`) gave 3/3 PASS: 600,000 records, and the XOR->OR mutant rejected at record 8. The earlier P0 runs at 08:08 and 08:55 were void (disk full). Test-only, no version bump.",
+     "kind": ""
+    },
+    {
+     "time": "09:35",
+     "text": "**Cause of the two P0 step failures confirmed** (the Sonnet system-mode engineer). At about 09:33 it ran `rm -rf /tmp/spike-lockstep-*` in WSL during its cleanup without checking `ps`, which deleted the inputs of steps running in other suites. It will now delete only scratch it created, after checking `ps -eo args`, and never with a broad glob. Every other suite that had Spike lockstep steps running around 09:33 should check for the same FileNotFoundError.",
+     "kind": ""
+    },
+    {
+     "time": "09:33 to 09:48",
+     "text": "**0.19.2 released** (coordinator; bandwidth package a-delay64-on-0190.diff, sha256 05c7df23a188, applied to main 3da66c0: rtl/cpu/rv64_bram_soc.sv, sim/cpu/check_soc_memory.py, sim/cpu/tb_soclat.sv; the core unchanged except the header line). Check: `python -B sim/cpu/suite.py release-patch soc --expect sim/cpu/baselines/0.17.2-release-patch.json --jobs 2` (09:33 to 09:47), 34 of 36 the same as the baseline; the two isa DIFFs are counts only (the 0.19.1 cases). Section 3 text from the bandwidth draft. PATCH (bug fix). Tag `cpu-v0.19.2`, local. Release order after the IWAYS hold: 0.19.3 IWAYS rev. 3, 0.19.4 fusion, 0.19.5 S3, 0.20.0 D1.",
      "kind": ""
     }
    ],

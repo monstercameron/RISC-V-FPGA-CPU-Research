@@ -530,6 +530,11 @@ WORKS = [
      "with a 128-bit path history. Off, the core is identical to 0.19.0. On the frontend's flat probe, 49.8 to 37.3 million clocks (-25.2%); "
      "Dhrystone and 7-Zip take the same clocks as before, and no hardware cost or timing is claimed.",
      dict(marks=["indirect-jump predictor, option off by default", "five tagged tables over the target buffer"])),
+    # Figures from the 0.19.2 history row. A patch: the drawing is the same room as 0.19.1, with the delay path widened.
+    ("0.19.2", "Le Seuil",
+     "A repair in the memory system, not a new room: the sample SoC's DRAM and L2 delays are 64 bits end to end. Before, a backlog of 2^31 clocks or more "
+     "wrapped and answered early. Below 2^31 clocks the results are bit-exact with 0.19.1; no speed, hardware cost or timing is claimed.",
+     dict()),
 ]
 
 ERAS = [
@@ -1276,7 +1281,7 @@ def page(title: str, desc: str, body: str, active: str, path: str, extra_head: s
 <meta property="og:type" content="website">
 <meta property="og:url" content="{e(canon)}">
 <meta property="og:image" content="{e(SITE_IMAGE)}">
-<meta property="og:site_name" content="Atelier RV64">
+<meta property="og:site_name" content="Atelier">
 <meta name="twitter:card" content="summary_large_image">
 <meta name="twitter:title" content="{e(title)}">
 <meta name="twitter:description" content="{e(desc)}">
@@ -1290,8 +1295,8 @@ def page(title: str, desc: str, body: str, active: str, path: str, extra_head: s
 <body class="{body_class}">
 <a class="skip" href="#main">Skip to content</a>
 <header class="masthead">
-  <a class="brand" href="index.html"><span class="brand-mark" aria-hidden="true"></span><span>Atelier RV64</span></a>
-  <nav aria-label="Main">{nav("index.html", "Accueil", "home")}{nav("gallery.html", "La Galerie", "gallery")}{nav("journal.html", "Le Journal", "journal")}</nav>
+  <a class="brand" href="index.html"><span class="brand-mark" aria-hidden="true"></span><span>Atelier</span></a>
+  <nav aria-label="Main">{nav("index.html", "Accueil", "home")}{nav("gallery.html", "La Galerie", "gallery")}{nav("journal.html", "Le Journal", "journal")}<a href="{REPO_URL}" rel="noopener">Source</a></nav>
 </header>
 <main id="main">
 {body}
@@ -1752,77 +1757,133 @@ def journal_page(versions, days, runs) -> str:
                 "".join(body), "journal", "journal.html", body_class="journal")
 
 
-def index_page(versions) -> str:
-    n = len(versions)
+def landing_page(versions) -> str:
+    """Atelier brand landing page (site root). Every number comes from the history rows
+    (cpu/architecture.md, via `versions`), the DEVLOG-derived run data in `versions`, or the
+    ISA strings written in cpu/architecture.md section 1."""
+    arch = (ROOT / "cpu" / "architecture.md").read_text(encoding="utf-8")
+    isa_m = re.search(r"ISA string `(rv64im[^`]*)`", arch)
+    isa_fd = re.search(r"ISA string with the option is `([^`]+)`", arch)
+    isa = isa_m.group(1) if isa_m else "not found in cpu/architecture.md"
     newest = versions[-1]
-    best = max((v for v in versions if v["dmips_ref"]), key=lambda v: v["dmips_ref"])
-    first = versions[0]
-    strip = "".join(f'<a href="gallery.html#{slug(v["version"])}" title="No. {v["no"]}, {e(v["title"])} ({v["version"]})"><img src="{v["art"]}" alt="" loading="lazy" width="800" height="1000"></a>'
-                    for v in versions)
-    hero = best
-    z7v = max((k for k, z in SEVENZIP_BY_VERSION.items() if z[0] is not None and z[1] is not None),
-              key=lambda k: tuple(int(x) for x in k.split(".")))
-    z7 = SEVENZIP_BY_VERSION[z7v]
-    x925 = next(r for r in SEVENZIP if r[4] == "native")
-    d22 = next(r for r in SEVENZIP if r[4] == "goal" and "d22" in r[0])
-    d22run = next(r for r in SEVENZIP if r[4] == "sim" and "d22" in r[0] and r[0].startswith("0.15.4"))
-    d22met = next(r for r in SEVENZIP if r[4] == "sim" and "d22" in r[0] and r[0].startswith("0.16.0"))
-    jsb = next(r for r in JSBENCH if r[4] == "sim")
+    ref = max((v for v in versions if v["dmips_ref"]), key=lambda v: v["dmips_ref"])
+    fast_all = [v for v in versions if v["dmips_fast"]]
+    fast = max(fast_all, key=lambda v: v["dmips_fast"]) if fast_all else None
+    n = len(versions)
+    in_progress = newest["status"] == "in progress"
+    fast_txt = (f'{fast["dmips_fast"]:.2f} with the labelled fast runtime (version {fast["version"]})'
+                if fast else "no fast-runtime run logged")
+    progress_txt = " (in progress, not yet tagged)" if in_progress else ""
+    fd_txt = ""
+    if isa_fd:
+        fd_txt = f' (ISA string with F and D: <code>{e(isa_fd.group(1))}</code>)'
+    arch_blob = BLOB + "cpu/architecture.md"
+    devlog_blob = BLOB + "DEVLOG.md"
     body = f"""
-<section class="hero">
-  <div class="hero-text">
-    <p class="eyebrow">Art and science over time</p>
-    <h1>The shape of a processor, one version at a time</h1>
-    <p class="lede">An original 64-bit RISC-V core for FPGAs, built in public. Here its architecture is hung as a gallery: {n} drawings, from a core that fetched one instruction at a time to one that
-    renames, reorders and retires thirty-two, and a notebook that keeps the dated record of how it got there.</p>
-    <p class="cta"><a class="btn" href="gallery.html">Enter the gallery</a><a class="btn ghost" href="journal.html">Read the journal</a></p>
+<div class="atl">
+<section class="atl-hero" aria-labelledby="atl-h">
+  <p class="eyebrow">An original 64-bit RISC-V processor core</p>
+  <h1 id="atl-h" class="atl-name">Atelier</h1>
+  <p class="atl-slogan">Silicon, made in the open.</p>
+  <p class="lede">Atelier is a fully libre 64-bit RISC-V processor core: out-of-order, written in SystemVerilog, and developed in simulation against a sequential golden model. It is designed to compete with the best Arm cores per clock, on the workloads people run.</p>
+  <p><span class="atl-badge">Evidence: simulation only</span></p>
+  <p class="cta"><a class="btn" href="#status">Current status</a><a class="btn ghost" href="{REPO_URL}" rel="noopener">Source</a></p>
+</section>
+
+<section class="atl-band" aria-labelledby="honest-h">
+  <h2 id="honest-h" class="eyebrow">What this is, and what it is not</h2>
+  <p class="atl-honest">Atelier is designed to compete with the best Arm cores. That is a design goal and a target we measure against, set per clock against an estimated Apple M6 reference. It is not a measured result.</p>
+  <p>Today it exists only in simulation. There is no silicon and no board result yet, and no hardware performance is claimed. Every number on this site comes from simulation of the design and says so.</p>
+</section>
+
+<section aria-labelledby="for-h">
+  <h2 id="for-h" class="eyebrow">Designed for</h2>
+  <div class="atl-grid">
+    <article class="atl-card">
+      <p><span class="atl-tag goal">Goal</span> <span class="atl-tag sim">Simulation</span></p>
+      <h3>JavaScript and the web</h3>
+      <p>A JavaScript interpreter runs as a benchmark against a laptop reference. The result is tracked in the journal and is still below its goal in simulation.</p>
+    </article>
+    <article class="atl-card">
+      <p><span class="atl-tag goal">Goal</span> <span class="atl-tag sim">Simulation</span></p>
+      <h3>Compression</h3>
+      <p>A scaled 7-Zip LZMA kernel. It was met in point estimate in simulation at version 0.16.0. That is not a hardware or frequency result.</p>
+    </article>
+    <article class="atl-card">
+      <p><span class="atl-tag goal">Goal</span> <span class="atl-tag plan">Plan</span></p>
+      <h3>Linux</h3>
+      <p>A plan only. The current core has no MMU and cannot run Linux.</p>
+    </article>
   </div>
-  <figure class="hero-art">
-    <a class="frame static" href="gallery.html#{slug(hero['version'])}" aria-label="See No. {hero['no']}, {e(hero['title'])}, in the gallery">
-      <span class="mat"><img src="{hero['art']}" width="800" height="1000" alt="Ink drawing of the {hero['width']}-wide out-of-order processor, version {hero['version']}: blocks for the reorder buffer, register names, issue queue, {hero['alus']} execution units, caches and bus."></span>
-    </a>
-    <figcaption class="placard small-card"><span class="no">No. {hero['no']}</span> <strong>{e(hero['title'])}</strong>, version {hero['version']}
-    <br><span class="medium">{medium(hero['kind'])}</span></figcaption>
-  </figure>
 </section>
 
-<section class="strip-section" aria-labelledby="strip-h">
-  <h2 id="strip-h" class="eyebrow">{n} versions, in the order they were made</h2>
-  <div class="strip">{strip}</div>
+<section aria-labelledby="goal-h">
+  <h2 id="goal-h" class="eyebrow">Design goal</h2>
+  <p>The per-clock goal is referenced to an Apple M6 estimate, bridged from laptop measurements. The reference is an estimate, not a measurement of an Apple M6, and the goal is a target, not a result.</p>
+  <p class="small">Target documents: <a href="{BLOB}cpu/7zip-benchmark-targets.md" rel="noopener">cpu/7zip-benchmark-targets.md</a> and <a href="{BLOB}cpu/js-benchmark-targets.md" rel="noopener">cpu/js-benchmark-targets.md</a>.</p>
 </section>
 
-<section class="triptych">
-  <article>
-    <p class="eyebrow">I.</p><h2>La Galerie</h2>
-    <p>One generated drawing for every architecture version: the fetch unit, predictor, reorder buffer, execution units, caches and bus drawn in proportion to their recorded sizes, with a placard for each.</p>
-    <p><a href="gallery.html">Walk the rooms &rarr;</a></p>
-  </article>
-  <article>
-    <p class="eyebrow">II.</p><h2>Le Journal</h2>
-    <p>The development log as a catalogue: findings, timelines and commits by day, and a chart of simulated Dhrystone performance from {fmt_dm(first['dmips_ref'])} to {fmt_dm(best['dmips_ref'])} DMIPS/MHz.
-    Beside it, a second measure: a scaled 7-Zip LZMA kernel, simulated at {z7[0]:.2f} / {z7[1]:.2f} MIPS/MHz compress / decompress on version {z7v} (64 KiB caches), against a goal of about {SEVENZIP[0][2]:g} / {SEVENZIP[0][3]:g};
-    a laptop's Cortex-X925 runs the same scaled kernel natively at {x925[2]:.2f} / {x925[3]:.2f}. On the full-size (d22) kernel the goal is about {d22[2]:.2f} / {d22[3]:.2f};
-    in the deciding configuration version 0.15.4 reaches {d22run[2]:.2f} / {d22run[3]:.2f} in simulation with one miss at a time (75% / 91%),
-    and version 0.16.0 with four misses in flight {d22met[2]:.2f} / {d22met[3]:.2f}, the goal met in point estimate (108% / 107%).
-    A third, a JavaScript interpreter, runs at {jsb[2]:.3f}x the laptop's rate per clock on version 0.17.0 in simulation ({jsb[3]:g}% of a goal of {JSBENCH[0][2]:g}x).</p>
-    <p><a href="journal.html">Open the notebook &rarr;</a></p>
-  </article>
-  <article>
-    <p class="eyebrow">III.</p><h2>The method</h2>
-    <p>The target is RVA23U64, in stages. The current design implements RV64I with M, Zba, Zbb and Zbs, in three implementations of one contract; since 0.17.0 the out-of-order core can also be built with F and D (off by default). Results are simulated, labelled as such, and never presented as hardware.</p>
-    <p><a href="{REPO_URL}" rel="noopener">The repository &rarr;</a></p>
-  </article>
+<section id="status" aria-labelledby="status-h">
+  <h2 id="status-h" class="eyebrow">Current status</h2>
+  <div class="atl-stats">
+    <div class="atl-stat"><span class="atl-num">{e(newest['version'])}</span><span class="atl-lbl">Architecture version{progress_txt}, {e(newest['date_fr'])}. <span class="atl-tag sim">Simulation</span></span></div>
+    <div class="atl-stat"><span class="atl-num atl-mono">{e(isa)}</span><span class="atl-lbl">Implemented ISA string. Not implemented: the A and C extensions and an MMU (cpu/architecture.md section 1).</span></div>
+    <div class="atl-stat"><span class="atl-num">{ref['dmips_ref']:.2f}</span><span class="atl-lbl">Dhrystone DMIPS/MHz on the reference runtime (version {e(ref['version'])}). <span class="atl-tag sim">Simulation</span> A secondary benchmark; {e(fast_txt)}.</span></div>
+    <div class="atl-stat"><span class="atl-num">{n}</span><span class="atl-lbl">Architecture versions in the gallery, each with its own drawing and a dated entry in the journal.</span></div>
+  </div>
+  <p class="small">The RV64F and D options and a vector subset exist as options of the out-of-order core, off by default{fd_txt}.</p>
+  <p class="cta"><a class="btn ghost" href="journal.html">Read the journal</a><a class="btn ghost" href="{devlog_blob}" rel="noopener">DEVLOG</a><a class="btn ghost" href="{arch_blob}" rel="noopener">Architecture</a></p>
 </section>
 
-<section class="now">
-  <p class="eyebrow">Newest on the wall</p>
-  <h2>No. {newest['no']}, {e(newest['title'])}</h2>
-  <p>Version {newest['version']}, {e(newest['date_fr'])}{' (in progress, not yet tagged)' if newest['status'] == 'in progress' else ''}. {e(newest['caption'])}</p>
+<section aria-labelledby="gallery-h">
+  <h2 id="gallery-h" class="eyebrow">The gallery and the journal</h2>
+  <div class="atl-grid">
+    <article class="atl-card"><h3><a href="gallery.html">La Galerie</a></h3><p>One generated drawing for every architecture version, with a placard for each.</p></article>
+    <article class="atl-card"><h3><a href="journal.html">Le Journal</a></h3><p>The development log as a dated timeline, with commits, findings and the index of runs.</p></article>
+  </div>
 </section>
+
+<section aria-labelledby="libre-h">
+  <h2 id="libre-h" class="eyebrow">Libre principles</h2>
+  <ul class="atl-list">
+    <li>RTL, tests, scripts and their licences are in the repository. Original work is MIT licensed (<a href="{BLOB}LICENSE" rel="noopener">LICENSE</a>).</li>
+    <li>Third-party licences and notices are kept apart, in <a href="{BLOB}licenses/README.md" rel="noopener">licenses/</a>.</li>
+    <li>Firmware is planned, not yet built. A hardware-specific licence has not been chosen.</li>
+    <li>Each result cites the run that produced it in the journal, so it can be reproduced.</li>
+  </ul>
+</section>
+
+<section aria-labelledby="build-h">
+  <h2 id="build-h" class="eyebrow">Build and test</h2>
+  <p>Nothing is downloaded and no FPGA is needed. From the repository root:</p>
+  <pre class="atl-code"><code>python -B sim/cpu/suite.py --list
+python -B sim/cpu/suite.py unit --jobs 1
+python -B sim/cpu/suite.py release-patch --dry-run
+python -B scripts/check_repo.py</code></pre>
+</section>
+
+<section aria-labelledby="road-h">
+  <h2 id="road-h" class="eyebrow">Roadmap</h2>
+  <p>Each stage has exit evidence, listed in cpu/architecture.md section 6. No dates are given.</p>
+  <ul class="atl-list">
+    <li><span class="atl-tag plan">Plan</span> C1: a real execution environment (traps, interrupts, counters, user mode).</li>
+    <li><span class="atl-tag plan">Plan</span> C2 to C4: scalar breadth, memory correctness, scalar floating point.</li>
+    <li><span class="atl-tag plan">Plan</span> C5 to C6: a complete vector engine and profile closure.</li>
+    <li><span class="atl-tag plan">Plan</span> C7: an FPGA proof on an exact part. No board run is claimed yet.</li>
+  </ul>
+  <p class="small">Target: RVA23U64, in stages. Not compliant today (cpu/architecture.md section 5).</p>
+</section>
+
+<section aria-labelledby="links-h" class="atl-links">
+  <h2 id="links-h" class="eyebrow">Links</h2>
+  <p><a href="gallery.html">The gallery</a> &middot; <a href="journal.html">The journal</a> &middot; <a href="{devlog_blob}" rel="noopener">DEVLOG</a> &middot; <a href="{REPO_URL}" rel="noopener">The repository</a></p>
+</section>
+</div>
 """
-    return page("Atelier RV64 · Art and science over time",
-                "A gallery of generated drawings and a development journal for an original RV64 research CPU aimed at FPGAs, one version at a time. Results are simulated, not hardware measurements.",
-                body, "home", "index.html", body_class="home")
+    return page("Atelier · An open RISC-V processor core",
+                "Atelier is an original, fully libre 64-bit RISC-V processor core, designed in simulation to compete with the best Arm cores. Simulation only: no silicon and no hardware result yet.",
+                body, "home", "index.html",
+                extra_head='<link rel="stylesheet" href="assets/landing.css">', body_class="home")
 
 
 # ---------------------------------------------------------------------------
@@ -1842,7 +1903,7 @@ def main():
     write(SITE / "data" / "versions.json", json.dumps(pub_versions, indent=1, ensure_ascii=False) + "\n")
     write(SITE / "data" / "journal.json",
           json.dumps({"source": "DEVLOG.md", "days": days, "runs": runs}, indent=1, ensure_ascii=False) + "\n")
-    write(SITE / "index.html", index_page(versions))
+    write(SITE / "index.html", landing_page(versions))
     write(SITE / "gallery.html", gallery_page(versions, specs))
     write(SITE / "journal.html", journal_page(versions, days, runs))
     print(f"site: {len(versions)} artworks, {len(days)} days, "
