@@ -98,6 +98,48 @@
       "source": "https://github.com/riscv/riscv-profiles/releases/download/rva23-rvb23-ratified/rva23-profile.pdf",
       "sha256": "af3519cdbfa1b3f12db6389b0bb9bcae171bf24fffd0dcf51d195ef49aaa9cfc",
       "retrieved": "2026-11-22"
+    },
+    {
+      "path": "references/riscv/extensions/riscv-elf-psabi-v1.0.pdf",
+      "source": "https://github.com/riscv-non-isa/riscv-elf-psabi-doc/releases/download/v1.0/riscv-abi.pdf",
+      "sha256": "a8d06bdcaa82a6a4567a1904dc27ef1ca1043ebaa1f523558c927a9d72bc23d9",
+      "retrieved": "2026-11-22"
+    },
+    {
+      "path": "references/riscv/extensions/riscv-elf-psabi-draft-20261116-56561cb.pdf",
+      "source": "https://github.com/riscv-non-isa/riscv-elf-psabi-doc/releases/download/draft-20261116-56561cb3e7330fe99a98fd27457229707b2786ae/riscv-abi.pdf",
+      "sha256": "a29ab77e963198ebceb9d2c30a6cf7f231a02078f6a38b22d31ac7f264eb1d8f",
+      "retrieved": "2026-11-22"
+    },
+    {
+      "path": "references/riscv/extensions/riscv-plic-1.0.0.pdf",
+      "source": "https://github.com/riscv/riscv-plic-spec/releases/download/1.0.0/riscv-plic-1.0.0.pdf",
+      "sha256": "82644c7701601baad8abe8b8c194a6aa89d0c1c26029f590f20818e319ccb21a",
+      "retrieved": "2026-11-22"
+    },
+    {
+      "path": "references/riscv/extensions/riscv-aclint-1.0-rc4.pdf",
+      "source": "https://github.com/riscv/riscv-aclint/releases/download/v1.0-rc4/riscv-aclint-1.0-rc4.pdf",
+      "sha256": "fb7f1473470fbc2a2155f0ae365a4e94f95d0451ca207a7d45671a7be6b76375",
+      "retrieved": "2026-11-22"
+    },
+    {
+      "path": "references/riscv/extensions/riscv-debug-1.0.pdf",
+      "source": "https://github.com/riscv/riscv-debug-spec/releases/download/1.0/riscv-debug-specification.pdf",
+      "sha256": "ce2787b25233a6109c9bc767b2bc497798148b721390f72fb9b48ff0ed986fc8",
+      "retrieved": "2026-11-22"
+    },
+    {
+      "path": "references/riscv/extensions/rvv-intrinsic-v1.0-ratified.pdf",
+      "source": "https://github.com/riscv-non-isa/rvv-intrinsic-doc/releases/download/v1.0-ratified/v-intrinsic-spec.pdf",
+      "sha256": "148f31560335620da20330727a35184e90cfed635d32ef0055511995dc0c9c07",
+      "retrieved": "2026-11-22"
+    },
+    {
+      "path": "references/riscv/extensions/riscv-dot-product-v0.0.1-draft.pdf",
+      "source": "https://github.com/riscv/riscv-dot-product/releases/download/v0.0.1/dot-product.pdf",
+      "sha256": "d4cc2e9b020764443009a3c6bb9267ee4bb9704248e8c100c6c05561f60b34a2",
+      "retrieved": "2026-11-22"
     }
   ]
 }
