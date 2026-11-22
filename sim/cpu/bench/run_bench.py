@@ -104,6 +104,10 @@ def main():
     memory.add_argument('--l2-line', type=int, default=64, help='L2 line in bytes')
     memory.add_argument('--l2-lat', type=int, default=12, help='Clocks for a read that hits the L2')
     memory.add_argument('--mem-lat', type=int, default=1, help='Clocks for a read from memory (an L2 miss, or every read without an L2)')
+    knobs = parser.add_argument_group('out-of-order core knobs (compile-time defines; defaults keep the released core)')
+    knobs.add_argument('--ld-lat', type=int, help='Load-to-use latency in clocks: define RV64_OOO_LD_LAT (0.14.10)')
+    knobs.add_argument('--l0', type=int, help='L0 recent-beat buffer entries: define RV64_OOO_L0_N (0.15.4)')
+    knobs.add_argument('--l0-lat', type=int, help='L0 hit latency in clocks: define RV64_OOO_L0_LAT (0.15.4)')
     simulator.add_argument(parser)
     lzma_options = parser.add_argument_group('lzma only')
     lzma_options.add_argument('--lzma-mode', choices=('full', 'sampled'),
@@ -130,7 +134,13 @@ def main():
     lzma_options.add_argument('--differential-every', type=int, default=1,
                               help='Trace-check every K-th piece of each phase (always the first)')
     args = parser.parse_args()
-    if args.devlog and (args.core_source or args.icache_beats or args.dcache_beats or args.l2_kib or args.mem_lat != 1):
+    # Core knobs as Verilog defines for the out-of-order builds (timing and trace benches alike).
+    args.ooo_knobs = {'RV64_OOO_LD_LAT': args.ld_lat, 'RV64_OOO_L0_N': args.l0, 'RV64_OOO_L0_LAT': args.l0_lat}
+    args.ooo_defines = [f'{k}={v}' for k, v in args.ooo_knobs.items() if v is not None]
+    if args.ooo_defines and args.core != 'ooo':
+        parser.error('--ld-lat, --l0 and --l0-lat apply to --core ooo only')
+    if args.devlog and (args.core_source or args.icache_beats or args.dcache_beats or args.l2_kib or args.mem_lat != 1
+                        or args.ooo_defines):
         parser.error('--devlog records the released core in its standard configuration only')
     if args.benchmark == 'lzma' and args.devlog:
         parser.error('--devlog records Dhrystone runs only; log LZMA runs in DEVLOG.md by hand')
@@ -184,7 +194,7 @@ def main():
         return
 
     # 1. Timing on the core plus synchronous RAM wrapper.
-    wide = ['WIDE_TRACE'] if args.core == 'ooo' else []
+    wide = ['WIDE_TRACE', *args.ooo_defines] if args.core == 'ooo' else []
     timing_sim = sim.build('tb_bench', [*rtl, snap / 'sim/cpu/bench/tb_bench.sv'], out / 'tb_bench.vvp',
                            params={'RAM_WORDS': ram_bytes // 8, **caches}, defines=wide)
     started = time.perf_counter()
@@ -271,7 +281,8 @@ def main():
             'class': {'multicycle': 'multicycle', 'pipe': 'pipelined', 'ooo': 'out-of-order'}[args.core], 'core': args.core,
             'core_source': args.core_source or core_file,
             'cache_beats': {'icache': args.icache_beats, 'dcache': args.dcache_beats},
-            'memory_model': {k.lower(): v for k, v in memory_model.items()},
+            'memory_model': {k.lower(): v for k, v in memory_model.items()} |
+                            {'ld_lat': args.ld_lat, 'l0_n': args.l0, 'l0_lat': args.l0_lat},
             'rtl_sha256': {p.relative_to(snap).as_posix(): sha(p) for p in rtl},
             'platform': f'rv64_bram_soc, {ram_bytes // 1024} KiB synchronous RAM, no added wait cycles in the timing run',
             'hardware': f'none ({sim.label} simulation)',

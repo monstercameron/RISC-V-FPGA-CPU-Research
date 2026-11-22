@@ -167,7 +167,7 @@ def run(args, root, out, build, snap, rtl, core_file, command, sha, sim, caches)
         raise SystemExit('--sample-pieces needs --functional iss')
     args.max_cycles = args.max_cycles or 50_000_000
     ram_bytes, mailbox = build['ram_bytes'], build['mailbox_address']
-    wide = ['WIDE_TRACE'] if args.core == 'ooo' else []
+    wide = ['WIDE_TRACE', *getattr(args, 'ooo_defines', [])] if args.core == 'ooo' else []
     mode = args.lzma_mode or ('sampled' if args.core == 'ooo' and sim.name == 'icarus' else 'full')
     piece, warmup = SAMPLING[args.core]
     piece = args.sample_instructions or piece
@@ -345,7 +345,9 @@ def run(args, root, out, build, snap, rtl, core_file, command, sha, sim, caches)
             'core': args.core,
             'core_source': args.core_source or core_file,
             'cache_beats': {'icache': caches['ICACHE_BEATS'], 'dcache': caches['DCACHE_BEATS']},
-            'memory_model': {k.lower(): caches.get(k, d) for k, d in (('L2_KIB', 0), ('L2_WAYS', 8), ('L2_LINE', 64), ('L2_LAT', 12), ('MEM_LAT', 1))},
+            'memory_model': {k.lower(): caches.get(k, d) for k, d in (('L2_KIB', 0), ('L2_WAYS', 8), ('L2_LINE', 64), ('L2_LAT', 12), ('MEM_LAT', 1))} |
+                            {'ld_lat': getattr(args, 'ld_lat', None), 'l0_n': getattr(args, 'l0', None),
+                             'l0_lat': getattr(args, 'l0_lat', None)},
             'rtl_sha256': {p.relative_to(snap).as_posix(): sha(p) for p in rtl},
             'platform': f'rv64_bram_soc, {ram_bytes // 1024} KiB synchronous RAM, no added wait cycles in the timing run',
             'hardware': f'none ({sim.label} simulation)',
@@ -484,7 +486,7 @@ def run_iss(args, root, out, build, snap, rtl, core_file, command, sha, sim, cac
     lz = build['lzma']
     ram_bytes, mailbox = build['ram_bytes'], build['mailbox_address']
     hex_images = build.get('hex_images', True)
-    wide = ['WIDE_TRACE'] if args.core == 'ooo' else []
+    wide = ['WIDE_TRACE', *getattr(args, 'ooo_defines', [])] if args.core == 'ooo' else []
     mode = args.lzma_mode or ('sampled' if args.core == 'ooo' else 'full')
     piece, warmup = SAMPLING[args.core]
     piece = args.sample_instructions or piece
@@ -570,7 +572,8 @@ def run_iss(args, root, out, build, snap, rtl, core_file, command, sha, sim, cac
     # --pieces A:B runs only plan pieces A..B-1 and saves them to pieces/A-B.json, so a long
     # sampled run can be split into invocations of at most 5 minutes; --pieces merge then
     # reports from the saved files without simulating (every planned piece must be there).
-    key = {'warm_l2': getattr(args, 'warm_l2', False), 'core': args.core, 'core_sha256': sha(rtl[0]), 'soc_sha256': sha(rtl[1]), 'caches': caches, 'mode': mode,
+    key = {'warm_l2': getattr(args, 'warm_l2', False), 'ooo_defines': getattr(args, 'ooo_defines', []),
+           'core': args.core, 'core_sha256': sha(rtl[0]), 'soc_sha256': sha(rtl[1]), 'caches': caches, 'mode': mode,
            'piece': piece, 'warmup': warmup, 'sample_pieces': args.sample_pieces, 'phases': phases,
            'differential_every': None if args.no_differential else args.differential_every,
            'image_sha256': build['artifact_sha256']['bench.bin']}
@@ -794,7 +797,9 @@ def run_iss(args, root, out, build, snap, rtl, core_file, command, sha, sim, cac
             'class': {'multicycle': 'multicycle', 'pipe': 'pipelined', 'ooo': 'out-of-order'}[args.core],
             'core': args.core, 'core_source': args.core_source or core_file,
             'cache_beats': {'icache': caches['ICACHE_BEATS'], 'dcache': caches['DCACHE_BEATS']},
-            'memory_model': {k.lower(): caches.get(k, d) for k, d in (('L2_KIB', 0), ('L2_WAYS', 8), ('L2_LINE', 64), ('L2_LAT', 12), ('MEM_LAT', 1))},
+            'memory_model': {k.lower(): caches.get(k, d) for k, d in (('L2_KIB', 0), ('L2_WAYS', 8), ('L2_LINE', 64), ('L2_LAT', 12), ('MEM_LAT', 1))} |
+                            {'ld_lat': getattr(args, 'ld_lat', None), 'l0_n': getattr(args, 'l0', None),
+                             'l0_lat': getattr(args, 'l0_lat', None)},
             'rtl_sha256': {p.relative_to(snap).as_posix(): sha(p) for p in rtl},
             'platform': f'rv64_bram_soc, {ram_bytes // 1024} KiB synchronous RAM, no added wait cycles in the timing run',
             'hardware': f'none ({sim.label} simulation)',
