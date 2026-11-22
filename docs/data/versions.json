@@ -7726,5 +7726,196 @@
   "dmips_fast": null,
   "ref_run": null,
   "art": "art/v0.19.3.svg"
+ },
+ {
+  "no": 70,
+  "version": "0.19.4",
+  "title": "Le Lien Lointain",
+  "caption": "A simple operation welds to the last writer of its source register, however far back that writer stands, and not only to the instruction just before. On the scaled kernel at the deciding latencies, compression falls from 384,788 to 359,284 clocks and decompression from 133,243 to 129,587, in simulation; the contract is unchanged.",
+  "date": "2026-11-22",
+  "date_fr": "22 novembre 2026",
+  "kind": "ooo",
+  "status": "tagged",
+  "tag": "cpu-v0.19.4",
+  "register": "Fusion through a last-writer table (middle engineer): a consumer fuses with the last renamed fusable writer of its source register at any distance, not only the previous instruction; the table is cleared by recovery and reset; the single previous-producer registers are removed. Contract unchanged (bus protocol, retirement records); timing changes. Coordinator check on main (10:16 to 10:33): suite.py release-patch fpu vector --core-source build/cpu/ooo-debug/coord/cand0194.sv --expect sim/cpu/baselines/0.17.2-release-patch.json --jobs 2: every step PASS; DIFFs only where intended: 7-Zip d12 64 KiB 384,788 / 133,243 -> 359,284 / 129,587 clocks (compress -6.63%, decompress -2.74%), 4 KiB 974,219 / 153,238 -> 966,029 / 149,450, Dhrystone 15,706 -> 15,703 (fast 10,127 unchanged), the same with the FPU; isa runs 393 -> 411 (front-end cases of 0.19.1 and 0.19.3); all Spike lockstep steps PASS. Its results.json becomes the new baseline sim/cpu/baselines/0.19.4-release-patch.json. From the middle engineer, against 0.19.0 at the deciding latencies (N_MISS 4): 7-Zip d12 compress 604,496 -> 578,050 (-4.37%), decompress 229,974 -> 225,419 (-1.98%); N_MISS 2 -3.94% / -2.04%; rt P -0.97%, S -0.79%; test_cpu N_MISS 4 and DLINE 64/32/2-beat variants PASS; rv_iss differentials PASS. Canonical patch lwfuse.py on 0.19.0 reproduces the tested core (83feecfdaeaf) exactly; applied to the 0.19.3 sources for this release. Codex: PATCH appropriate, no correctness finding",
+  "breaking": "No",
+  "units": [
+   [
+    "Organisation",
+    "Out of order (rtl/cpu/rv64_ooo.sv)"
+   ],
+   [
+    "Fetch / rename / retire",
+    "32 / 32 / 32 per clock"
+   ],
+   [
+    "Reorder buffer",
+    "512 entries"
+   ],
+   [
+    "Physical registers",
+    "544"
+   ],
+   [
+    "Issue queue",
+    "128 entries"
+   ],
+   [
+    "ALUs",
+    "8, of which 4 full (branch, multiply, divide)"
+   ],
+   [
+    "Memory ports",
+    "4 load, 3 store-address"
+   ],
+   [
+    "Branch target buffer",
+    "1,024 entries, with return stack; hits used only for branch, JAL and JALR; targets as signed PC-relative offsets (±2 GiB)"
+   ],
+   [
+    "Caches",
+    "128 KiB instruction, 128 KiB data, two-way data cache"
+   ],
+   [
+    "Taken transfers per fetch",
+    "4"
+   ],
+   [
+    "Loop predictor",
+    "1,024 entries"
+   ],
+   [
+    "Branch bias",
+    "a branch that has gone one way at least 4 times with no exit is predicted that way"
+   ],
+   [
+    "Instruction fusion",
+    "a simple integer producer and the next instruction reading it, also across rename groups (one pending producer held into the next clock)"
+   ],
+   [
+    "Store writes",
+    "paired on the bus"
+   ],
+   [
+    "Value prediction",
+    "loads, multiplies, divides"
+   ],
+   [
+    "Fetch predecode",
+    "direct jumps, calls, returns, backward branches"
+   ],
+   [
+    "Global-history predictor",
+    "6 tagged tables, histories 4 to 128, about 22.4 KiB in all; aging covers every entry"
+   ],
+   [
+    "Prediction confidence",
+    "32 equal results to predict, doubled per wrong prediction up to 64"
+   ],
+   [
+    "Multiply latency",
+    "2 clocks (behavioural; DSP timing unproven)"
+   ],
+   [
+    "Load-to-use latency",
+    "a knob, RV64_OOO_LD_LAT, default 1 clock"
+   ],
+   [
+    "Memory hierarchy",
+    "optional SoC L2 and memory latency (L2_KIB, L2_WAYS, L2_LINE, L2_LAT, MEM_LAT); defaults keep timing"
+   ],
+   [
+    "Recent-beat buffer",
+    "a knob, RV64_OOO_L0_N (default 0, off), latency RV64_OOO_L0_LAT (default 2)"
+   ],
+   [
+    "Load-wait table",
+    "4,096 entries, cleared every 65,536 clocks"
+   ],
+   [
+    "Data misses in flight",
+    "N_MISS 1 to 8 (default 1); split reads with tags on mem_tag, rsp_valid, rsp_tag, rsp_data, rsp_error; younger missed loads sleep until their beat's answer (wake on fill)"
+   ],
+   [
+    "Floating point",
+    "RV64F and RV64D behind the define RV64_OOO_FPU, default off: four FP ports (two FMA, two misc), pipelined divide and square root, a 64-entry rename map (x and f) on one physical register file, fflags at retirement"
+   ],
+   [
+    "FP latencies, clocks",
+    "add 2, multiply 3, fused multiply-add 4; divide 7 / 10 and square root 10 / 15 (single / double), a single divide every 2 clocks"
+   ]
+  ],
+  "marks": [
+   "a one-beat fetch buffer",
+   "requests issue from EXECUTE",
+   "writes acknowledged in the same clock",
+   "second slot across beats",
+   "second data-cache port",
+   "jump in the second slot",
+   "slot-to-slot forwarding",
+   "branch folding",
+   "registered multiplier",
+   "fetch queue and X stage",
+   "store-to-load forwarding",
+   "stores finish at retirement",
+   "cross-beat fetch",
+   "instruction fusion",
+   "1,024-entry predictors",
+   "fixed-direction bias",
+   "sixteen lanes",
+   "one rule for stores and retirement",
+   "four taken turns",
+   "folded at rename",
+   "four stores a write",
+   "four loads, three stores a clock",
+   "512 in flight",
+   "thirty-two retire",
+   "thirty-two lanes",
+   "mended after review",
+   "constants and branches decided at rename",
+   "64-entry return stack",
+   "front-end depth dial",
+   "four branch-capable ports",
+   "two-clock multiply",
+   "the offset clock paid",
+   "return stack restored whole",
+   "load-latency dial",
+   "displaced returns",
+   "offset clock after slow loads",
+   "fetch in the recovery clock",
+   "second level and distant memory",
+   "value prediction earns trust",
+   "global-history predictor",
+   "BTB hits for transfers only",
+   "recent-beat buffer dial",
+   "PC-relative targets",
+   "load-wait table",
+   "six tagged tables",
+   "several reads in flight",
+   "split read channel",
+   "fusion across rename groups",
+   "wake on fill",
+   "F and D, off by default",
+   "fflags at retirement",
+   "add in two, multiply in three",
+   "divide and root at Lion Cove's pace",
+   "cleanup, bit-exact",
+   "a squashed divide frees the unit",
+   "RVV subset, option off by default",
+   "vector memory with element-precise faults",
+   "wider data-cache lines, option off by default",
+   "indirect-jump predictor, option off by default",
+   "five tagged tables over the target buffer",
+   "instruction-cache ways, option off by default",
+   "true LRU within each set",
+   "fusion through a last-writer table"
+  ],
+  "width": 32,
+  "alus": 8,
+  "dmips_ref": null,
+  "clocks_ref": null,
+  "dmips_fast": null,
+  "ref_run": null,
+  "art": "art/v0.19.4.svg"
  }
 ]

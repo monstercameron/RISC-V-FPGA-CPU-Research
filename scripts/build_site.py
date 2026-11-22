@@ -541,6 +541,13 @@ WORKS = [
      "Ways for the instruction cache, as an option: each set of 8-byte lines may hold two or four beats, and the least recently used one gives way. "
      "The default of one way is the same as 0.19.2; with the option on, every fetch and every invalidation looks in all the ways, and no speed, hardware cost or timing is claimed.",
      dict(marks=["instruction-cache ways, option off by default", "true LRU within each set"])),
+    # Figures from the 0.19.4 history row. A new room: fusion through a last writer is a different subject from the ways of 0.19.3.
+    # A patch in the microarchitecture, so the drawing adds one mark only.
+    ("0.19.4", "Le Lien Lointain",
+     "A simple operation welds to the last writer of its source register, however far back that writer stands, and not only to the instruction just before. "
+     "On the scaled kernel at the deciding latencies, compression falls from 384,788 to 359,284 clocks and decompression from 133,243 to 129,587, in simulation; "
+     "the contract is unchanged.",
+     dict(marks=["fusion through a last-writer table"])),
 ]
 
 ERAS = [
@@ -558,6 +565,7 @@ ERAS = [
     ("XII", "Salle XII", "Les Lignes", "Wider lines for the data cache, as an option: a miss fills a longer line, answered one beat at a time, the critical beat first.", "0.19.0", "0.19.0"),
     ("XIII", "Salle XIII", "Le Présage", "A guess for every indirect jump, as an option: the target of a jump that is not a return is predicted at fetch from tagged tables that remember the path taken, and a repair to the memory system's delays.", "0.19.1", "0.19.2"),
     ("XIV", "Salle XIV", "Les Voies", "Ways for the instruction cache, as an option: a set of lines may hold more than one beat, and the least recently used gives way.", "0.19.3", "0.19.3"),
+    ("XV", "Salle XV", "Le Lien Lointain", "A weld that reaches back: a simple operation fuses with the last writer of its source, at any distance, through a table that recovery clears.", "0.19.4", "0.19.4"),
 ]
 
 
