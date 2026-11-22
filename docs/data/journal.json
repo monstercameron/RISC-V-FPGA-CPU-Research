@@ -3414,6 +3414,61 @@
      "time": "10:54 to 11:21",
      "text": "**0.20.0 released** (coordinator; bandwidth D1 package c-l2pf-on-0190-after-a.diff applied to main 6283e3f: rtl/cpu/rv64_bram_soc.sv, sim/cpu/bench/tb_bench.sv, run_bench.py and the js/lzma/mm/rt/stream/ternary runners; core unchanged except the header). Check: `python -B sim/cpu/suite.py release-minor fpu vector soc --expect sim/cpu/baselines/0.19.4-release-patch.json --jobs 2` (10:54 to 11:21) 63/63 PASS, all the same as 0.19.4. MINOR (new documented SoC parameters). Tag `cpu-v0.20.0`; pushed and released on GitHub per the 11:05 rule.",
      "kind": ""
+    },
+    {
+     "time": "11:21 to 11:59",
+     "text": "**0.21.0 released** (coordinator; item 15, S1, coord/item15-s1.diff sha cd1c6353ba3f on main 4fc1606: cpu/PRIV-CONTRACT.md, cpu/architecture.md section 4, rtl/cpu/rv64_core.sv, new rtl/cpu/rv64_csr.sv, sim/cpu/bench/rv_iss.c, spike_lockstep.py, suite_manifest.py, sim/cpu/sys/tests/s1.ld and s1_directed.S, tb_core.sv). Check: `python -B sim/cpu/suite.py release-minor sys --expect sim/cpu/baselines/0.19.4-release-patch.json --jobs 2` (11:21 to 11:58) 71/71 PASS. MINOR (privilege contract behind a default-off define). Tag `cpu-v0.21.0`; pushed and released on GitHub per the 11:05 rule.",
+     "kind": ""
+    },
+    {
+     "time": "07:42",
+     "text": "(system-mode engineers, item 15; entered by the coordinator from item15-devlog.md) Design posted (`coord/s1-design.md`): CSR set per Spike `--isa rv64im_zba_zbb_zbs_zicsr_zifencei --priv m`, trap entry, MRET, WFI no-op, E and N trace records",
+     "kind": "output"
+    },
+    {
+     "time": "08:59",
+     "text": "(system-mode engineers, item 15; entered by the coordinator from item15-devlog.md) **Incident: C: filled** by a runaway trace. The mutant `csr-trap-mepc` skipped the tohost store and looped; `tb_core` had no retirement budget and the trace file grew until the disk was full. Everything run between that point and the disk recovery is **void** (not evidence)",
+     "kind": "output"
+    },
+    {
+     "time": "09:00 to 09:16",
+     "text": "(system-mode engineers, item 15; entered by the coordinator from item15-devlog.md) Disk recovery, then the fix: penv `tb_core` runs with `+max_retired=2000000` (`PENV_MAX`), a stop without tohost is a failure, and `Core.trace` kills any tb_core trace over 1 GiB (`TRACE_CAP`). Every S1 result before 09:16 counts only as history; all of it was rerun after 09:16",
+     "kind": "output"
+    },
+    {
+     "time": "09:16 to 09:33",
+     "text": "(system-mode engineers, item 15; entered by the coordinator from item15-devlog.md) **Valid evidence** (after the fix): `spike-s1-multicycle` 46,046 records over 125 runs equal to Spike; `sys-penv-iss` 46,046 records equal; 6 of 6 `spike-s1-negative-<mutant>` steps reject their mutant (`build/suite/s1-c`, 22 s wall, `--jobs 2`: csr-mret-mpie by rv64mi-csr rec 71, csr-mtvec-mode by s1_directed rec 8, csr-trap-mepc by rv64mi-illegal rec 84, csr-minstret-write by rv64mi-instret_overflow rec 75, core-ebreak-tval by s1_directed rec 222, core-pair-store-epc by s1_directed rec 346); `isa-multicycle` and `isa-multicycle-2beat` PASS; `spike-rvt-multicycle` both sizes 35,095 records; `spike-lzma-multicycle` 4,179,371 records; `spike-lzma-multicycle-2beat` 1.5M records; `spike-dhry` multicycle, ooo and pipe 563,860 records each; `spike-negative-xor-or` PASS; `spike-selftest` 13 checks",
+     "kind": "output"
+    },
+    {
+     "time": "09:16 to 09:33",
+     "text": "(system-mode engineers, item 15; entered by the coordinator from item15-devlog.md) **Timing identity** (`scratchpad/coreident.py`), Dhrystone, 281,929 retirements, 64 KiB and 2-beat caches, stalls 0 and 7: define off identical to HEAD; define on same cycles (clock counts 132,131 / 293,267 on 64 KiB and 334,307 / 1,092,537 on 2-beat). LZMA clock identity not run",
+     "kind": "output"
+    },
+    {
+     "time": "09:48",
+     "text": "(system-mode engineers, item 15; entered by the coordinator from item15-devlog.md) Patch re-exported after the review fixes: `coord/item15-s1.diff` (10 files, 63,044 bytes, sha256 `cd1c6353ba3f...`; `git apply --check` passes on main's working tree with item 14 and P0)",
+     "kind": "output"
+    },
+    {
+     "time": "09:35 to 09:39",
+     "text": "(system-mode engineers, item 15; entered by the coordinator from item15-devlog.md) **Codex review of S1** (`coord\\s1review/`, GPT 6.2 Astra, read-only, `codex exec -s read-only -C wts1 -`, prompt `s1review/prompt.md`, input `item15-s1.diff`): the first 290 s slice ended without a report (`rc=124`); resumed by session id (`codex exec resume 01a203ac-...`; `--last` picked another session and returned nothing: a mistake) and it produced 11 findings (`s1review/review.md`). Decisions: **(1) fixed** illegal-instruction mtval for a word whose low two bits are not 11 is now its low 16 bits under `RV64_PRIV` (rv64_core.sv; as Spike and rv_iss), directed test `.word 0xdead0001` added; with the fix disabled the lockstep fails at record 224 (`x26=0xdead0001`), so the test sees it. **(4) fixed** `mcontext` 0x7A8 is a 13-bit writable register in Spike even with `--triggers=0`: the directed test (write then read) failed against Spike at record 60 before the fix; rv_csr.sv, rv_iss.c, PRIV-CONTRACT row and s1-design updated. **(2, 3) accepted as known limits:** a broken mcycle is not independently checked (adopted by design; the coordinator's clock-identity run at both cache sizes and stalls covers counting), and a use of an mcycle value is not compared with Spike (the directed test never uses one). **(5) kept:** a mutant's expected failure is matched on the failure kind and the first mismatch (not on the exact record), as the hand-off recorded which test catches which mutant; a stricter check is a follow-up. **(6) known:** Spike does not compare E records; rv_iss `--adopt` does, exactly. **(7) known:** misa writes are ignored (P0 finding 6 recorded Spike's writable misa); the directed test writes back the original. **(8, 9) not done:** a nested trap inside a handler, vectored-mode dispatch and stall>0 runs of the paired-store fault are not covered by the directed test (follow-up). **(10) accepted:** the 1 GiB trace cap now applies to every `Core.trace()`; no define-off run is near it (the longest, LZMA, is 4.2M records). **(11) integration:** the history row and `cpu/VERSION` are the coordinator's (draft row below)",
+     "kind": "output"
+    },
+    {
+     "time": "09:40 to 09:47",
+     "text": "(system-mode engineers, item 15; entered by the coordinator from item15-devlog.md) Two consequences of the fixes, found by the reruns: (a) the 12 added bytes in `s1_directed.S` moved the `3:` loop, the paired-store mutant `core-pair-store-epc` was no longer rejected (\"negative control PASSED\") because the store no longer paired as second slot; fixed with `.balign 16` before the loop (rejected again at record 359); this is codex finding 9 happening in practice (pairing depends on alignment). (b) rv_iss `--adopt` stops at the tohost store while the RTL can retire the following `jal x0, 0` in the same clock; `adopt_check` now accepts that one trailing spin record from the RTL (and prints both traces' tails on a count mismatch)",
+     "kind": "output"
+    },
+    {
+     "time": "09:42 to 09:48",
+     "text": "(system-mode engineers, item 15; entered by the coordinator from item15-devlog.md) **Rerun after the fixes** (Verilator 5.020; `suite.py`, `--out-dir build/suite/s1-h..m`): `spike-s1-multicycle` PASS 46,059 records of 125 runs; 6 of 6 `spike-s1-negative-<mutant>` PASS, each rejected (records 71, 8, 84, 75, 232, 359); `sys-penv-iss` PASS 46,059 records; `spike-dhry-multicycle` (define off) PASS 563,860 records; `isa-multicycle` and `isa-multicycle-2beat` PASS (134 programs, 402 runs each); `spike_lockstep.py self-test` 13 checks PASS. Not rerun after the mtval edit: LZMA, rvt, the timing identity script (the change is a combinational mtval mux that does not touch timing; with the define off the text is the same)",
+     "kind": "output"
+    },
+    {
+     "time": "0.X.0",
+     "text": "2026-11-22|tag `cpu-v0.X.0`",
+     "kind": "M-mode privilege foundation S1 on the multicycle core (system-mode engineer; define RV64_PRIV, default off, multicycle rv64_core.sv only; new rtl/cpu/rv64_csr.sv): CSRs for rv64im_zba_zbb_zbs_zicsr_zifencei --priv m (mstatus MIE/MPIE with MPP 3, misa, mie, mtvec, mscratch, mepc, mcause, mtval, mcycle counting clocks, minstret, mcontext 13 bits, counters and trigger CSRs reading 0, mseccfg absent), traps to mtvec with mepc/mcause/mtval, MRET, WFI no-op, ECALL cause 11; trap_valid is never set with the option (a run ends through tb_core.sv +tohost); trace records E and N b00. A MINOR: contract change behind a default-off define, so the traces and clocks of every default build are unchanged (Dhrystone retirements 281,929 and clocks identical to the release at both cache sizes and stalls 0 and 7). Evidence: lockstep against Spike over 125 p-environment runs, 46,059 records equal, plus 6 mutants each rejected; rv_iss --adopt reproduces the RTL trace exactly; ISA suites and the Dhrystone lockstep unchanged. Simulation only; no hardware claim."
     }
    ],
    "commits": []
