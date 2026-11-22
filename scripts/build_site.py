@@ -503,6 +503,21 @@ WORKS = [
      "and a new single divide may start every second clock. Paths per million clocks rise from 367.9 to 394.6 and primary rays from 4.020 to 4.136 per thousand, "
      "in simulation; Dhrystone and 7-Zip clocks do not move.",
      dict(fp_div=True, marks=["divide and root at Lion Cove's pace"])),
+    # Figures from the 0.17.3 and 0.17.4 history rows; no drawing change, so the spec is the 0.17.2 spec.
+    ("0.17.3", "Le Balai",
+     "A sweep with no change in behaviour: the queue's index width now follows the queue's size, and the divider's dead state is removed. "
+     "Dhrystone and the scaled 7-Zip kernel take the same clocks as before, with and without the floating-point unit.",
+     dict(marks=["cleanup, bit-exact"])),
+    ("0.17.4", "Le Créneau Libre",
+     "A squashed divide or root no longer holds the divider's start interval: the next divide may begin as soon as the squashed one is gone. "
+     "Dhrystone and 7-Zip are unchanged; the ray-tracing deltas are fractions of a percent, a model-correctness fix rather than a speed-up.",
+     dict(marks=["a squashed divide frees the unit"])),
+    # Figures from the 0.18.0 history row. The vector unit is an option off by default and not drawn.
+    ("0.18.0", "Les Vecteurs",
+     "Vectors arrive as an option of the out-of-order core, behind the floating-point switch: a subset of the RISC-V vector extension at 128, 256 or 512 bits, "
+     "with unit-stride, strided and whole-register memory, element-precise faults, and every single-precision vector instruction of the contract. "
+     "Dhrystone and 7-Zip clocks equal the baseline, with and without the unit; no performance claim is made.",
+     dict(marks=["RVV subset, option off by default", "vector memory with element-precise faults"])),
 ]
 
 ERAS = [
@@ -515,7 +530,8 @@ ERAS = [
     ("VII", "Salle VII", "Le Conseil", "The council widens everything at once: doors, room and breath, then a mending, a deeper memory for returns, and a fourth hand for branches.", "0.13.1", "0.14.6"),
     ("VIII", "Salle VIII", "L'Archive", "The council turns to a second measure, the LZMA kernel of 7-Zip: a quicker multiply, honest offsets, a mended way home, floors of memory below, and a predictor with a long memory.", "0.14.7", "0.15.2"),
     ("IX", "Salle IX", "Les Lettres en Vol", "Mendings for the branch buffer, a near memory and a ledger of waiting loads, six tables of long memory, then several reads in flight at once, a weld that spans two clocks, and loads that sleep until their answer comes.", "0.15.3", "0.16.2"),
-    ("X", "Salle X", "La Virgule Flottante", "Numbers that float: single and double precision arrive in the out-of-order core, built in only on request, then add, multiply, divide and root at the latencies of Lion Cove and Zen 5.", "0.17.0", "0.17.2"),
+    ("X", "Salle X", "La Virgule Flottante", "Numbers that float: single and double precision arrive in the out-of-order core, built in only on request, then add, multiply, divide and root at the latencies of Lion Cove and Zen 5.", "0.17.0", "0.17.4"),
+    ("XI", "Salle XI", "Les Vecteurs", "Vectors as an option: a first subset of the RISC-V vector extension, executed in order at the head of the reorder buffer, with the rest of the instructions still to come.", "0.18.0", "0.18.0"),
 ]
 
 
@@ -1314,6 +1330,9 @@ PROBE_DHRYSTONE = {
     "0.17.0": ("15,706 / 10,127", "unchanged with the FPU built in"),
     "0.17.1": ("15,706 / 10,127", "unchanged with and without the FPU"),
     "0.17.2": ("15,706 / 10,127", "unchanged with and without the FPU"),
+    "0.17.3": ("15,706 / 10,127", "bit-exact with 0.17.2"),
+    "0.17.4": ("15,706 / 10,127", "unchanged"),
+    "0.18.0": ("15,706 / 10,127", "unchanged with the vector option off"),
 }
 
 # The second measure: the LZMA benchmark kernel of 7-Zip, scaled down to fit the
@@ -1373,6 +1392,9 @@ SEVENZIP_BY_VERSION = {
                            "604,503 / 229,974 at the deciding knobs, also unchanged"),
     "0.17.1": (None, None, "384,788 / 133,243 clocks at 64 KiB caches, unchanged with and without the FPU"),
     "0.17.2": (None, None, "384,788 / 133,243 clocks at 64 KiB caches, unchanged with and without the FPU"),
+    "0.17.3": (None, None, "384,788 / 133,243 clocks at 64 KiB caches, unchanged with and without the FPU"),
+    "0.17.4": (None, None, "384,788 / 133,243 clocks at 64 KiB caches, unchanged"),
+    "0.18.0": (None, None, "384,788 / 133,243 clocks at 64 KiB caches and 974,219 / 153,238 at 4 KiB, equal to the baseline"),
 }
 
 
