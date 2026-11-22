@@ -74,6 +74,30 @@
       "source": "https://www.jhauser.us/arithmetic/TestFloat-3e.zip (TestFloat-3e/COPYING.txt; archive SHA-256 6d4bdf0096b48a653aa59fc203a9e5fe18b5a58d7a1b715107c7146776a0aad6)",
       "sha256": "de822828fa475ba5f10115954a7471fe84ec04884ac7a38de1c3adfc7ceed858",
       "retrieved": "2026-11-22"
+    },
+    {
+      "path": "references/riscv/riscv-isa-manual-3142f66-2026-11-21.pdf",
+      "source": "https://github.com/riscv/riscv-isa-manual/releases/download/riscv-isa-release-3142f66-2026-11-21/riscv-spec.pdf",
+      "sha256": "a836dee8d4d9a2a359df3b247a7c0c144ad020d41a37351661da80bf7e94ae4d",
+      "retrieved": "2026-11-22"
+    },
+    {
+      "path": "references/riscv/riscv-isa-manual-3142f66-2026-11-21.html",
+      "source": "https://github.com/riscv/riscv-isa-manual/releases/download/riscv-isa-release-3142f66-2026-11-21/riscv-spec.html",
+      "sha256": "7aab89d2cdbe96cb16fd55911487e7075c2e5ffe0fd815fefe1502cd392187d5",
+      "retrieved": "2026-11-22"
+    },
+    {
+      "path": "references/riscv/riscv-sbi-v3.0.pdf",
+      "source": "https://github.com/riscv-non-isa/riscv-sbi-doc/releases/download/v3.0/riscv-sbi.pdf",
+      "sha256": "2fc63fd1ab68d2df302c509763ed893fb5ed8a83523bac9246b98020d0c19cd9",
+      "retrieved": "2026-11-22"
+    },
+    {
+      "path": "references/rva23-profile-v1.0.pdf",
+      "source": "https://github.com/riscv/riscv-profiles/releases/download/rva23-rvb23-ratified/rva23-profile.pdf",
+      "sha256": "af3519cdbfa1b3f12db6389b0bb9bcae171bf24fffd0dcf51d195ef49aaa9cfc",
+      "retrieved": "2026-11-22"
     }
   ]
 }

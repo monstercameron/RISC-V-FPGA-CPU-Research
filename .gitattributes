@@ -13,6 +13,7 @@
 
 # Preserve exact bytes in identity-locked snapshots, fixtures and licenses
 reference-sources/** -text
+references/** -text
 llm-accelerator/plan/reference-source-lock.json -text
 llm-accelerator/plan/qualification-fixtures.json -text
 llm-accelerator/plan/abi-lifecycle-example.json -text

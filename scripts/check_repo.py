@@ -27,6 +27,7 @@ MAINTAINED_DOCS = (
     'cpu/review-rubric.md', 'cpu/TODO.md', 'cpu/dhrystone.md', 'DEVLOG.md', 'cpu/lzma-benchmark.md', 'cpu/raytracing-benchmark-targets.md',
     'cpu/js-benchmark-targets.md', 'cpu/mm-benchmark-targets.md', 'cpu/7zip-benchmark-targets.md',
     'cpu/ternary-benchmark-targets.md', 'sim/cpu/README.md', 'cpu/research/README.md',
+    'references/riscv/README.md',
 )
 REQUIRED = MAINTAINED_DOCS + (
     'LICENSE', '.gitignore', '.gitattributes', '.editorconfig',
