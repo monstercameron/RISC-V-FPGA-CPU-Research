@@ -70,3 +70,11 @@ a:focus-visible, button:focus-visible, summary:focus-visible {
   .pl-hide { opacity: 1 !important; transform: none !important; }
   .pl-top { transform: none; }
 }
+
+/* Journal: where a day's entry runs on past midnight into a new date. */
+.timeline .daybreak { list-style: none; margin: 1.4rem 0 .4rem calc(-1.1rem - 1px); padding: .6rem 0 .6rem 1.1rem; border-top: 2px solid var(--text); border-bottom: 1px solid var(--line); }
+.timeline .daybreak .db-name { font-family: var(--serif); font-size: 1.6rem; margin: 0 .5rem; }
+@media (max-width: 560px) {
+  .timeline .daybreak { margin-left: calc(-.9rem - 1px); padding-left: .9rem; }
+  .timeline .daybreak .db-name { display: block; margin: .2rem 0; font-size: 1.35rem; }
+}

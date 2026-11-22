@@ -17,6 +17,7 @@ The output is deterministic: no clock, no randomness beyond seeded generators.
 """
 from __future__ import annotations
 
+import datetime
 import html
 import json
 import math
@@ -225,6 +226,10 @@ def read_journal() -> list[dict]:
         elif section == "Timeline":
             if ln.startswith("|") and not ln.startswith("|---") and not ln.startswith("| Time"):
                 c = split_row(ln)
+                # A history-table row pasted into a timeline (its first cell is a version such
+                # as "0.X.0", not a time) is not an event; the history itself is in the gallery.
+                if c and re.match(r"^\d+\.(\d+|X)\.(\d+|X)$", md_plain(c[0])):
+                    continue
                 if len(c) >= 3:
                     cur["timeline"].append({"time": md_plain(c[0]),
                                             "text": "|".join(c[1:-1]).strip(),
@@ -245,7 +250,33 @@ def read_journal() -> list[dict]:
         for c in d["commits"]:
             c.pop("_want", None)
             c.setdefault("subject", "")
+        mark_day_breaks(d)
     return days
+
+
+def mark_day_breaks(d: dict):
+    """A DEVLOG day section can run past midnight (the 2026-11-21 session went on into
+    2026-11-22). Rows are only roughly in order, so a new date is marked where a row starts
+    before 06:00 after the section has reached 20:00 or later. The row gets a "date" key;
+    nothing in the text is changed."""
+    date = d["date"]
+    seen_day, seen_late = True, False
+    for r in d["timeline"]:
+        m = re.search(r"(\d{1,2}):\d{2}", r["time"])
+        if not m:
+            continue
+        h = int(m.group(1))
+        if 6 <= h < 20:
+            seen_day = True
+        elif h >= 20 and seen_day:
+            seen_late = True
+        elif h < 6 and seen_late:
+            # A late row filed after the break ("23:32 to 00:13") does not start another
+            # day: a new break needs daytime rows between.
+            date = (datetime.date.fromisoformat(date) + datetime.timedelta(days=1)).isoformat()
+            r["date"] = date
+            seen_day, seen_late = False, False
+    d["later_dates"] = sorted({r["date"] for r in d["timeline"] if "date" in r}, reverse=True)
 
 
 # ---------------------------------------------------------------------------
@@ -1419,6 +1450,13 @@ SEVENZIP = [
     ("0.16.0 out of order, full-size (d22) kernel, deciding configuration, four misses in flight",
      "simulated, sampled (60 pieces per phase, 95% CI ±6.8% / ±10.2%, low ends 2.04 / 2.09); as above but N_MISS 4 and MEM_GAP 8; "
      "goal met in point estimate, 108% / 107%; the decompress interval reaches below the goal", 2.19, 2.32, "sim"),
+    # The deciding run on the bench with the 7-Zip-matched CRC (2026-11-22), from
+    # cpu/7zip-benchmark-targets.md ("Deciding run on the new bench") and the DEVLOG.md
+    # row of 2026-11-22 08:55 to 10:47 (the 7-Zip deciding-config verdict).
+    ("Goal, full-size (d22) kernel with the 7-Zip-matched CRC", "about; the same 10,000 MIPS goal after the 2026-11-22 CRC change; the decompress goal is provisional", 2.02, 2.47, "goal"),
+    ("0.18.0 out of order, full-size (d22) kernel with the 7-Zip-matched CRC, deciding configuration",
+     "simulated, sampled (60 pieces per phase, 95% CI ±6.7% / ±3.0%, low ends 2.072 / 2.887); a 4 MiB L2; "
+     "goal met in point estimate and at the low end, 109% / 120%", 2.211, 2.975, "sim"),
 ]
 
 # Per version: (compress, decompress MIPS/MHz at 64 KiB caches, or None, and the rest
@@ -1492,6 +1530,11 @@ def perf_html(v: dict) -> str:
             f'<span class="tag">simulated, reference runtime</span>{extra}{z7}</p>')
 
 
+def fz(val: float) -> str:
+    """Two decimals, or three where the source gives three (2.975 is not shown as 2.97)."""
+    return f"{val:.2f}" if abs(round(val, 2) - val) < 1e-9 else f"{val:.3f}"
+
+
 def sevenzip_plate() -> str:
     top = 12.0
     rows = []
@@ -1499,8 +1542,8 @@ def sevenzip_plate() -> str:
         bars = []
         for key, val, name in (("c", c, "compress"), ("d", d, "decompress")):
             bars.append(f'<div class="zb {key}"><span class="bar" style="--f:{val / top:.4f}" '
-                        f'title="{e(label)}: {name} {val:.2f} MIPS/MHz"></span>'
-                        f'<span class="val">{val:.2f}<span class="sr-only"> MIPS/MHz {name}</span></span></div>')
+                        f'title="{e(label)}: {name} {fz(val)} MIPS/MHz"></span>'
+                        f'<span class="val">{fz(val)}<span class="sr-only"> MIPS/MHz {name}</span></span></div>')
         rows.append(f'<li class="zrow {style}"><p class="zlab">{e(label)} <span class="znote">{e(note)}</span></p>{"".join(bars)}</li>')
     return f"""
 <section class="plate" aria-labelledby="z7-h">
@@ -1508,9 +1551,11 @@ def sevenzip_plate() -> str:
   <p class="small">A second measure beside Dhrystone: the LZMA benchmark kernel of 7-Zip, scaled down to run in the simulator, in instructions per clock
   (MIPS per MHz) for compression and decompression. Every row is a simulation of that scaled kernel except the Cortex-X925 row, a native run of the same kernel on a laptop core.
   None of these is a 7-Zip benchmark score or a hardware result for this processor. The goal is about 10.9 / 3.35 on the scaled kernel, derived from a 10,000 MIPS single-thread 7-Zip rating at 4 GHz;
-  the same goal on the full-size (d22) kernel is about 2.03 / 2.18. The last three rows are that full-size kernel, a different, larger workload whose bars do not compare with the rows above;
+  the same goal on the full-size (d22) kernel is about 2.03 / 2.18. The last five rows are that full-size kernel, a different, larger workload whose bars do not compare with the rows above;
   in the deciding configuration (slow loads, a large and distant memory) version 0.15.4 with one miss at a time reaches 1.53 / 1.98 in simulation (75% / 91%), and version 0.16.0 with four misses in flight
-  reaches 2.19 / 2.32 (108% / 107%): the goal is met in point estimate, though the decompress interval reaches below it.</p>
+  reaches 2.19 / 2.32 (108% / 107%): the goal is met in point estimate, though the decompress interval reaches below it.
+  The last two rows are the deciding run after the 2026-11-22 change that matches 7-Zip's CRC, which moves the goal to 2.02 / 2.47 (the decompress goal provisional, pending a quiet re-measure of the laptop):
+  version 0.18.0 reaches 2.211 / 2.975 (109% / 120%) and its low ends 2.072 / 2.887 also clear the goal. The average, 2.593 MIPS/MHz, is 10,372 MIPS at 4 GHz in simulation; the low ends average 2.48, or 9,918 MIPS.</p>
   <p class="legend small"><span class="sw z-c"></span>compress <span class="sw z-d"></span>decompress <span class="sw z-goal"></span>goal (outlined)</p>
   <ol class="zchart">{"".join(rows)}</ol>
   <p class="small">Scale: 0 to {top:g} MIPS/MHz, linear. Out-of-order rows under Verilator, whole program; multicycle and pipelined under Icarus.</p>
@@ -1751,7 +1796,7 @@ def journal_page(versions, days, runs) -> str:
 </section>
 {sevenzip_plate()}
 {js_plate()}
-<nav class="day-nav" aria-label="Days">{"".join(f'<a href="#d-{d["date"]}">{e(fr_date(d["date"]))}</a>' for d in days)}<a href="#runs">Les Essais</a></nav>
+<nav class="day-nav" aria-label="Days">{"".join(f'<a href="#d-{x}">{e(fr_date(x))}</a>' for d in days for x in d["later_dates"] + [d["date"]])}<a href="#runs">Les Essais</a></nav>
 """]
     for d in days:
         findings = "".join(f"<li>{md_inline(f)}</li>" for f in d["findings"])
@@ -1761,6 +1806,9 @@ def journal_page(versions, days, runs) -> str:
             plain = md_plain(full)
             long = len(plain) > 260
             tagc = re.sub(r"[^a-z]", "", r["kind"].lower()) or "other"
+            if r.get("date"):
+                rows.append(f'<li class="daybreak" id="d-{r["date"]}"><span class="eyebrow">{e(r["date"])}</span> '
+                            f'<span class="db-name">{e(fr_date(r["date"]))}</span> <span class="small">the session runs on past midnight</span></li>')
             rows.append(f"""<li class="entry{' long' if long else ''}">
   <span class="when">{e(r['time'])}</span>
   <div class="what"><p class="txt">{md_inline(full)}</p>{'<button type="button" class="more" aria-expanded="false">Read on</button>' if long else ''}</div>
@@ -1775,6 +1823,7 @@ def journal_page(versions, days, runs) -> str:
     <p class="eyebrow">{e(d['date'])}</p>
     <h2 id="h-{d['date']}">{e(fr_date(d['date']))}</h2>
     <p class="day-title">{e(d['title'])}</p>
+    {('<p class="small">This entry runs on past midnight into ' + ", ".join(e(fr_date(x)) for x in sorted(d["later_dates"])) + '; the timeline marks where each new date begins.</p>') if d["later_dates"] else ''}
   </header>
   {('<h3 class="sub">Findings</h3><ol class="findings">' + findings + '</ol>') if findings else ''}
   {('<h3 class="sub">Timeline</h3><ol class="timeline">' + "".join(rows) + '</ol>') if rows else ''}
@@ -1796,6 +1845,47 @@ def journal_page(versions, days, runs) -> str:
 <p class="more-link"><a href="{BLOB}DEVLOG.md" rel="noopener">Read the full DEVLOG.md on GitHub &rarr;</a></p>""")
     return page("Le Journal · Atelier RV64", "The development log of the RV64 research CPU project: dated entries, commits, simulated Dhrystone runs, a scaled 7-Zip kernel and a JavaScript interpreter. No hardware measurements of this processor.",
                 "".join(body), "journal", "journal.html", body_class="journal")
+
+
+def status_goals_html() -> str:
+    """Goal status and the pause note for the landing page. Every figure is copied from
+    cpu/7zip-benchmark-targets.md (deciding run on the new bench, 2026-11-22),
+    cpu/CONTINUATION.md sections 2, 4 and 7, and the DEVLOG.md rows they cite. All of it is
+    simulation; none of it is a hardware or frequency result."""
+    blob = BLOB
+    return f"""  <div class="atl-goals">
+    <h3>Goals, in simulation</h3>
+    <ul class="atl-list">
+      <li><span class="atl-tag sim">Met in simulation</span> <strong>7-Zip, a 10,000 MIPS single-thread rating at 4 GHz.</strong>
+        On cpu-v0.18.0 at the deciding configuration (the full-size d22 kernel with the 7-Zip-matched CRC, a 4 MiB L2, 60 sampled pieces per phase):
+        compress 2.211 MIPS/MHz (109% of its 2.02 goal; low end 2.072) and decompress 2.975 (120% of 2.47; low end 2.887).
+        The average is 2.593 MIPS/MHz, or 10,372 MIPS at 4 GHz; the low ends average 2.48 (9,918 MIPS).
+        The decompress goal is provisional: its laptop reference was measured under load and needs a quiet re-measure. Later versions were not measured at d22.</li>
+      <li><span class="atl-tag goal">Open</span> <strong>Ray and path tracing, against the Apple M6 reference.</strong>
+        At the deciding configuration the last measured rates (0.19.0 with 64 B data lines) were 3.71 primary and 1.96 secondary rays per thousand clocks,
+        against goals of 5.92 and 8.64: roughly 60% and 25%.
+        Done: the benchmark (a TinyBVH traversal and a smallpt-style path tracer) with a checked scalar FP32 reference, the laptop measurement,
+        F and D in the out-of-order core (0.17.0 to 0.17.4), the first vector step in order at the head of the reorder buffer (0.18.0),
+        and the memory side for irregular access (64 B lines, the L2 prefetcher, and wider split-read answers, ready but not released).
+        Left: out-of-order vector execution (SIMD step 2a), the vector coverage the kernels need (integer, mask, permute, gather and scatter, compaction),
+        and a vectorized kernel measured at VLEN 128, 256 and 512 with lane-utilization counters. No Apple, Intel or AMD machine was measured on these workloads here; only cited figures exist.</li>
+      <li><span class="atl-tag goal">Open</span> <strong>JavaScript, 1.30x the laptop per clock.</strong>
+        With the indirect-jump predictor and four instruction-cache ways (options of 0.19.1 and 0.19.3), 84.7% of the goal at the deciding configuration,
+        and 91.4% with the bound measured for a fetch-directed prefetcher that is not yet built.</li>
+    </ul>
+    <p class="small">Sources: <a href="{blob}cpu/7zip-benchmark-targets.md" rel="noopener">7-Zip targets</a>, <a href="{blob}cpu/raytracing-benchmark-targets.md" rel="noopener">ray-tracing targets</a>, <a href="{blob}cpu/CONTINUATION.md" rel="noopener">cpu/CONTINUATION.md</a> and the <a href="journal.html">journal</a>.</p>
+  </div>
+  <div class="atl-pause" id="paused">
+    <h3>Paused, 2026-11-22</h3>
+    <p>Work paused on 22 November 2026 after the release of 0.21.0. When it resumes, each step is its own version, in this order:</p>
+    <ol class="atl-list">
+      <li>Wider split-read answers (ready to release as the next MINOR), then 16 data tags, more L2 misses in flight and a higher prefetcher fill cap.</li>
+      <li>The front end: non-blocking instruction-line reads, then a fetch-directed prefetcher.</li>
+      <li>Out-of-order vector execution (SIMD step 2a), then the rest of the vector coverage, for the ray-tracing goal.</li>
+      <li>Privilege: machine mode in the out-of-order core, then counters, interrupts and WFI, then user and supervisor modes.</li>
+    </ol>
+    <p class="small">The full docket and the open questions are in <a href="{blob}cpu/CONTINUATION.md" rel="noopener">cpu/CONTINUATION.md</a>.</p>
+  </div>"""
 
 
 def landing_page(versions) -> str:
@@ -1848,7 +1938,12 @@ def landing_page(versions) -> str:
     <article class="atl-card">
       <p><span class="atl-tag goal">Goal</span> <span class="atl-tag sim">Simulation</span></p>
       <h3>Compression</h3>
-      <p>A scaled 7-Zip LZMA kernel. It was met in point estimate in simulation at version 0.16.0. That is not a hardware or frequency result.</p>
+      <p>The LZMA kernel of 7-Zip at full size (d22). The goal was met in simulation at version 0.18.0, in point estimate and at the low end. That is not a hardware or frequency result.</p>
+    </article>
+    <article class="atl-card">
+      <p><span class="atl-tag goal">Goal</span> <span class="atl-tag sim">Simulation</span></p>
+      <h3>Ray and path tracing</h3>
+      <p>A BVH traversal and a small path tracer. The goal is still open: in simulation the core is well below it, and the vector work it needs is still to come.</p>
     </article>
     <article class="atl-card">
       <p><span class="atl-tag goal">Goal</span> <span class="atl-tag plan">Plan</span></p>
@@ -1861,7 +1956,7 @@ def landing_page(versions) -> str:
 <section aria-labelledby="goal-h">
   <h2 id="goal-h" class="eyebrow">Design goal</h2>
   <p>The per-clock goal is referenced to an Apple M6 estimate, bridged from laptop measurements. The reference is an estimate, not a measurement of an Apple M6, and the goal is a target, not a result.</p>
-  <p class="small">Target documents: <a href="{BLOB}cpu/7zip-benchmark-targets.md" rel="noopener">cpu/7zip-benchmark-targets.md</a> and <a href="{BLOB}cpu/js-benchmark-targets.md" rel="noopener">cpu/js-benchmark-targets.md</a>.</p>
+  <p class="small">Target documents: <a href="{BLOB}cpu/7zip-benchmark-targets.md" rel="noopener">cpu/7zip-benchmark-targets.md</a>, <a href="{BLOB}cpu/raytracing-benchmark-targets.md" rel="noopener">cpu/raytracing-benchmark-targets.md</a> and <a href="{BLOB}cpu/js-benchmark-targets.md" rel="noopener">cpu/js-benchmark-targets.md</a>.</p>
 </section>
 
 <section id="status" aria-labelledby="status-h">
@@ -1872,7 +1967,8 @@ def landing_page(versions) -> str:
     <div class="atl-stat"><span class="atl-num">{ref['dmips_ref']:.2f}</span><span class="atl-lbl">Dhrystone DMIPS/MHz on the reference runtime (version {e(ref['version'])}). <span class="atl-tag sim">Simulation</span> A secondary benchmark; {e(fast_txt)}.</span></div>
     <div class="atl-stat"><span class="atl-num">{n}</span><span class="atl-lbl">Architecture versions in the gallery, each with its own drawing and a dated entry in the journal.</span></div>
   </div>
-  <p class="small">The RV64F and D options and a vector subset exist as options of the out-of-order core, off by default{fd_txt}.</p>
+  <p class="small">The RV64F and D options and a vector subset exist as options of the out-of-order core, off by default{fd_txt}. Machine-mode privilege (CSRs, traps and MRET) exists as an option of the multicycle core, off by default (0.21.0).</p>
+{status_goals_html()}
   <p class="cta"><a class="btn ghost" href="journal.html">Read the journal</a><a class="btn ghost" href="{devlog_blob}" rel="noopener">DEVLOG</a><a class="btn ghost" href="{arch_blob}" rel="noopener">Architecture</a></p>
 </section>
 
@@ -1907,7 +2003,7 @@ python -B scripts/check_repo.py</code></pre>
   <h2 id="road-h" class="eyebrow">Roadmap</h2>
   <p>Each stage has exit evidence, listed in cpu/architecture.md section 6. No dates are given.</p>
   <ul class="atl-list">
-    <li><span class="atl-tag plan">Plan</span> C1: a real execution environment (traps, interrupts, counters, user mode).</li>
+    <li><span class="atl-tag plan">Plan</span> C1: a real execution environment (traps, interrupts, counters, user mode). Begun: machine-mode CSRs and traps exist as an option of the multicycle core (0.21.0).</li>
     <li><span class="atl-tag plan">Plan</span> C2 to C4: scalar breadth, memory correctness, scalar floating point.</li>
     <li><span class="atl-tag plan">Plan</span> C5 to C6: a complete vector engine and profile closure.</li>
     <li><span class="atl-tag plan">Plan</span> C7: an FPGA proof on an exact part. No board run is claimed yet.</li>

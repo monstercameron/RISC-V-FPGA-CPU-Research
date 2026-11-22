@@ -28,3 +28,8 @@
   .atl .cta .btn { display: block; text-align: center; margin: .4rem 0; }
   .atl-stat .atl-num { font-size: 1.8rem; }
 }
+.atl-goals, .atl-pause { margin-top: 1.6rem; }
+.atl-goals h3, .atl-pause h3 { font-family: var(--serif); font-weight: 500; font-size: 1.45rem; margin: 0 0 .6rem; }
+.atl-goals .atl-list li { overflow-wrap: anywhere; }
+.atl-pause { background: var(--card); border: 1px solid var(--line); border-left: 3px solid var(--ochre); padding: 1rem 1.2rem; }
+.atl-pause .atl-list { margin: .4rem 0; }

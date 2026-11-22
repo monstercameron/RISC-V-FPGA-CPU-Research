@@ -1578,7 +1578,8 @@
     {
      "time": "00:02",
      "text": "RVV contract proposal written by the FP ISA engineer (`build/cpu/fp/RVV-CONTRACT.md`): Zve64f-level subset (integer SEW 8-64, FP32-only vector FP; FP64 vectors, widening / narrowing, fixed point, segments, vfrec7 / vfrsqrt7 out of scope), VLEN 128 / 256 (default) / 512 as a parameter (ISA option RV64_V, RTL define RV64_OOO_V); agnostic policy all-ones; vfredusum a fixed pairwise tree with inactive elements empty and vs1[0] last, vfredosum in element order; arithmetic with vstart != 0 illegal, loads / stores honour vstart, element-precise faults; fault-only-first sets vl = i; vl = min(AVL, VLMAX); elements accessed in index order, naturally aligned; trace: new record `V vv <VLEN/4 hex>` per vector register written, C records for vl / vtype after vsetvl* and vstart at traps, order W, F, C, V, R; integer and FP traces unchanged; vstart / vxsat / vxrm / vcsr read-write, vl / vtype / vlenb read-only. Golden model next. Backend's FP timing cases (24 programs) ready for the 0.17.0 package; backend works on pipelined FDIV / FSQRT parameters.",
-     "kind": ""
+     "kind": "",
+     "date": "2026-11-22"
     },
     {
      "time": "00:03",
@@ -3466,17 +3467,65 @@
      "kind": "output"
     },
     {
-     "time": "0.X.0",
-     "text": "2026-11-22|tag `cpu-v0.X.0`",
-     "kind": "M-mode privilege foundation S1 on the multicycle core (system-mode engineer; define RV64_PRIV, default off, multicycle rv64_core.sv only; new rtl/cpu/rv64_csr.sv): CSRs for rv64im_zba_zbb_zbs_zicsr_zifencei --priv m (mstatus MIE/MPIE with MPP 3, misa, mie, mtvec, mscratch, mepc, mcause, mtval, mcycle counting clocks, minstret, mcontext 13 bits, counters and trigger CSRs reading 0, mseccfg absent), traps to mtvec with mepc/mcause/mtval, MRET, WFI no-op, ECALL cause 11; trap_valid is never set with the option (a run ends through tb_core.sv +tohost); trace records E and N b00. A MINOR: contract change behind a default-off define, so the traces and clocks of every default build are unchanged (Dhrystone retirements 281,929 and clocks identical to the release at both cache sizes and stalls 0 and 7). Evidence: lockstep against Spike over 125 p-environment runs, 46,059 records equal, plus 6 mutants each rejected; rv_iss --adopt reproduces the RTL trace exactly; ISA suites and the Dhrystone lockstep unchanged. Simulation only; no hardware claim."
-    },
-    {
      "time": "11:59 to 12:22",
      "text": "**7-Zip-matched CRC benchmark integrated** (coordinator; backend package pkg/bench-crc.patch, user-approved 05:23 'Yes, match 7-Zip'). Applied to main e12768e: sim/cpu/bench/lzma_bench.c (decode in 1 MiB output steps with each step's CRC, slicing-by-12, inside the timed region, as 7-Zip's LzmaDecoder does; tables built after compression), cpu/lzma-benchmark.md and cpu/7zip-benchmark-targets.md (provisional decompress goals d22 2.47 and d12 3.96, plus a new table of the d22 deciding run). The package's 0.18.0 baseline and its pointer edits were not taken, because they predate fusion. Check: `python -B sim/cpu/suite.py release-patch fpu vector --expect sim/cpu/baselines/0.19.4-release-patch.json --jobs 2` (11:59 to 12:21) on cpu-v0.21.0: every step PASS; DIFFs only on the 7-Zip steps: image 51,768 -> 52,552 bytes; d12 64 KiB 359,284 / 129,587 -> 359,685 / 119,775 clocks (compress +0.11%, a layout effect; decompress -7.57%); 4 KiB 966,029 / 149,450 -> 969,114 / 147,148; the Spike lockstep 7-Zip steps on all three cores match Spike over 4,189,563 records. New baseline sim/cpu/baselines/0.21.0-release-patch.json (that run, LF-normalised), registered in check_repo.py; README.md, sim/cpu/README.md and the suite.py examples now point to it. Benchmark change only: no CPU version bump. Not pushed: a benchmark commit is outside the per-release push rule.",
      "kind": ""
+    },
+    {
+     "time": "14:52",
+     "text": "**Project paused at the user's request; continuation document written** (coordinator). cpu/CONTINUATION.md records the repository state (0.21.0 released and on GitHub; a718aba, 18b2158 and dc55aff committed, not pushed), the goal status (7-Zip met in simulation at 2.593 MIPS/MHz, 10,372 at 4 GHz, on 0.18.0), the work in flight (RSPW, bandwidth engineer told to finish at a clean point and record its state in bw/HANDOFF-SONNET.md), the ordered docket, how to release, the standing rules learned today and the open questions. The coordinator's release kit (release.py, record_version.py, devrow.py, relnotes.py, canon.py, assemble_wide_dl.py, canon_0195 and the rel* specs) was copied out of the scratchpad to build/cpu/ooo-debug/coord/release-kit/. Stopped: the 5-minute status cron (1ed28dd3), the half-hourly site cron (78070187) and the hourly Codex loop.",
+     "kind": ""
+    },
+    {
+     "time": "13:06 to 13:10",
+     "text": "(bandwidth engineer, RSPW; entered by the coordinator from bw/rspw-devlog.md) **Bandwidth:** **Two new directed tests** (`line_cases.py`; the two items the first Codex review left open). (1) `line_fault_lane1/2/3`: a read fault (fault_kind 2) on the beat at place pp = 1, 2, 3 of the order of a younger load's line read (critical beat 0, 1, 2), so the beat rides in lane 1, 2 or 3 of the first answer at RSPW 4 and 8, lane 1 / lane 0 of answer 2 / lane 1 of answer 2 at RSPW 2 (only lane 1 exists with DLINE 16). The faulting load must trap with cause 5 precisely and the line must not install. (2) `line_store_lane_sweep`: 28 cold lines; an older store S with data late by 0..11 dependent adds (distinct bytes, sd / sw / sb in turn) writes the beat at place pp = 1..7 of the line that a younger load started, so the store lands before, on and after the clock the lane is sampled; the beat is read back at once and again after all segments. Both are named `line_*`, so each has an expected end in `END`. First run at RSPW 4, DLINE 64, N_MISS 4: PASS, 147 programs x 3 wait patterns = 884 runs (was 138 programs / 829 runs before the rebase; main added programs).",
+     "kind": ""
+    },
+    {
+     "time": "13:10 to 13:36",
+     "text": "(bandwidth engineer, RSPW; entered by the coordinator from bw/rspw-devlog.md) **Bandwidth:** **Negative controls** (scratch copies of the tree `bw/negA`, `bw/negB`, `bw/negP`, same RTL as `wtr` except one line; test_cpu patched in the copies only to run the cases whose names start with `line_fault_lane` or `line_store_lane`). Broken variant A: the core ignores `rsp_error[rj]` for rj > 0 (`if (rsp_error[rj] && rj == 0) lb_bad[lt] = 1;`). Broken variant B: the core ignores the store-merge mask for lanes above 0 (`if (!lb_wm[lt][lk][k] || rj != 0)`). Final tests, each `--n-miss 4 --dline 64`, RSPW 2 / 4 / 8: **A fails at RSPW 2, 4 and 8 in `line_fault_lane1` stall=0 event 53** (actual: a load retires with 0; expected: the cause-5 trap at 0x3648); **B fails at RSPW 2, 4 and 8 in `line_store_lane_sweep` stall=0** (events 846 / 863 / 735: the stored bytes were overwritten by the stale lane). With the break removed the same cases pass: the 13:28 matrix below runs them in all 8 test_cpu configurations (the earlier clean-copy run, before the sweep was widened, also passed both groups). Earlier (before the sweep was widened) the full-suite run of each variant also failed, at older cases `ports_load_fault_third` (A) and `vp_store_scan_12` (B): these existing cases already see the breaks, so the new cases do not stand alone. Logs `logs3/nc-*.log`, `nc2-*.log`, `nc3-*.log`.",
+     "kind": ""
+    },
+    {
+     "time": "13:17 to 13:26",
+     "text": "(bandwidth engineer, RSPW; entered by the coordinator from bw/rspw-devlog.md) **Bandwidth:** **First matrix on rev 3 before the review fixes** (`t3.sh jt3.txt`, `test_cpu.py --core ooo --sim verilator`, each under `timeout 300`, two at a time): DLINE 64, N_MISS 4, RSPW 1 / 2 / 4 / 8 at the default and the small caches (`--icache-beats 2 --dcache-beats 16`): all PASS, 884 runs each. Default build (no flags) 411 runs at both sizes. `--n-miss 8 --dline 64 --rspw 8` PASS 884. Superseded by the 13:27 matrix below (the RTL changed after the Codex review); `m-r2l16` was killed at 13:27 (a stray overlap of my own two batches) and rerun below. Logs `logs3/m-*.log`.",
+     "kind": ""
+    },
+    {
+     "time": "13:18 to before 13:27",
+     "text": "**Bandwidth:** **Codex review of rev 3** (`codex exec -s read-only -C bw/wtr -`, prompt `bw/codex-rspw-prompt2.txt` (the diff by `git diff`, the files and the questions, not my conclusions), GPT 6.2 Astra, xhigh reasoning, 158,564 tokens; output `bw/codex-rspw-review2.txt`). Verdict: hold for two fixes (the sampling edge in the contract text; a bus-level SoC test); no counterexample in the core fill loop or the SoC wrap arithmetic for legal traffic (it enumerated 49 line-size / width / critical-beat combinations). Findings and decisions: **(1) High, contract: \"at that answer's edge\" is ambiguous** (the SoC snapshots RAM one rising edge before the core consumes the answer; the signal table still said 64 bits and the line-read paragraph `mem_len + 1` answers). **Accepted:** `architecture-rspw.md` now replaces the table row and the paragraph, uses the existing rule \"the edge that ends the clock before `rsp_valid`, before that edge's own writes\" for every lane, and says a failed lane's data is ignored and the unused lanes of a one-beat answer are 0. **(2) Medium, SoC validation: no bus-level test of the widened SoC responder (upper-lane data and error masks).** **Partly accepted:** not built. A core only sends aligned in-range lines, so the SoC's per-lane out-of-range error bits cannot be reached by it; a bus-level test needs a new testbench around the SoC with the core replaced. The upper-lane data is checked end to end (stream closed-form words at RSPW 4 and 8, test_cpu at RSPW 2/4/8 through tb_core, rt differential at RSPW 4). The text says so; a bus-level SoC test stays open for the coordinator to assign. **(3) Medium, store coverage** (full-word stores only, read once, positions 5 and 6 missing, no recorded edge). **Accepted in part:** the sweep now has sd / sw / sb with distinct bytes, positions 1..7, and a second read after the segments (13:10 row); recording the sampling edge per case was **rejected** (it needs a bench probe; the broken-variant runs show the sweep reaches the case). **(4) Medium, fault attribution** (the cases check the trap, not which lane carried the injected error; `fault5_late` counts any tag; `line_error_beats` is counted before kind 5). **Rejected as bench polish with no effect on the core's tests:** the lane-position cases cover widths 2, 4 and 8, and variant A shows the lane-1 fault is detected. **(5) Medium, legal schedules** (earliest-possible return, a gap, cross-tag overtaking are not scripted). **Accepted as wording** (the text now lists what the bench does not cover); a scripted schedule **rejected** for this step (the random delays already interleave tags at N_MISS 4 and 8). **(6) Low, the SoC accepts `mem_len` 5 at RSPW 2.** **Accepted:** `rv64_bram_soc.sv` stops with `$fatal` unless `mem_len` is 0, 1, 3 or 7 when RSPW is above 1 (legal traffic unchanged; with RSPW 1 the statement is not taken). **(7) Low, records:** `run_bench.py` now rejects `--rspw` above 1 without `--dline` above 8 before building (accepted); recording the timing pattern and the conflict-free assumption in the verification and bench JSON (rejected: the config record already has `rspw`, `dline`, and the assumption is stated in the text with each number). Default width: \"no changed edge or value for legal initialised traffic\" (source-level, as mine).",
+     "kind": ""
+    },
+    {
+     "time": "13:27 to 13:32",
+     "text": "(bandwidth engineer, RSPW; entered by the coordinator from bw/rspw-devlog.md) **Bandwidth:** **Final test matrix on rev 3** (`t3.sh jt4.txt`, same commands and limits; tree = `dc55aff` + `rspw-on-main.diff`; the first launch at 13:27 failed at once on a removed WSL Verilator link, a race with my own killed batch, and was rerun at 13:28 with no overlap). DLINE 64, N_MISS 4: RSPW 1, 2, 4, 8 at the default caches and at `--icache-beats 2 --dcache-beats 16`: **all 8 PASS, 147 programs x 3 wait patterns = 884 runs, 106 instruction names**. `--n-miss 8 --dline 64 --rspw 8` PASS 884. `--n-miss 2 --dline 16 --rspw 2` PASS 872 (145 programs). Default build with no RSPW/DLINE: PASS 411 runs (137 programs) at default and small caches. Logs `logs3/n-*.log`.",
+     "kind": ""
+    },
+    {
+     "time": "13:36 to 13:42",
+     "text": "(bandwidth engineer, RSPW; entered by the coordinator from bw/rspw-devlog.md) **Bandwidth:** **Stream bounds on main + RSPW** (`b3.sh jb3.txt`; `run_bench.py --benchmark stream --core ooo --sim verilator`, images rebuilt with Windows `python -B build_bench.py --benchmark stream --stream-levels 1` and `6` (LLVM 23.1.5, 427,520 and 427,840 bytes); deciding knobs `--ld-lat 4 --l0 16 --l2-kib 4096 --l2-lat 20 --mem-lat 350 --n-miss 4 --mem-gap 8`; varied data; each under `timeout 300`; every run PASS: stream check words equal their closed forms). Read, clocks / B per clock: **default (N_MISS 4, DLINE 8, no D1) 193,320 / 0.170** (equals the 09:36 rev-2 run on 0.19.1); DLINE 64 + N_MISS 8 + D1 (`--l2-pf 16 --l2-pf-dist 64 --l2-pf-n 64`): **RSPW 1 5,026 / 6.520**, RSPW 4 5,058 / 6.478 (DRAM-bound at MEM_GAP 8: no gain, as expected). Wide DRAM (MEM_GAP 2) with D1 and RSPW 4: **3,699 / 8.859** (rev 2 on 0.19.1: 3,702). L2-resident read (levels 6, DLINE 64, N_MISS 8, no D1): **RSPW 1 17,200 / 7.620, RSPW 4 9,581 / 13.680, RSPW 8 9,213 / 14.227**. (Rev 2 on 0.19.1 had 9,140 / 14.3 at RSPW 4 and 5,561 for DLINE 64 + D1 at RSPW 1; the rebased numbers differ because main's SoC and core moved on in 0.20.0 and 0.21.0. Measured, not scaled.) The next caps are the same as before: N_MISS 8 on the L1 side and D1's 64 prefetch fills in flight. Logs `logs3/s-*.log`, results `logs3/s-*.results.json`.",
+     "kind": ""
+    },
+    {
+     "time": "13:42 to 13:59",
+     "text": "(bandwidth engineer, RSPW; entered by the coordinator from bw/rspw-devlog.md) **Bandwidth:** **Ray tracing (the active goal), deciding config, off against D1 + DLINE 64 + N_MISS 8, RSPW 1 and 4** (`b3.sh jr3.txt`; `run_bench.py --benchmark rt --core ooo --sim verilator --fpu` on the hard-float image built by `build_bench.py --benchmark rt --isa rv64imfd_zba_zbb_zbs_zifencei` (clang 23.1.5, 145,036 bytes); deciding knobs as above). **Full mode does not fit the 300 s limit here: three attempts timed out (rc 124 at 300 s; off, DLINE 64 + D1 at RSPW 1, and at RSPW 4; the first two ran together, the third alone); no full-mode number exists.** Sampled mode (`--rt-mode sampled --jobs 2 --differential-every 2`, 6 pieces per phase; the suite's mode), clocks, one run each, all PASS (native reference equal, TinyBVH checksums equal, differential traces match rv_iss, 16 pieces): primary closest off 682,755 -> D1 + DLINE 64 + N_MISS 8 at RSPW 1 **337,993** -> RSPW 4 **333,636**; secondary closest 1,319,029 -> 727,617 -> 726,576; secondary any-hit 1,247,773 -> 700,083 -> 700,013; RT-P (smallpt) 2,290,717 -> 2,098,330 -> 2,094,787. So **RSPW 4 gives -1.3% / -0.1% / 0.0% / -0.2%** on top of the rest; the off -> on gain (about -50% on RT-T, -8% on RT-P) is the D1 / DLINE / N_MISS effect, and sampled mode starts each piece with a cold L2, so it overstates what a warm steady state gains from the prefetcher (the 04:51 full-mode rows on 0.17.4 showed -3.1 / -0.2 / -1.0 / -1.5%). Rays per kclk at RSPW 4: 3.069 / 1.409 / 1.463 and 366.6 paths/Mclk (51.8 / 65.6 / 56.5 / 67.8% of the scalar goals; the sampled mode understates RT-T by about 2x against full mode, 01:11 row). Conclusion: ray tracing is not bandwidth-bound at this config; wider answers do not help it. Logs `logs3/rt-*.log`, timeouts in `logs3/rt-full-timeouts/`.",
+     "kind": ""
+    },
+    {
+     "time": "14:02 to 14:58",
+     "text": "(bandwidth engineer, RSPW; entered by the coordinator from bw/rspw-devlog.md) **Bandwidth:** **Suite, RSPW off, bit-exact check** (`python -B sim/cpu/suite.py release-minor fpu vector soc --expect sim/cpu/baselines/0.21.0-release-patch.json --jobs 2 --who bandwidth --out-dir build/suite/rspw-off` in `bw/wtr`, Windows Python 3.12.10; 70 steps). **SUITE PASSED, 70 of 70 steps** (`logs3/suite.log`; the report marks every step `[same as baseline]` against `0.21.0-release-patch.json`, so the RSPW-off results (clocks, DMIPS/MHz 28.1007 on dhry-fast, run counts, trace identity) are bit-exact with main). The suite covers isa, fpu, vector, 2-beat and 2-line shards, lzma, Dhrystone, spike lockstep with negative mutants and soc-memory.",
+     "kind": ""
+    },
+    {
+     "time": "14:58",
+     "text": "(bandwidth engineer, RSPW; entered by the coordinator from bw/rspw-devlog.md) **Bandwidth:** **RSPW rev 3 package is ready.** `bw/rspw-on-main.diff` (7 files, 143 insertions, 20 deletions against `dc55aff`), sha256 ddec974094895a7a (first 16 hex); contract text and history row `bw/architecture-rspw.md` (version blank). RTL files after the change: `rv64_ooo.sv` sha256 abf7c890, `rv64_bram_soc.sv` sha256 63511f70 (first 8 hex digits). Not committed, not tagged. Open for the coordinator: a bus-level SoC test (Codex finding 2); a full-mode rt run needs a longer slot than 300 s or a split into pieces; the next widening steps (16 data tags, L2_MSHR) are unchanged.",
+     "kind": ""
     }
    ],
-   "commits": []
+   "commits": [],
+   "later_dates": [
+    "2026-11-22"
+   ]
   },
   {
    "date": "2026-11-20",
@@ -4236,7 +4285,8 @@
      "author": "earl cameron",
      "subject": "Add the M extension (architecture 0.4.0)"
     }
-   ]
+   ],
+   "later_dates": []
   }
  ],
  "runs": [
