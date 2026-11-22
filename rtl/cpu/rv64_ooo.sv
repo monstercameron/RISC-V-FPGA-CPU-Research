@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Original CPU foundation, wide out-of-order implementation (architecture 0.15.6).
+// Original CPU foundation, wide out-of-order implementation (architecture 0.15.7).
 // RV64IM + B execution, serialized FENCE.I, terminal EEI. Same module name and
 // contract as rv64_core.sv and rv64_pipe.sv, plus a wider retirement trace (rt_*);
 // build with one of the three files. Architecture version: cpu/VERSION,
@@ -575,7 +575,7 @@ module rv64_core #(
     reg [7:0] lp_ret [0:LP_N-1];
     reg [1:0] lp_conf [0:LP_N-1];
     // Global-history direction predictor (frontend hand-off 12), over the base prediction.
-    localparam integer TG_N = 4;           // tagged tables (0: off)
+    localparam integer TG_N = 6;           // tagged tables (0: off; 4 until hand-off 17)
     localparam integer TG_B = 10;          // index bits: 1024 entries per table
     localparam integer TG_T = 10;          // tag bits
     localparam integer GH_L = 128;         // global history (conditional-branch outcomes)
@@ -585,7 +585,7 @@ module rv64_core #(
     localparam integer TG_E = 1 << TG_B;
     localparam integer TG_NN = TG_N == 0 ? 1 : TG_N;
     function automatic integer tg_len(input integer t);
-        tg_len = t == 0 ? 5 : t == 1 ? 15 : t == 2 ? 44 : 128;
+        tg_len = t == 0 ? 4 : t == 1 ? 8 : t == 2 ? 16 : t == 3 ? 32 : t == 4 ? 64 : 128;
     endfunction
     reg [TG_T-1:0] tg_tag [0:TG_NN*TG_E-1];
     reg [2:0] tg_ctr [0:TG_NN*TG_E-1];
@@ -593,6 +593,7 @@ module rv64_core #(
     reg [TG_NN*TG_E-1:0] tg_v;
     reg [3:0] tg_alt;                      // use-alt-on-new-entry counter
     reg [17:0] tg_age;
+    integer tg_ap;                         // aging pointer over all entries
     reg [GH_L-1:0] f_gh, r_gh, cur_gh, d_redirect_gh;
     reg [GH_L-1:0] q_gh [0:Q_N-1];
     reg [GH_L-1:0] rb_gh [0:ROB_N-1];
@@ -700,7 +701,9 @@ module rv64_core #(
                 end
                 // Aging, spread out: one entry's useful bits halve every 64 trainings.
                 tg_age = tg_age + 1;
-                if (tg_age[5:0] == 0) tg_u[tg_age[17:6] % (TG_NN*TG_E)] = tg_u[tg_age[17:6] % (TG_NN*TG_E)] >> 1;
+                if (tg_age[5:0] == 0) begin
+                    tg_u[tg_ap] = tg_u[tg_ap] >> 1; tg_ap = tg_ap == TG_NN*TG_E - 1 ? 0 : tg_ap + 1;
+                end
             end
         end
     endtask
@@ -1044,7 +1047,7 @@ module rv64_core #(
             for (i = 0; i < PRF_N; i = i + 1) refcnt[i] = i < 32 ? 1 : 0;
             rb_viol = 0; mdp_wait = 0; rb_live = 0; rb_done = 0; rb_head = 0; rb_tail = 0; rb_count = 0;
             iq_valid = 0; iq_issued = 0; ex_valid = 0; mq_valid = 0; dv_busy = 0; lw_valid = 0; rb_ans = 0; l0_v = 0; l0_p = 0; ld_lat_now = LD_LAT;
-            ic_valid = 0; dc_valid = 0; btb_valid = 0; btb_ret = 0; ras_sp = 0; vp_valid = 0; lp_valid = 0; lp_dir = 0; tg_v = 0; tg_alt = 8; tg_age = 0; f_gh = 0; r_gh = 0; tq_cnt = 0; tq_h = 0;
+            ic_valid = 0; dc_valid = 0; btb_valid = 0; btb_ret = 0; ras_sp = 0; vp_valid = 0; lp_valid = 0; lp_dir = 0; tg_v = 0; tg_alt = 8; tg_age = 0; tg_ap = 0; f_gh = 0; r_gh = 0; tq_cnt = 0; tq_h = 0;
             for (i = 0; i < RAS_N; i = i + 1) ras[i] = 0;
             q_head = 0; q_tail = 0; q_count = 0;
             trap_valid <= 0; trap_pc <= 0; trap_cause <= 0; trap_tval <= 0;
