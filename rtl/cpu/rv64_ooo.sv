@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Original CPU foundation, wide out-of-order implementation (architecture 0.17.3).
+// Original CPU foundation, wide out-of-order implementation (architecture 0.17.4).
 // RV64IM + B execution (RV64F and D with define RV64_OOO_FPU, default off),
 // serialized FENCE.I, terminal EEI. Same module name and
 // contract as rv64_core.sv and rv64_pipe.sv, plus a wider retirement trace (rt_*);
@@ -525,6 +525,7 @@ module rv64_core #(
     reg [63:0] fq_val [0:FQ_N-1];
     reg [4:0] fq_fl [0:FQ_N-1];
     reg fd_pend, fdtaken;               // a divide/sqrt executing this clock, or selected this clock
+    reg [ROB_B-1:0] fd_grob;            // the divide/sqrt that last set fd_gap
     reg [68:0] fy;
     reg [2:0] frm_now;
     integer flat;
@@ -1593,6 +1594,7 @@ module rv64_core #(
             if (dv_busy && (dv_rob - rb_head) > keep_age) dv_busy = 0;
             for (k = 0; k < FQ_N; k = k + 1)
                 if (fq_valid[k] && (fq_rob[k] - rb_head) > keep_age) fq_valid[k] = 0;
+            if (fd_gap != 0 && (fd_grob - rb_head) > keep_age) fd_gap = 0;
             if (fb_lock && (fb_owner - rb_head) > keep_age) fb_lock = 0;
             if (mu_owner_v && (mu_owner - rb_head) > keep_age) mu_owner_v = 0;
             if (mu_errv && (mu_err_owner - rb_head) > keep_age) mu_errv = 0;
@@ -2112,6 +2114,7 @@ module rv64_core #(
                             if (ex_funit[p] == 2'd3) begin
                                 flat = ex_fop[p] == FOP_SQRT ? (ex_fsz[p] ? FSQRT_D : FSQRT_S) : (ex_fsz[p] ? FDIV_D : FDIV_S);
                                 fd_gap = (ex_fop[p] == FOP_SQRT ? (ex_fsz[p] ? FSQRT_II_D : FSQRT_II_S) : (ex_fsz[p] ? FDIV_II_D : FDIV_II_S)) - 1;
+                                fd_grob = x_rob;
                             end else
                                 flat = ex_funit[p] == 2'd0 ? (ex_fop[p] == FOP_MUL ? FMUL_LAT : FMA_LAT) : ex_funit[p] == 2'd1 ? FADD_LAT :
                                        (ex_fop[p] >= FOP_CVT_W && ex_fop[p] <= FOP_CVT_DS) ? FCVT_LAT : FMISC_LAT;
@@ -2167,6 +2170,8 @@ module rv64_core #(
                 end else lw_cnt[k] = lw_cnt[k] - 1;
             end
             // ---- FP pipelines and the FP divide/sqrt unit (RV64_OOO_FPU)
+            // A squashed divide/sqrt frees the unit (it no longer holds the next start).
+            if (fd_gap != 0 && (rflush || (mp_any && (fd_grob - rb_head) > o_age))) fd_gap = 0;
             if (fd_gap != 0) fd_gap = fd_gap - 1;
             for (k = 0; k < FQ_N; k = k + 1) if (fq_valid[k]) begin
                 if (rflush || (mp_any && (fq_rob[k] - rb_head) > o_age)) fq_valid[k] = 0;
