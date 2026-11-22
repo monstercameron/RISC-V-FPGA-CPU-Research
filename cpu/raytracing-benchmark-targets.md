@@ -3,8 +3,9 @@
 Set on 2026-11-21 as the project's next benchmark series, after Dhrystone and 7-Zip. It stresses
 floating-point and FMA throughput, vector execution with masks, irregular memory access (BVH traversal)
 and divergent control flow. The goal the user set is **the user's laptop + 50% performance**, expressed
-per clock, as the other benchmarks are: each metric's goal is 1.5 x the laptop's single-thread figure
-per clock. All figures on this page are native measurements of the laptop; none is a result of our core.
+per clock, as the other benchmarks are: each metric's goal was 1.5 x the laptop's single-thread figure
+per clock. **Since 2026-11-22 03:37 the goal is the Apple M6 reference, 1.44 x the laptop per clock (an
+estimate; see "Goal (Apple M6 reference)" below).** All figures on this page are native measurements of the laptop; none is a result of our core.
 
 ## Sources
 
@@ -72,6 +73,28 @@ The scalar goals (6.17 / 2.24 / 2.70 rays/kclk) and the path-tracing goal (563 p
 unchanged. TinyBVH NEON measured 7.27 / 2.65 in the same session, reproducing the table above. The
 S row was first set at 5.18 / 7.8 from 4,096-ray streams; larger streams on the laptop give 6.00
 (6.24 in a 3x3 run), so the S goal is 9.0.
+
+## Goal (Apple M6 reference, set 2026-11-22 03:37)
+
+The user decided "M6 everywhere": goals are referenced to Apple's M6 core per clock, single thread. Apple
+publishes no M6 microarchitecture or ray-tracing figures, so each goal is a **bridge, an estimate and not a
+measurement**: the laptop's per-clock figure on our identical workload (the tables above, unchanged) times the
+**Cinebench 2024 single-core per-clock ratio M6 / X925 = 1.44** (M6 221 / 4.78 GHz = 46.2 against the laptop's
+131 / 4.1 GHz = 32.0, both Notebookcheck; 1.40 if M6 ran 4.93 GHz). Source:
+`build/research/performance-targets.md` (ignored, not committed; Notebookcheck M6, RTX Spark and Dimensity analyses, fetched 2026-11-22). Cinebench 2024 is a SIMD path tracer, so it matches this workload better than Geekbench; the uncertainty
+is about +-6% (clocks) plus the workload mismatch. The new goals are about 4% **looser** than the previous 1.5x.
+
+| Metric | Laptop per clock (measured) | Bridge ratio | **M6-referenced goal** | Previous goal (laptop + 50%) |
+|---|---:|---:|---:|---:|
+| scalar P closest-hit, rays/kclk | 4.110 | 1.44 (Cinebench 2024) | **5.92** | 6.17 |
+| scalar S closest-hit | 1.493 | 1.44 | **2.15** | 2.24 |
+| scalar S any-hit | 1.802 | 1.44 | **2.59** | 2.70 |
+| SIMD P closest-hit (laptop best: 16-ray NEON packets) | 12.1 | 1.44 | **17.4** | 18.2 |
+| SIMD S closest-hit (laptop best: SVE2 ray streams) | 6.00 | 1.44 | **8.64** | 9.0 |
+| SIMD S any-hit (TinyBVH NEON) | 3.085 | 1.44 | **4.44** | 4.63 |
+| RT-P smallpt, paths/Mclk (scalar = SIMD) | 375.5 | 1.44 | **541** | 563 |
+
+The 1.5x goal figures elsewhere on this page are history. `rt_run.py` now scores against this table.
 
 ## Baseline on our cores (2026-11-22, soft float)
 

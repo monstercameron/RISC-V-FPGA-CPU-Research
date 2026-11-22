@@ -20,7 +20,7 @@ they stream from memory. Each call is bracketed by lap markers. This runner:
 3. trace-checks pieces (warm-up included) on tb_core against rv_iss, the memory wait-cycle
    settings alternating, unless --no-differential;
 4. reports per call and per kernel: clocks, instructions, IPC, weights per clock, packed bytes
-   read per clock and instructions per weight. No goal is set: the numbers are a baseline.
+   read per clock and instructions per weight. Goals (Apple M6 reference estimates, 2026-11-22) are in GOAL_*.
 Memory regimes are the SoC options of run_bench.py: flat (default), --l2-kib N with --l2-lat,
 --mem-lat, --n-miss, --mem-gap. In sampled mode every piece starts with a cold L2 (the touch pass
 is in the warm-up when the warm-up reaches back to it).
@@ -41,6 +41,18 @@ SLOTS = ('i2', 'lut5w', 'bs8', 'stream', 'streamall')
 MAGIC = 0x48434e424e524554  # "TERNBNCH"
 FULL_LIMIT_INSTRUCTIONS = 12_000_000  # default mode: full at or below this many instructions
 LABEL = 'Ternary-weight GEMV benchmark (scalar i2, lut5w, bs8 and a stream probe), simulation (rubric evidence class E1)'
+
+
+# Goals, set 2026-11-22 03:37 ("M6 everywhere"); estimates, not M6 measurements (Apple publishes no M6 data).
+# Scalar kernels: 1.30 x the laptop's weights per clock (Geekbench 6 single-core per GHz, M6 983 / X925 755;
+# build/research/performance-targets.md; no FP/integer-specific bridge exists), laptop rows of
+# cpu/ternary-benchmark-targets.md: T-small resident, T-2B4T cold (DRAM). Streaming bandwidth: Apple
+# single-core DRAM 20-32 B/clk (M4 Max ~92 GB/s forum, unverified; M1 Max 102 GB/s AnandTech), not M6.
+GOAL_WEIGHTS_PER_CLOCK = {'small': {'i2': 1.28, 'lut5w': 4.03, 'bs8': 4.04},
+                          '2b4t': {'i2': 1.25, 'lut5w': 5.88, 'bs8': 4.50}}
+GOAL_DRAM_B_PER_CLK_MIN, GOAL_DRAM_B_PER_CLK_MAX = 20.0, 32.0
+GOAL_TEXT = ('Apple M6 reference (estimate, 2026-11-22): scalar kernels 1.30 x laptop weights/clk; DRAM streaming '
+             '20-32 B/clk (M4/M1 Max figures, M6 unpublished)')
 
 
 def calls_of(build):
@@ -268,7 +280,7 @@ def run(args, root, out, build, snap, rtl, core_file, command, sha, sim, caches)
         for name, (first, last) in phases.items():
             call_clocks[name], sampling[name] = phase_estimate([p for p in plan if p['phase'] == name], last - first)
 
-    # 4. Metrics. No goal is set; every figure is a measurement on this configuration.
+    # 4. Metrics. Every figure is a measurement on this configuration; goals are estimates (see GOAL_*).
     report_calls, per_kernel = {}, {}
     for c in calls:
         first, last = phases[c['name']]
@@ -338,7 +350,9 @@ def run(args, root, out, build, snap, rtl, core_file, command, sha, sim, caches)
         'simulations': sorted(simulations, key=lambda s: s['run']),
         'host': {'platform': platform.platform(), 'machine': platform.machine(), 'python': platform.python_version()},
         'build_input_sha256': build['input_sha256'], 'build_artifact_sha256': build['artifact_sha256'],
-        'goal': 'not set (the user decides)',
+        'goal': GOAL_TEXT,
+        'goal_reference': {'scalar_weights_per_clock': GOAL_WEIGHTS_PER_CLOCK, 'bytes_per_clock_dram_min': GOAL_DRAM_B_PER_CLK_MIN,
+                           'bytes_per_clock_dram_max': GOAL_DRAM_B_PER_CLK_MAX},
         'limitations': [
             'Synthetic ternary weights (kernel speed does not depend on the values); no model is run.',
             'Each call is preceded by an untimed touch of its weights: with an L2 that holds them they are '

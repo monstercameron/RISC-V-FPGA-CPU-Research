@@ -1,7 +1,7 @@
 # Ternary-weight GEMV benchmark: workloads, laptop reference and baseline
 
 `run_bench.py --benchmark ternary` runs BitNet b1.58-style ternary-weight matrix-vector kernels on the
-RTL (bench-only change, no CPU version). **Goal: not set (user to decide).** Every number below is a
+RTL (bench-only change, no CPU version). **Goal: the Apple M6 reference, set 2026-11-22 03:37 (estimates; see "Goal (Apple M6 reference)").** Every baseline number below is a
 measurement; the measured baseline is on 0.17.2 (out-of-order core) at the commit named in DEVLOG.
 
 ## Sources and licences
@@ -93,6 +93,34 @@ kernels equals the reference (0 mismatches). Raw: `ternary-laptop/laptop.json`.
 | | bs8 | 3.46 [2.31-3.83] | 0.865 | 1.66 |
 | | ndot (SDOT) | 15.8 [10.5-18.2] | 3.96 | 0.26 |
 | | stream probe | - | 7.10 [6.25-9.08] | - |
+
+## Goal (Apple M6 reference, set 2026-11-22 03:37)
+
+The user decided "M6 everywhere": goals are referenced to Apple's M6 core per clock, single thread. Apple
+publishes no M6 microarchitecture, so every goal here is a **bridge or a different-chip figure, an estimate and
+not a measurement**. Source: `build/research/performance-targets.md` (ignored, not committed; Notebookcheck M6 and RTX Spark analyses, fetched 2026-11-22).
+
+**Scalar kernels: 1.30 x the laptop's weights per clock** (laptop table above, unchanged), the Geekbench 6
+single-core per-clock ratio M6 / X925 (983 / 755; Notebookcheck). The report has no integer-kernel-specific
+bridge; uncertainty about +-6% plus workload mismatch. `ternary_run.py` records these as `goal_reference`.
+T-small is compared with the resident row, T-2B4T with the cold (DRAM) row, the regime our sampled run sees.
+
+| Shape / mode | Kernel | Laptop weights/clk (measured) | Bridge ratio | **M6-referenced goal, weights/clk** | Previous goal |
+|---|---|---:|---:|---:|---|
+| T-small resident | i2 | 0.988 | 1.30 | **1.28** | none |
+| T-small resident | lut5w | 3.1 | 1.30 | **4.03** | none |
+| T-small resident | bs8 | 3.11 | 1.30 | **4.04** | none |
+| T-2B4T cold (DRAM) | i2 | 0.959 | 1.30 | **1.25** | none |
+| T-2B4T cold (DRAM) | lut5w | 4.52 | 1.30 | **5.88** | none |
+| T-2B4T cold (DRAM) | bs8 | 3.46 | 1.30 | **4.5** | none |
+
+**Decode / streaming bandwidth goal: 20-32 bytes per clock from DRAM, single core.** Source: the report's row 12,
+Apple M1 Max about 102 GB/s from one thread (AnandTech 2021, via search; about 32 B/clk) and M4 Max about
+92 GB/s (a forum figure, unverified; about 20 B/clk). Both are older chips and the clock divisor is an
+assumption, so the confidence is medium-low and **M6 is unpublished**. The laptop's cold stream probe measured
+7.10 B/clk (resident 18.5). Our deciding configuration (`N_MISS` 4) measures **0.17 B/clk**, about 0.5-0.9% of
+the goal and 2.4% of the laptop; `N_MISS` 8 measures 0.54. At 350 clocks of latency the goal needs about 11 KiB
+(about 175 lines) in flight (Little's law, the report's arithmetic), so it is a memory-level-parallelism target.
 
 ## Baseline on 0.17.2 (out-of-order core, rv64imb, 64 KiB L1s, N_MISS as stated, one build)
 

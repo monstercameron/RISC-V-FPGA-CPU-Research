@@ -23,7 +23,7 @@ smallpt image, and marks the four phases (include-rt/rt_bench.h). This runner:
    the memory wait-cycle settings alternating, unless --no-differential;
 4. reports clocks per ray and per path, rays per 1,000 clocks and paths per
    million clocks, and sets them against the laptop reference and its goal
-   (cpu/raytracing-benchmark-targets.md, 1.5 x the laptop per clock).
+   (cpu/raytracing-benchmark-targets.md, Apple M6 reference: 1.44 x the laptop per clock, an estimate).
 
 The goal is defined on the full workload (4,096 triangles, 65,536 rays per set,
 128 x 96 at 16 spp); a scaled build has a smaller tree (fewer node visits per
@@ -48,17 +48,21 @@ LABEL = ('Ray-tracing benchmark (RT-T TinyBVH-derived traversal, RT-P smallpt), 
          'class E1)')
 # Laptop reference and goal, per clock (cpu/raytracing-benchmark-targets.md, 2026-11-21): rays per 1,000
 # clocks or paths per million clocks, scalar build and best SIMD build; laptop work per ray and per path.
-# The P and S closest-hit SIMD goals were raised on 2026-11-22 to 1.5x the laptop's best kernels (16-ray
-# NEON packets 12.1, SVE2 ray streams 6.00 rays/kclk); any-hit keeps the TinyBVH NEON figure.
+# Goals since 2026-11-22 03:37 (user: "M6 everywhere"): 1.44 x the laptop per clock, the Cinebench 2024
+# single-core per-clock ratio Apple M6 / Cortex-X925 (221 / 4.78 GHz vs 131 / 4.1 GHz, Notebookcheck;
+# build/research/performance-targets.md). An ESTIMATE bridged from the laptop, not an M6 measurement (Apple
+# publishes no M6 microarchitecture); about +-6% from the two clocks plus workload mismatch. Previous goals
+# were 1.5 x the laptop (6.17 / 2.24 / 2.70 / 563 scalar; SIMD 18.2 / 9.0 / 4.63). SIMD laptop figures are
+# the laptop's best kernels (16-ray NEON packets 12.1, SVE2 ray streams 6.00 rays/kclk).
 TARGETS = {
     'rtt_primary_closest': {'unit': 'rays/kclk', 'laptop_scalar': 4.110, 'laptop_simd': 12.1,
-                            'goal_scalar': 6.17, 'goal_simd': 18.2, 'laptop_node_visits_per_ray': 11.5734},
+                            'goal_scalar': 5.92, 'goal_simd': 17.4, 'laptop_node_visits_per_ray': 11.5734},
     'rtt_secondary_closest': {'unit': 'rays/kclk', 'laptop_scalar': 1.493, 'laptop_simd': 6.00,
-                              'goal_scalar': 2.24, 'goal_simd': 9.0, 'laptop_node_visits_per_ray': 16.2159},
+                              'goal_scalar': 2.15, 'goal_simd': 8.64, 'laptop_node_visits_per_ray': 16.2159},
     'rtt_secondary_anyhit': {'unit': 'rays/kclk', 'laptop_scalar': 1.802, 'laptop_simd': 3.085,
-                             'goal_scalar': 2.70, 'goal_simd': 4.63},
+                             'goal_scalar': 2.59, 'goal_simd': 4.44},
     'rtp_smallpt': {'unit': 'paths/Mclk', 'laptop_scalar': 375.5, 'laptop_simd': 375.8,
-                    'goal_scalar': 563.0, 'goal_simd': 563.0, 'laptop_segments_per_path': 9.4614},
+                    'goal_scalar': 541.0, 'goal_simd': 541.0, 'laptop_segments_per_path': 9.4614},
 }
 MAILBOX_NAMES = {2: 'magic', 3: 'tris|nodes<<32', 4: 'rays', 5: 'P hits', 6: 'P prim sum', 7: 'P hash',
                  8: 'P distance sum', 9: 'S hits', 10: 'S prim sum', 11: 'S hash', 12: 'S distance sum',

@@ -1,9 +1,9 @@
 # mm benchmark (matrix multiplication and LLM-style kernels): laptop reference and baseline
 
 Built on 2026-11-22 from the research report `build/research/riscv-matrix.md` (ignored, not
-committed), section 4. **Goal: not set (user to decide).** This page records the workload, the checks, a
+committed), section 4. **Goal: the Apple M6 reference, set 2026-11-22 03:37 (an estimate; see "Goal (Apple M6 reference)").** This page records the workload, the checks, a
 laptop reference measured the way the other targets pages measure theirs, and the baseline of our
-core. It sets no target; when the user sets one, it goes here.
+core. The goal section below holds the target the user set.
 
 Everything here is simulation (rubric evidence class E1) or a native laptop measurement. Nothing is a
 hardware result of our core, and no clock frequency is claimed.
@@ -127,6 +127,34 @@ square, BF16 not Q4_0, no V1b). Medians [min-max], MAC/clk:
 
 SVE on this laptop is 128 bits wide (the same as NEON) and there is no SME, so no SVE or SME kernel
 was measured. There is no Q4_0 SIMD kernel yet.
+
+## Goal (Apple M6 reference, set 2026-11-22 03:37)
+
+The user decided "M6 everywhere": goals are referenced to Apple's M6 core per clock, single thread. Apple
+publishes no M6 microarchitecture or matrix figures, so each goal is a **bridge or a different-chip figure, an
+estimate and not a measurement**. Source: `build/research/performance-targets.md` (ignored, not committed; Notebookcheck M6 and RTX Spark analyses, fetched 2026-11-22).
+
+**Scalar kernels: 1.30 x the laptop's MAC/clk** (the table above, unchanged), the Geekbench 6 single-core
+per-clock ratio M6 / X925 (983 / 755; M6 4,698 at 4.78 GHz, laptop 3,096 at 4.1 GHz, Notebookcheck). The report
+has no FP-specific Apple bridge (SPECfp per clock has no newer-than-M2 figure), so the FP kernels use the same
+ratio; Geekbench 6 uses SME in some subtests, so 1.30 may overstate scalar code. Uncertainty about +-6% plus
+workload mismatch. `mm_run.py` scores against these.
+
+| Kernel (small profile) | Laptop MAC/clk (measured) | Bridge ratio | **M6-referenced goal, MAC/clk** | Previous goal |
+|---|---:|---:|---:|---|
+| G1 64^3 int8 | 0.636 | 1.30 | **0.83** | none |
+| G2 64^3 BF16 | 0.499 | 1.30 | **0.65** | none |
+| G3 64^3 FP32 | 0.898 | 1.30 | **1.17** | none |
+| V1 256x2048 int8 | 0.870 | 1.30 | **1.13** | none |
+| V3 128x2048 Q4_0 | 0.753 | 1.30 | **0.98** | none |
+| V4 256x1024 FP32 | 0.519 | 1.30 | **0.67** | none |
+| V1b 4096x2048 int8 | 0.881 | 1.30 | **1.15** | none |
+
+**SIMD and matrix peak goals (label: M4 figure; M6 unpublished):** Apple M4 SME, one P-core, **512 int8 and
+256 FP32 MAC/clk** (tzakharko m4-sme-exploration, arXiv 2409.18779, via the report), against the laptop's best
+measured 102.6 int8 (SMMLA) and 19.65 FP32 (FMLA) MAC/clk on this page. These are peak targets for a future
+vector or matrix unit, not scored by the scalar runner; BF16 has no Apple figure in the report, and the BF16 and
+Q4_0 SIMD goals are therefore unset. The unit is shared per cluster on Apple chips, so this is a ceiling.
 
 ## Baseline on our core (2026-11-22, architecture 0.17.2)
 

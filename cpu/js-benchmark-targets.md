@@ -1,8 +1,8 @@
 # JavaScript benchmark: laptop reference, goal and baseline
 
 Set on 2026-11-22 as the project's next benchmark series, after Dhrystone, 7-Zip and ray tracing:
-JavaScript and web-page code are now a first-class target. The goal the user set is **the user's laptop
-+ 50% per clock**, the rule used for the 7-Zip and ray-tracing goals: for every kernel, and for the suite
+JavaScript and web-page code are now a first-class target. The goal the user first set was **the user's laptop
++ 50% per clock** (since 2026-11-22 03:37 it is the Apple M6 reference, 1.30x the laptop; see "Goal (Apple M6 reference)"), the rule used for the 7-Zip and ray-tracing goals: for every kernel, and for the suite
 as a geometric mean, our core must do the same work in at most 1/1.5 of the laptop's clocks. The
 research behind this page (engines, weaknesses, plan) is `build/research/js-engines.md` (ignored, not
 committed).
@@ -95,6 +95,34 @@ The laptop runs its interpreter at an IPC of 4.3-5.8.
 
 Node and Bun are not installed in WSL (`which node bun nodejs` found nothing on 2026-11-22), so there
 is no JIT context row; installing them needs the user's approval. They would not be the same algorithm.
+
+## Goal (Apple M6 reference, set 2026-11-22 03:37)
+
+The user decided "M6 everywhere": goals are referenced to Apple's M6 core per clock, single thread. Apple
+publishes no M6 microarchitecture or JavaScript figures (no Speedometer or JetStream per-clock figure exists for
+the X925), so the goal is a **bridge, an estimate and not a measurement**: the laptop's measured cycles above
+divided by the **Geekbench 6 single-core per-clock ratio M6 / X925 = 1.30** (M6 4,698 / 4.78 GHz = 983 against
+the laptop's 3,096 / 4.1 GHz = 755, both Notebookcheck; 1.26 at 4.93 GHz). Source:
+`build/research/performance-targets.md` (ignored, not committed; Notebookcheck M6, RTX Spark and Dimensity analyses, fetched 2026-11-22). Geekbench 6 contains browser-style tests but also SME-assisted ones the X925 cannot run, so this ratio
+may overstate an interpreter workload; uncertainty about +-6% plus workload mismatch. The goal is **15% looser**
+than the previous 1.5x (suite 32.38M clocks against 28.06M). The same factor applies to every kernel and to the
+geometric mean (goal geomean 1.30x the laptop per clock, previously 1.5x). "IPC at goal" uses the hard-float
+RV / AArch64 instruction ratios in the table below; it is 7.0-9.3 against 8.0-10.8 before.
+
+| Kernel | Laptop cycles (median) | Bridge ratio | **Goal: our clocks at most** | IPC needed, hard float | Previous goal (laptop / 1.5) |
+|---|---:|---:|---:|---:|---:|
+| props | 4,224,946 | 1.30 | **3,249,958** | 8.59 | 2,816,631 |
+| sched | 4,902,544 | 1.30 | **3,771,188** | 7.16 | 3,268,363 |
+| navier | 3,869,884 | 1.30 | **2,976,834** | 8.97 | 2,579,923 |
+| sha256 | 4,574,128 | 1.30 | **3,518,560** | 8.45 | 3,049,419 |
+| json | 4,594,272 | 1.30 | **3,534,055** | 9.15 | 3,062,848 |
+| regex | 3,879,336 | 1.30 | **2,984,105** | 9.03 | 2,586,224 |
+| strings | 6,366,042 | 1.30 | **4,896,955** | 9.34 | 4,244,028 |
+| dom | 6,141,912 | 1.30 | **4,724,548** | 6.97 | 4,094,608 |
+| funcs | 3,544,158 | 1.30 | **2,726,275** | 8.05 | 2,362,772 |
+| sum | 42,097,222 | 1.30 | **32,382,478** | | 28,064,815 |
+
+The 1.5x text and the "IPC needed" rows below are history; `js_run.py` scores against 1.30.
 
 ## The goal
 

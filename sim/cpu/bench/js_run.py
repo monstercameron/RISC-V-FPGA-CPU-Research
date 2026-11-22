@@ -22,7 +22,7 @@ markers are 0x10+k (warm call), 0x20+k (timed call) and 0x30+k (end). This runne
 3. trace-checks timed pieces (warm-up included) on tb_core against rv_iss, the memory
    wait-cycle settings alternating, unless --no-differential;
 4. reports, per kernel and in total, clocks, instructions, IPC and the fraction of the goal:
-   1.5 x the laptop's per-clock rate (cpu/js-benchmark-targets.md). The total is the geometric
+   1.30 x the laptop's per-clock rate, the Apple M6 reference (cpu/js-benchmark-targets.md). The total is the geometric
    mean over the kernels of laptop cycles / our clocks.
 SPDX-License-Identifier: MIT
 """
@@ -41,7 +41,10 @@ from rt_run import plan_pieces
 
 KERNELS = ('props', 'sched', 'navier', 'sha256', 'json', 'regex', 'strings', 'dom', 'funcs')
 MAGIC = 0x48434e45424a5351  # "QJSBENCH"
-GOAL_FACTOR = 1.5
+# Apple M6 reference, set 2026-11-22 03:37 ("M6 everywhere"): 1.30 = Geekbench 6 single-core per GHz, M6 983 /
+# Cortex-X925 755 (Notebookcheck; build/research/performance-targets.md). An estimate bridged from the laptop, not
+# an M6 measurement. Previously 1.5 (laptop + 50%).
+GOAL_FACTOR = 1.30
 # Sampling defaults for the out-of-order core: 2 M-instruction warm-up, 250 K-instruction pieces,
 # 4 pieces per kernel (js-benchmark-targets.md, "Sampling", for the warm-up study behind them).
 SAMPLE_PIECE, SAMPLE_WARMUP, SAMPLE_PER_KERNEL = 250_000, 2_000_000, 4
@@ -423,6 +426,6 @@ def run(args, root, out, build, snap, rtl, core_file, command, sha, sim, caches)
     t = total
     print(f'total: {t["clocks"]:,} clocks, {t["retired_instructions"]:,} instructions, IPC {t["ipc"]:.3f}' +
           (f'; geomean {t["geomean_speed_vs_laptop_per_clock"]:.3f}x laptop per clock, '
-           f'{100 * t["fraction_of_goal"]:.1f}% of the goal (1.5x)' if 'fraction_of_goal' in t else ''))
+           f'{100 * t["fraction_of_goal"]:.1f}% of the goal ({GOAL_FACTOR}x)' if 'fraction_of_goal' in t else ''))
     print(f'({report["label"]})')
     print(f'Results: {(out / name).relative_to(root).as_posix()}')

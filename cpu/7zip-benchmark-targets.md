@@ -59,6 +59,35 @@ after calibrating the same scaled kernel on a real CPU, and compression results 
 on memory latency, which our model idealizes (1-clock SRAM, 4 KiB caches). Quote our numbers as
 simulation of a scaled kernel, with those caveats.
 
+## Goal (Apple M6 reference, set 2026-11-22 03:37)
+
+The user decided "M6 everywhere": every goal is referenced to Apple's M6 core per clock, single thread. Apple
+publishes no M6 microarchitecture, SPEC or 7-Zip figures, so each M6 goal here is a **bridge, an estimate and not
+a measurement**: the laptop's measured per-clock figure on our identical workload times a published M6 / X925
+per-clock ratio on the closest public benchmark. Source: `build/research/performance-targets.md` (ignored, not committed; Notebookcheck M6, RTX Spark and Dimensity analyses, fetched 2026-11-22).
+
+**Bridge (a), the goal:** Geekbench 6.7 single-core per GHz, M6 4,698 / 4.78 GHz = 983 against the laptop's
+Cortex-X925 3,096 / 4.1 GHz = 755 (both Notebookcheck), ratio **1.30** (1.26 if M6 ran 4.93 GHz). Uncertainty about
++-6% from the two clocks, plus the workload mismatch (Geekbench uses SME in some subtests, which the X925 lacks,
+so 1.30 may overstate a scalar workload such as LZMA).
+
+| Metric | Laptop per clock (measured) | Bridge ratio | **M6-referenced goal** | Previous goal (10,000 MIPS at 4 GHz) |
+|---|---:|---:|---:|---:|
+| `7z b -md22` compress, MIPS/MHz | 1.91 | 1.30 (GB6/GHz) | **2.48** (9,920 MIPS at 4 GHz) | 2.50 |
+| `7z b -md22` decompress, MIPS/MHz | 1.93 | 1.30 | **2.51** (10,040 MIPS at 4 GHz) | 2.50 |
+| d22 kernel compress, MIPS/MHz | 1.55 | 1.30 | **2.02** | 2.03 |
+| d22 kernel decompress, MIPS/MHz | 1.68 | 1.30 | **2.18** | 2.18 |
+
+**The headline does not change materially.** The M6 bridge gives 9,920 / 10,040 MIPS at 4 GHz, within 1% of the
+10,000 MIPS goal; the d22 kernel goals move by under 1% (2.03 to 2.02 compress, 2.18 to 2.18 decompress). The
+0.16.0 deciding-configuration run (2.187 / 2.322) is 108% / 107% of the new goal.
+
+**Sensitivity row, not the goal (low confidence): bridge (b).** Apple M1's 7-cpu.com 7-Zip 16.04 ratings
+(2.22 / 2.52 per MHz) scaled by the Geekbench 6 per-clock gain M1 to M6 (about 731 to 983 per GHz, M1 figure
+recalled) give 1.56 / 1.76 over the laptop: **2.99 / 3.39** MIPS/MHz on `7z b`, **2.43 / 2.96** on the d22 kernel.
+It mixes 7-Zip versions (16.04 against the laptop's 26.06) and two chips' clocks, so it is not used; at that
+level 0.16.0 would be 90% / 78%.
+
 ## Optimization target: 10,000 MIPS (set 2026-11-21)
 
 The user set the core's optimization target to a **10,000 MIPS** single-thread 7-Zip rating (`7z b -mmt1`,

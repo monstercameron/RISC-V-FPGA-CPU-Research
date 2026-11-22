@@ -19,7 +19,7 @@ than the 4 MiB L2. This runner:
             full run is preferred wherever one fits; the 8 MiB V1b is sampled-only;
 3. trace-checks every timed piece on tb_core against rv_iss unless --no-differential;
 4. reports per kernel clocks, instructions, IPC, MACs per clock and, for the GEMVs, weight bytes per
-   clock, against the laptop reference (cpu/mm-benchmark-targets.md). No goal is set.
+   clock, against the laptop reference and the Apple M6-referenced goal (cpu/mm-benchmark-targets.md).
 
 The RAM holds the generated inputs (mm_data.S, .incbin), so the simulator spends no instructions
 making them. Hard float needs --core ooo --fpu; the soft-float build (rv64imb) runs on every core.
@@ -40,8 +40,14 @@ FULL_LIMIT = 15_000_000
 LABEL = 'mm benchmark (matrix multiplication and LLM-style kernels, scalar C), simulation (rubric evidence class E1)'
 COLS = {'G1': 64, 'G2': 64, 'G3': 64, 'V1': 2048, 'V3': 2048, 'V4': 1024, 'V1b': 2048}
 # Laptop reference per clock (cpu/mm-benchmark-targets.md): MACs per clock of the same scalar C, clang 18 -O2
-# without the auto-vectoriser, one Cortex-X925 core. No goal is set (the user decides goals).
-LAPTOP = {}
+# without the auto-vectoriser, one Cortex-X925 core (small profile, 2026-11-22 03:04; V1b from the full profile).
+LAPTOP = {'G1': 0.636, 'G2': 0.499, 'G3': 0.898, 'V1': 0.870, 'V3': 0.753, 'V4': 0.519, 'V1b': 0.881}
+# Goal, set 2026-11-22 03:37 ("M6 everywhere"): 1.30 x the laptop per clock = Geekbench 6 single-core per GHz,
+# Apple M6 983 / Cortex-X925 755 (build/research/performance-targets.md). An ESTIMATE bridged from the laptop,
+# not an M6 measurement; the report has no FP-specific Apple bridge, so the FP kernels use it too. Previously
+# no goal. SIMD and matrix peak goals (M4 SME 512 int8 / 256 FP32 MAC/clk; M6 unpublished) are not scored here:
+# this runner times scalar C only.
+GOAL_FACTOR = 1.30
 
 
 def kernel_id(name):
@@ -279,6 +285,8 @@ def run(args, root, out, build, snap, rtl, core_file, command, sha, sim, caches)
         if k in LAPTOP:
             entry['laptop_scalar_macs_per_clock'] = LAPTOP[k]
             entry['fraction_of_laptop_scalar'] = entry['macs_per_clock'] / LAPTOP[k]
+            entry['goal_macs_per_clock'] = LAPTOP[k] * GOAL_FACTOR
+            entry['fraction_of_goal'] = entry['macs_per_clock'] / entry['goal_macs_per_clock']
         if k in sampling:
             entry['sampling'] = sampling[k]
         report_phases[k] = entry
@@ -287,7 +295,7 @@ def run(args, root, out, build, snap, rtl, core_file, command, sha, sim, caches)
         'benchmark': 'mm: matrix multiplication and LLM-style kernels (G1-G3 GEMM, V1/V3/V4/V1b GEMV), scalar C',
         'label': LABEL + ('; soft-float baseline: the core has no F, D or V' if mm['soft_float'] else ''),
         'timestamp_utc': datetime.now(timezone.utc).isoformat(),
-        'goal': 'not set (user to decide)',
+        'goal': f'Apple M6 reference (estimate): {GOAL_FACTOR} x the laptop MAC/clk per scalar kernel (Geekbench 6 bridge, set 2026-11-22)',
         'scope': {
             'architecture_version': (snap / 'cpu/VERSION').read_text(encoding='ascii').strip(),
             'isa': build['isa'], 'abi': build['abi'], 'float': 'soft (compiler-rt addsf3/mulsf3)' if mm['soft_float'] else 'F/D',
@@ -348,6 +356,8 @@ def run(args, root, out, build, snap, rtl, core_file, command, sha, sim, caches)
             extra = f' [sampled {s["pieces_timed"]} pieces, {100 * s["fraction_timed"]:.2f}%, 95% CI +-{100 * s["ci95_relative"]:.1f}%]'
         bw = f', {ph["weight_bytes_per_clock"]:.3f} B/clk' if 'weight_bytes_per_clock' in ph else ''
         print(f'{k} ({ph["shape"]}): {ph["clocks"]:,} clocks, {ph["retired_instructions"]:,} instr, IPC {ph["ipc"]:.3f}, '
-              f'{ph["macs_per_clock"]:.4f} MAC/clk{bw}{extra}')
-    print(f'({report["label"]}; goal: not set)')
+              f'{ph["macs_per_clock"]:.4f} MAC/clk{bw}'
+              + (f', {100 * ph["fraction_of_goal"]:.1f}% of goal {ph["goal_macs_per_clock"]:.3f}' if 'fraction_of_goal' in ph else '')
+              + extra)
+    print(f'({report["label"]}; goal: {GOAL_FACTOR}x laptop, Apple M6 estimate)')
     print(f'Results: {(out / f"results-{args.core}.json").relative_to(root).as_posix()}')
