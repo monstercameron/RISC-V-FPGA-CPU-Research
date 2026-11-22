@@ -124,6 +124,42 @@ def ret_displacement_program():
     return p
 
 
+# Frontend hand-off 11 (fetch in the branch-recovery clock): programs that mispredict often.
+def rc_fetch_cases(i_type, r_type, store, branch, jal, MASK):
+    slli = lambda rd, rs, sh: i_type(0x13, rd, 1, rs, sh)
+    srli = lambda rd, rs, sh: i_type(0x13, rd, 5, rs, sh)
+    xor = lambda rd, a, b: r_type(0x33, rd, 4, a, b)
+    div = lambda rd, a, b: r_type(0x33, rd, 4, a, b, 1)
+    xs = [slli(13, 11, 13), xor(11, 11, 13), srli(13, 11, 7), xor(11, 11, 13), slli(13, 11, 17), xor(11, 11, 13)]
+    # The mispredicted branch's taken target beat starts with a call (pushes the return stack
+    # in the recovery clock) whose callee returns; the not-taken side is ordinary code.
+    p = [i_type(0x13, 10, 0, 0, 30), i_type(0x13, 11, 0, 0, 0x2b7), i_type(0x13, 12, 0, 0, 1)]   # 0..8
+    p += xs                                                                     # 12..32: xorshift
+    p += [div(6, 11, 12), i_type(0x13, 6, 7, 6, 1),                             # 36: x6 = x11 & 1 (late)
+          branch(1, 6, 0, 16),                                                  # 44: bne x6, x0 -> 60
+          i_type(0x13, 20, 0, 20, 1), jal(0, 16), 0x00000013,                   # 48: x20 += 1; 52: j 68; 56
+          jal(1, 32), i_type(0x13, 21, 0, 21, 1),                               # 60: call g (92); 64: x21 += 1
+          i_type(0x13, 10, 0, 10, -1), branch(1, 10, 0, -60),                   # 68: x10 -= 1; 72: bne -> 12
+          0x100073, jal(0, 0), 0x00000013, 0x00000013,                          # 76: ebreak; 80: j .; 84, 88
+          i_type(0x13, 22, 0, 22, 3), i_type(0x67, 0, 0, 1, 0)]                 # 92: g: x22 += 3; 96: ret
+    assert 4 * p.index(jal(1, 32)) == 60 and len(p) == 25
+    yield 'rc_fetch_call_target', p, 0, MASK
+    # The mispredicted branch's target is the second word of a beat, which holds a taken
+    # backward branch: the recovery-clock fetch takes one instruction and must stop at the beat
+    # boundary; the target of that branch is fetched the next clock.
+    p = [i_type(0x13, 10, 0, 0, 30), i_type(0x13, 11, 0, 0, 0x1d3), i_type(0x13, 12, 0, 0, 1)]   # 0..8
+    p += xs                                                                     # 12..32
+    p += [div(6, 11, 12), i_type(0x13, 6, 7, 6, 2),                             # 36: x6 = x11 & 2 (late)
+          branch(0, 6, 0, 24),                                                  # 44: beq x6, x0 -> 68
+          i_type(0x13, 20, 0, 20, 1), i_type(0x13, 20, 0, 20, 1),               # 48, 52
+          i_type(0x13, 20, 0, 20, 1), i_type(0x13, 20, 0, 20, 1),               # 56, 60
+          0x00000013,                                                           # 64
+          i_type(0x13, 10, 0, 10, -1),                                          # 68: x10 -= 1 (odd word)
+          branch(1, 10, 0, -60),                                                # 72: bne -> 12
+          0x100073, jal(0, 0)]                                                  # 76: ebreak; 80: j .
+    yield 'rc_fetch_odd_word_target', p, 0, MASK
+
+
 def cases():
     p = prefix()
     for op in (0x33, 0x3b):
@@ -764,6 +800,7 @@ def cases():
     p = ras_wrong_path_call_program()
     yield 'ras_wrong_path_call', p, 0, MASK
     yield 'ret_displacement', ret_displacement_program(), 0, MASK
+    yield from rc_fetch_cases(i_type, r_type, store, branch, jal, MASK)
 
 def command(args, timeout=60):
     result = subprocess.run([str(x) for x in args], capture_output=True, text=True, timeout=timeout)

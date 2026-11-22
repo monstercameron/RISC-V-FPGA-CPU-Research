@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Original CPU foundation, wide out-of-order implementation (architecture 0.14.12).
+// Original CPU foundation, wide out-of-order implementation (architecture 0.14.13).
 // RV64IM + B execution, serialized FENCE.I, terminal EEI. Same module name and
 // contract as rv64_core.sv and rv64_pipe.sv, plus a wider retirement trace (rt_*);
 // build with one of the three files. Architecture version: cpu/VERSION,
@@ -132,6 +132,9 @@ module rv64_core #(
     localparam integer LP_N = 1 << LP_BITS;
     localparam integer LP_TAG = 10;
     localparam integer TAKEN_MAX = 4;    // predicted-taken transfers followed per fetch group (2 from 0.10.1)
+    // Fetch in a branch-recovery clock (frontend 11): 0 none (before), 1 the redirect target's
+    // beat (default), 2 a whole fetch group (a zero-clock redirect: an idealization for studies).
+    localparam integer RC_FETCH = 1;
     localparam integer CR_MAX = 4;       // calls and returns per fetch group (1 until 0.12.0)
     localparam [1:0] C_ALU = 0, C_FULL = 1, C_LD = 2, C_ST = 3;
     integer i, j, k, s, p;
@@ -1483,7 +1486,7 @@ module rv64_core #(
 
             // ---- fetch: up to FW instructions from the cache, following up to TAKEN_MAX
             // predicted-taken transfers (since 0.10.1) and at most one call or return
-            if (!rflush && !mp_any && !d_redirect && !f_hold) begin
+            if (!rflush && (RC_FETCH != 0 || !mp_any) && !d_redirect && !f_hold) begin
                 g_n = 0; g_next = f_pc; stop = 0; g_cr = 0;
                 g_taken = 0; cur_sp = ras_sp;
                 for (k = 0; k < RAS_N; k = k + 1) gras[k] = ras[k];
@@ -1501,7 +1504,7 @@ module rv64_core #(
                     isctl = op == 7'h6f || (op == 7'h67 && wi[14:12] == 0);
                     ok = isctl && (wi[11:7] == 1 || wi[11:7] == 5);                     // a call
                     hit = op == 7'h67 && wi[14:12] == 0 && wi[11:7] == 0 && (wi[19:15] == 1 || wi[19:15] == 5);  // a return
-                    if (!(ic_valid[fi] && ic_tag[fi] == npc[63 -: IC_TAG])) stop = 1;
+                    if (!(ic_valid[fi] && ic_tag[fi] == npc[63 -: IC_TAG]) || (RC_FETCH == 1 && mp_any && npc[63:3] != f_pc[63:3])) stop = 1;
                     else if ((ok || hit) && g_cr >= CR_MAX) stop = 1;     // CR_MAX calls or returns per group
                     else begin
                         bi = npc[2 +: BTB_BITS];
