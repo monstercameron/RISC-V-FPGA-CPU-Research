@@ -33,6 +33,8 @@ SPDX-License-Identifier: MIT
 """
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timezone
+import os
+from pathlib import Path
 import json
 import platform
 import re
@@ -420,4 +422,4 @@ def run(args, root, out, build, snap, rtl, core_file, command, sha, sim, caches)
               f'(goal {t["goal_scalar"]} scalar / {t["goal_simd"]} SIMD: {100 * t["fraction_of_goal_scalar"]:.2f}% / '
               f'{100 * t["fraction_of_goal_simd"]:.2f}%){extra}')
     print(f'({report["label"]})')
-    print(f'Results: {(out / f"results-{args.core}.json").relative_to(root).as_posix()}')
+    print(f'Results: {Path(os.path.relpath(out / f"results-{args.core}.json", root)).as_posix()}')

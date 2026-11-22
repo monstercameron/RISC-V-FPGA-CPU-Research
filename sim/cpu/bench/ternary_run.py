@@ -28,6 +28,8 @@ SPDX-License-Identifier: MIT
 """
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timezone
+import os
+from pathlib import Path
 import json
 import platform
 import re
@@ -377,4 +379,4 @@ def run(args, root, out, build, snap, rtl, core_file, command, sha, sim, caches)
         w = f'{k["weights_per_clock"]:.3f} weights/clk, ' if k['weights'] else ''
         print(f'TOTAL {kernel}: {k["clocks"]:,} clocks, IPC {k["ipc"]:.3f}, {w}{k["bytes_per_clock"]:.4f} B/clk')
     print(f'({report["label"]}; mode {mode}; memory {memory_model})')
-    print(f'Results: {result.relative_to(root).as_posix()}')
+    print(f'Results: {Path(os.path.relpath(result, root)).as_posix()}')

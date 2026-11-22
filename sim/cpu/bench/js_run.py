@@ -28,6 +28,8 @@ SPDX-License-Identifier: MIT
 """
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timezone
+import os
+from pathlib import Path
 import functools
 import json
 import math
@@ -323,7 +325,7 @@ def run(args, root, out, build, snap, rtl, core_file, command, sha, sim, caches)
     if record_path:
         for p in work:
             print(f'piece {p["index"]} ({p["phase"]}, instructions {p["begin"]:,}-{p["end"]:,}): {p.get("clocks")} clocks')
-        print(f'Saved {record_path.relative_to(root).as_posix()}; plan has {len(plan)} pieces; report with --pieces merge')
+        print(f'Saved {Path(os.path.relpath(record_path, root)).as_posix()}; plan has {len(plan)} pieces; report with --pieces merge')
         return
     if mode == 'sampled':
         for name, (first, last) in phases.items():
@@ -428,4 +430,4 @@ def run(args, root, out, build, snap, rtl, core_file, command, sha, sim, caches)
           (f'; geomean {t["geomean_speed_vs_laptop_per_clock"]:.3f}x laptop per clock, '
            f'{100 * t["fraction_of_goal"]:.1f}% of the goal ({GOAL_FACTOR}x)' if 'fraction_of_goal' in t else ''))
     print(f'({report["label"]})')
-    print(f'Results: {(out / name).relative_to(root).as_posix()}')
+    print(f'Results: {Path(os.path.relpath(out / name, root)).as_posix()}')

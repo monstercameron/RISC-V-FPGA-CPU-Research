@@ -27,6 +27,8 @@ SPDX-License-Identifier: MIT
 """
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timezone
+import os
+from pathlib import Path
 import json
 import platform
 import re
@@ -360,4 +362,4 @@ def run(args, root, out, build, snap, rtl, core_file, command, sha, sim, caches)
               + (f', {100 * ph["fraction_of_goal"]:.1f}% of goal {ph["goal_macs_per_clock"]:.3f}' if 'fraction_of_goal' in ph else '')
               + extra)
     print(f'({report["label"]}; goal: {GOAL_FACTOR}x laptop, Apple M6 estimate)')
-    print(f'Results: {(out / f"results-{args.core}.json").relative_to(root).as_posix()}')
+    print(f'Results: {Path(os.path.relpath(out / f"results-{args.core}.json", root)).as_posix()}')

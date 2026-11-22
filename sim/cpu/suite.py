@@ -553,6 +553,8 @@ class Runner:
         self.py, self.tools, self.llvm_label, self.llvm_paths = llvm()
         self.lock = threading.Lock()
         self.core_file = Path(args.core_source).resolve() if args.core_source else ROOT / 'rtl/cpu/rv64_ooo.sv'
+        # Native scratch for Linux steps when the repository lives on a Windows drive (see native_wrap).
+        self.native = not getattr(args, 'no_native_scratch', False) and (IS_WIN or str(ROOT).startswith('/mnt/'))
 
     def folder(self, step):
         if step.name.startswith('build:') or step.out_arg == '--out-dir:bench':
@@ -588,13 +590,44 @@ class Runner:
         if side == 'linux':
             cmd = ['python3', '-B', step.script, *render(args, 'linux')]
             inner = f'timeout -k 10 {LIMIT} {shlex.join(cmd)}'
+            if self.native:
+                inner = self.native_wrap(step, args, cmd)
+            run = inner if self.native else f'exec {inner}'   # the native wrapper is a command sequence
             if IS_WIN:
-                full = ['wsl', '-e', 'bash', '-c', f'cd {shlex.quote(to_linux(ROOT))} && exec {inner}']
+                full = ['wsl', '-e', 'bash', '-c', f'cd {shlex.quote(to_linux(ROOT))} && {{ {run}; }}']
                 return full, inner, 'linux'
-            return ['bash', '-c', f'exec {inner}'], inner, 'linux'
+            return ['bash', '-c', f'cd {shlex.quote(str(ROOT))} && {{ {run}; }}'], inner, 'linux'
         cmd = [*([sys.executable, '-B'] if side == 'host' and step.side != 'llvm' else self.py), step.script,
                *render(args, 'host')]
         return cmd, shlex.join(str(c) for c in cmd), 'host'
+
+    def native_wrap(self, step, args, cmd):
+        """Linux steps on a repository on a Windows drive (/mnt/...): write every output folder in WSL's own
+        file system, then copy the small result files back. Files written through /mnt/c under load lost
+        characters (2026-11-21 NUL bytes; 2026-11-22 05:4x a trace line with characters missing), so traces
+        and pieces never touch /mnt/c. Bench folders are copied in first (their images are inputs)."""
+        own = Loc(self.folder(step)).render('linux')
+        outs = [own] + [Loc(self.out / a[1]).render('linux') for a in step.args
+                        if isinstance(a, tuple) and a[0] == '@step']
+        bench = (step.out_arg == '--out-dir:bench' or step.name.startswith('build:'))
+        mapped = list(dict.fromkeys(outs))
+        q = shlex.quote
+        parts = ['NS="$HOME/.cache/rv64-suite"']
+        for d in mapped:
+            parts.append(f'mkdir -p "$NS"/{q(d)}')
+        if bench:   # refresh the native copy of the bench folder when its build changed
+            parts.append(f'if ! cmp -s {q(own)}/build.json "$NS"/{q(own)}/build.json 2>/dev/null; then '
+                         f'rm -rf "$NS"/{q(own)} && mkdir -p "$NS"/{q(own)} && cp -a {q(own)}/. "$NS"/{q(own)}/; fi')
+        rendered = []
+        for c in cmd:
+            rendered.append(f'"$NS"/{q(c)}' if c in mapped else q(c))
+        parts.append(f'timeout -k 10 {LIMIT} ' + ' '.join(rendered))
+        parts.append('rc=$?')
+        parts.append(f'mkdir -p {q(own)} && find "$NS"/{q(own)} -maxdepth 1 -type f '
+                     r"\( -name '*.json' -o -name '*.log' -o -name '*.txt' -o -name '*.md' \) -size -8M "
+                     f'-exec cp -p {{}} {q(own)}/ ' + '\\;')
+        parts.append('exit $rc')
+        return '; '.join(parts)
 
     def mutant(self, step):
         path = self.out / f'{step.name}-mutant.sv'
@@ -963,6 +996,9 @@ def main(argv=None):
     g.add_argument('--bench-root', help='benchmark build folders (default build/suite/bench); valid builds '
                    'are reused, for example --bench-root build/cpu/ooo-debug/coord/bench')
     g.add_argument('--rebuild', action='store_true', help='rebuild benchmark images even if valid')
+    g.add_argument('--no-native-scratch', action='store_true',
+                   help='write Linux steps\' traces and pieces straight to the repository folder (default on a '
+                        'Windows drive: WSL-native ~/.cache/rv64-suite, small results copied back)')
     g = ap.add_argument_group('results')
     g.add_argument('--expect', help='results.json of an earlier run: FAIL (status DIFF) any step whose identity '
                    'metrics (programs, runs, clocks, instructions) differ')

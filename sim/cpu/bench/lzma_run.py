@@ -39,6 +39,8 @@ SPDX-License-Identifier: MIT
 """
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timezone
+import os
+from pathlib import Path
 import json
 import lzma
 import platform
@@ -412,7 +414,7 @@ def run(args, root, out, build, snap, rtl, core_file, command, sha, sim, caches)
         print(f'{name}: {ph["clocks"]:,} clocks, {ph["retired_instructions"]:,} instructions, IPC {ph["ipc"]:.3f}, '
               f'{ph["rating_mips_per_mhz"]:.4f} MIPS/MHz')
     print(f'({LABEL})')
-    print(f'Results: {(out / "results.json").relative_to(root).as_posix()}')
+    print(f'Results: {Path(os.path.relpath(out / "results.json", root)).as_posix()}')
 
 
 # ---- Large dictionaries: the fast functional simulator rv_iss.c instead of reference.py ----
@@ -763,7 +765,7 @@ def run_iss(args, root, out, build, snap, rtl, core_file, command, sha, sim, cac
         for p in work:
             print(f'piece {p["index"]} ({p["phase"]}, instructions {p["begin"]:,}-{p["end"]:,}): '
                   f'{p.get("clocks")} clocks')
-        print(f'Saved {record_path.relative_to(root).as_posix()}; plan has {len(plan)} pieces; '
+        print(f'Saved {Path(os.path.relpath(record_path, root)).as_posix()}; plan has {len(plan)} pieces; '
               f'report with --pieces merge')
         return
 
@@ -885,4 +887,4 @@ def run_iss(args, root, out, build, snap, rtl, core_file, command, sha, sim, cac
         print(f'{name}: {ph["clocks"]:,} clocks, {ph["retired_instructions"]:,} instructions, IPC {ph["ipc"]:.3f}, '
               f'{ph["rating_mips_per_mhz"]:.4f} MIPS/MHz{extra}')
     print(f'({label})')
-    print(f'Results: {(out / "results.json").relative_to(root).as_posix()}')
+    print(f'Results: {Path(os.path.relpath(out / "results.json", root)).as_posix()}')

@@ -15,6 +15,8 @@ beats: read n, write n, copy and scale 2n, add and triad 3n words. The chase rep
 SPDX-License-Identifier: MIT
 """
 from datetime import datetime, timezone
+import os
+from pathlib import Path
 import json
 import platform
 import re
@@ -143,4 +145,4 @@ def run(args, root, out, build, snap, rtl, core_file, command, sha, sim, caches)
     print(f'(memory {memory_model}; defines {report["scope"]["core_defines"]})')
     if pf:
         print('L2PF', pf[1])
-    print(f'Results: {result.relative_to(root).as_posix()}')
+    print(f'Results: {Path(os.path.relpath(result, root)).as_posix()}')

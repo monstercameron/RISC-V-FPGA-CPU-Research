@@ -23,6 +23,7 @@ call); js_run.py describes it. The sampled-mode options in the lzma group
 SPDX-License-Identifier: MIT
 """
 from pathlib import Path
+import os
 import argparse
 from datetime import datetime, timezone
 import hashlib
@@ -440,7 +441,7 @@ def main():
           f'busiest function `{top[0]}` takes {100 * top[1]["clocks"] / profile["clocks"]:.1f}% of clocks.')
     if log_path:
         print(f'Logged this run to {log_path} and indexed it in DEVLOG.md.')
-    print(f'Results: {(out / "results.json").relative_to(ROOT).as_posix()}')
+    print(f'Results: {Path(os.path.relpath(out / "results.json", ROOT)).as_posix()}')
 
 
 if __name__ == '__main__':
