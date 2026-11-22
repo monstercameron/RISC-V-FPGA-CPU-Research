@@ -348,7 +348,7 @@ def run(args, root, out, build, snap, rtl, core_file, command, sha, sim, caches)
             'cache_beats': {'icache': caches['ICACHE_BEATS'], 'dcache': caches['DCACHE_BEATS']},
             'memory_model': {k.lower(): caches.get(k, d) for k, d in (('L2_KIB', 0), ('L2_WAYS', 8), ('L2_LINE', 64), ('L2_LAT', 12), ('MEM_LAT', 1), ('N_MISS', 1), ('MEM_GAP', 0), ('WRITE_FILL', 0))} |
                             {'ld_lat': getattr(args, 'ld_lat', None), 'l0_n': getattr(args, 'l0', None),
-                             'l0_lat': getattr(args, 'l0_lat', None)},
+                             'l0_lat': getattr(args, 'l0_lat', None), 'fpu': getattr(args, 'fpu', False)},
             'rtl_sha256': {p.relative_to(snap).as_posix(): sha(p) for p in rtl},
             'platform': f'rv64_bram_soc, {ram_bytes // 1024} KiB synchronous RAM, no added wait cycles in the timing run',
             'hardware': f'none ({sim.label} simulation)',
@@ -811,7 +811,7 @@ def run_iss(args, root, out, build, snap, rtl, core_file, command, sha, sim, cac
             'cache_beats': {'icache': caches['ICACHE_BEATS'], 'dcache': caches['DCACHE_BEATS']},
             'memory_model': {k.lower(): caches.get(k, d) for k, d in (('L2_KIB', 0), ('L2_WAYS', 8), ('L2_LINE', 64), ('L2_LAT', 12), ('MEM_LAT', 1), ('N_MISS', 1), ('MEM_GAP', 0), ('WRITE_FILL', 0))} |
                             {'ld_lat': getattr(args, 'ld_lat', None), 'l0_n': getattr(args, 'l0', None),
-                             'l0_lat': getattr(args, 'l0_lat', None)},
+                             'l0_lat': getattr(args, 'l0_lat', None), 'fpu': getattr(args, 'fpu', False)},
             'rtl_sha256': {p.relative_to(snap).as_posix(): sha(p) for p in rtl},
             'platform': f'rv64_bram_soc, {ram_bytes // 1024} KiB synchronous RAM, no added wait cycles in the timing run',
             'hardware': f'none ({sim.label} simulation)',

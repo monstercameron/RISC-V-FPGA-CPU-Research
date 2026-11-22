@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: MIT
-// Original CPU foundation, wide out-of-order implementation (architecture 0.16.2).
-// RV64IM + B execution, serialized FENCE.I, terminal EEI. Same module name and
+// Original CPU foundation, wide out-of-order implementation (architecture 0.17.0).
+// RV64IM + B execution (RV64F and D with define RV64_OOO_FPU, default off),
+// serialized FENCE.I, terminal EEI. Same module name and
 // contract as rv64_core.sv and rv64_pipe.sv, plus a wider retirement trace (rt_*);
 // build with one of the three files. Architecture version: cpu/VERSION,
 // cpu/architecture.md section 9. No RVA23 compliance claim.
@@ -125,7 +126,14 @@ module rv64_core #(
     localparam integer FW = 32;          // fetch and rename width (RW until 0.13.0)
     localparam integer ROB_N = 512;       // 256 until 0.13.0
     localparam integer ROB_B = 9;
-    localparam integer PRF_N = 32 + ROB_N;
+`ifdef RV64_OOO_FPU
+    localparam integer FPU_MAP = 1;           // f0-f31 in the rename map (FPU is declared with the FP ports)
+`else
+    localparam integer FPU_MAP = 0;
+`endif
+    localparam integer AR_B = FPU_MAP != 0 ? 6 : 5;      // architectural register index: {is_f, reg} with FPU
+    localparam integer NAR = 1 << AR_B;              // 64 with FPU (x0-x31, f0-f31), else 32
+    localparam integer PRF_N = NAR + ROB_N;
     localparam integer P_B = 10;
     localparam integer IQ_N = 128;
     localparam integer IQ_B = 7;
@@ -135,7 +143,22 @@ module rv64_core #(
     localparam integer N_BR = 4;         // of which these also take branches, system and M (3 until 0.14.6)
     localparam integer N_LD = 4;         // load ports (Zen 5: 4 loads per clock)
     localparam integer N_ST = 3;         // store-address ports (Lion Cove: 3)
-    localparam integer NP = N_ALU + N_LD + N_ST;
+    // F/D execution (RV64_OOO_FPU, default off): FP ports after the store-address ports.
+`ifdef RV64_OOO_FPU
+    localparam integer FPU = 1;
+`else
+    localparam integer FPU = 0;
+`endif
+    localparam integer N_FMA = FPU ? 2 : 0;    // FMA, FMUL, FADD
+    localparam integer N_FMISC = FPU ? 2 : 0;  // FADD, min/max, compare, class, sign injection, conversions, moves; the first starts divide/sqrt
+    localparam integer N_FP = N_FMA + N_FMISC;
+    localparam integer P_FP = N_ALU + N_LD + N_ST;
+    localparam integer FMA_LAT = 4, FADD_LAT = 3, FCVT_LAT = 3, FMISC_LAT = 2;   // behavioural assumptions
+    localparam integer FDIV_S = 11, FDIV_D = 13, FSQRT_S = 12, FSQRT_D = 18;
+    // Divide/sqrt initiation intervals (clocks between starts; uops.info measured throughput of
+    // DIVSS/DIVSD/SQRTSS/SQRTSD on Alder Lake-P and Zen 4). Behavioural assumption.
+    localparam integer FDIV_II_S = 3, FDIV_II_D = 4, FSQRT_II_S = 4, FSQRT_II_D = 6;
+    localparam integer NP = N_ALU + N_LD + N_ST + N_FP;
     localparam integer MUL_LAT = 2;         // 3 until 0.14.6; 2 is a behavioural assumption (DSP timing unproven)
     localparam integer DIV_LAT = 7;
     localparam integer MQ_N = N_BR * MUL_LAT;   // multiplies in flight (8 until 0.14.x; must be >= N_BR * (MUL_LAT - 1))
@@ -429,9 +452,9 @@ module rv64_core #(
     // ---------------- state -------------------------------------------------------
     reg [63:0] prf [0:PRF_N-1];          // physical register 0 is x0, always zero
     reg [PRF_N-1:0] prf_ready, prf_written, free_mask;
-    reg [P_B-1:0] rat [0:31];
-    reg [P_B-1:0] rrat [0:31];
-    reg [P_B-1:0] snap [0:ROB_N-1][0:31];   // rename map after each control transfer
+    reg [P_B-1:0] rat [0:NAR-1];
+    reg [P_B-1:0] rrat [0:NAR-1];
+    reg [P_B-1:0] snap [0:ROB_N-1][0:NAR-1];   // rename map after each control transfer
     // Reorder buffer.
     reg [ROB_N-1:0] rb_live, rb_done, rb_exc, rb_store, rb_load, rb_fencei, rb_writes, rb_ctl, rb_taken, rb_ret, rb_bhit, rb_sta;
     reg [1:0] rb_bctr [0:ROB_N-1];
@@ -442,7 +465,9 @@ module rv64_core #(
     reg [63:0] rb_tval [0:ROB_N-1];
     reg [63:0] rb_addr [0:ROB_N-1];
     reg [31:0] rb_insn [0:ROB_N-1];
-    reg [4:0] rb_rd [0:ROB_N-1];
+    reg [AR_B-1:0] rb_rd [0:ROB_N-1];
+    reg [ROB_N-1:0] rb_fsw;                  // FSW: store data is bits 31:0 (FPU)
+    reg [RW-1:0] rt_rdfp;                    // PROVISIONAL trace field (FPU): slot's rd is an f register
     reg [P_B-1:0] rb_pdst [0:ROB_N-1];
     reg [P_B-1:0] rb_opdst [0:ROB_N-1];
     reg [P_B-1:0] rb_sps2 [0:ROB_N-1];
@@ -453,7 +478,7 @@ module rv64_core #(
     reg [ROB_B:0] rb_count;
     // Issue queue.
     reg [IQ_N-1:0] iq_valid, iq_issued, iq_writes, iq_ptaken, iq_mdu;
-    reg [1:0] iq_cls [0:IQ_N-1];
+    reg [2:0] iq_cls [0:IQ_N-1];
     reg [ROB_B-1:0] iq_rob [0:IQ_N-1];
     reg [63:0] iq_pc [0:IQ_N-1];
     reg [63:0] iq_pred [0:IQ_N-1];
@@ -465,7 +490,7 @@ module rv64_core #(
     // Execute stage, one per port: ALU ports, then load ports, then store ports.
     reg [NP-1:0] ex_valid, ex_writes, ex_ptaken;
     reg [IQ_B-1:0] ex_iq [0:NP-1];
-    reg [1:0] ex_cls [0:NP-1];
+    reg [2:0] ex_cls [0:NP-1];
     reg [ROB_B-1:0] ex_rob [0:NP-1];
     reg [63:0] ex_pc [0:NP-1];
     reg [63:0] ex_pred [0:NP-1];
@@ -474,6 +499,36 @@ module rv64_core #(
     reg [P_B-1:0] ex_ps1 [0:NP-1];
     reg [P_B-1:0] ex_ps2 [0:NP-1];
     reg [P_B-1:0] ex_pdst [0:NP-1];
+    // FP execute state (RV64_OOO_FPU); rename fills the iq_ fields, retirement reads rb_fflags.
+    localparam [2:0] C_FP = 4;
+    reg [P_B-1:0] iq_ps3 [0:IQ_N-1];
+    reg [4:0] iq_fop [0:IQ_N-1];
+    reg [IQ_N-1:0] iq_fsz;
+    reg [2:0] iq_rm [0:IQ_N-1];
+    reg [1:0] iq_funit [0:IQ_N-1];
+    reg [P_B-1:0] ex_ps3 [0:NP-1];
+    reg [4:0] ex_fop [0:NP-1];
+    reg [NP-1:0] ex_fsz;
+    reg [2:0] ex_rm [0:NP-1];
+    reg [1:0] ex_funit [0:NP-1];
+    reg [4:0] rb_fflags [0:ROB_N-1];
+    reg [7:0] fcsr;                     // frm[7:5], fflags[4:0]; written at retirement (middle)
+    localparam integer FQ_N = N_FP > 0 ? N_FP * 4 + 8 : 1;   // + divides/square roots in flight
+    reg [FQ_N-1:0] fq_valid, fq_writes;
+    reg [4:0] fq_cnt [0:FQ_N-1];
+    reg [4:0] fd_gap;                   // clocks until the divide/sqrt unit takes a new operation
+    reg [ROB_B-1:0] fq_rob [0:FQ_N-1];
+    reg [P_B-1:0] fq_pdst [0:FQ_N-1];
+    reg [63:0] fq_val [0:FQ_N-1];
+    reg [4:0] fq_fl [0:FQ_N-1];
+    reg fd_busy, fd_writes, fd_pend, fdtaken;
+    reg [4:0] fd_cnt, fd_fl;
+    reg [ROB_B-1:0] fd_rob;
+    reg [P_B-1:0] fd_pdst;
+    reg [63:0] fd_val;
+    reg [68:0] fy;
+    reg [2:0] frm_now;
+    integer flat;
     // Multiply pipeline and divide unit.
     reg [MQ_N-1:0] mq_valid, mq_writes;
     // Load-to-use latency (0.14.x knob): a dependant is selected LD_LAT clocks after the load,
@@ -741,7 +796,19 @@ module rv64_core #(
     reg [P_B-1:0] ex_fza [0:NP-1];
     reg [P_B-1:0] ex_fzb [0:NP-1];
     reg pv_ok;
-    reg [4:0] pv_rd;
+    reg [AR_B-1:0] pv_rd;
+    reg [AR_B-1:0] ard_, ars1_, ars2_, ars3_;
+    reg fpop_, fpld_, fpst_, uses3_, fdst_, fs1_, fs2_, fpw_;
+    reg [20:0] fdc_;
+    reg u2fp_;
+    reg [P_B-1:0] ps3_;
+    function automatic [63:0] fbox(input [63:0] x); fbox = {32'hffffffff, x[31:0]}; endfunction
+    // PROVISIONAL trace fields (FP-CONTRACT.md section 7), kept together: rt_rdfp (above) and the
+    // flags each retired slot raised.
+    reg [RW*5-1:0] rt_ff;
+    reg [RW-1:0] rt_csrw; reg [RW*8-1:0] rt_csrv;   // PROVISIONAL trace: slot wrote fcsr, and its new value
+    reg [ROB_N-1:0] rb_csrw; reg [7:0] rb_csrv [0:ROB_N-1];
+    reg csr_, csr_busy; reg [63:0] csr_old, csr_src, csr_new; reg [7:0] csr_fcsr;
     reg [31:0] pv_insn;
     reg [63:0] pv_pc;
     reg [P_B-1:0] pv_a, pv_b;
@@ -770,12 +837,12 @@ module rv64_core #(
     // eliminated instruction's result is its physical register's value plus rb_off.
     localparam integer FOLD = 1;
     localparam integer OFF_LAT = 1;      // extra clocks for a non-memory operand with an offset
-    reg [63:0] rat_off [0:31];
+    reg [63:0] rat_off [0:NAR-1];
     // Written this clock without an earlier wakeup (multiply, divide, value prediction):
     // an offset consumer may not be selected in the next clock (OFF_LAT, Codex 1609-2).
     reg [PRF_N-1:0] prf_late;
-    reg [63:0] rrat_off [0:31];
-    reg [63:0] snap_off [0:ROB_N-1][0:31];
+    reg [63:0] rrat_off [0:NAR-1];
+    reg [63:0] snap_off [0:ROB_N-1][0:NAR-1];
     reg [ROB_N-1:0] rb_elim;
     reg [63:0] rb_off [0:ROB_N-1];
     reg [63:0] rb_soff [0:ROB_N-1];      // store data offset
@@ -790,7 +857,7 @@ module rv64_core #(
     // Rename-stage constant ALU and branch resolution (council middle, after 0.14.1).
     localparam integer CFOLD = 1;      // 0 off, 1 one level per clock, 2 chains
     localparam integer BRREN = 1;      // conditional branches with known outcome finish at rename
-    reg [31:0] cf_lvl;                   // arch reg holds a constant computed this clock
+    reg [NAR-1:0] cf_lvl;                   // arch reg holds a constant computed this clock
     reg cf_now, br_now, bt_;
     integer n_cf, n_br;                  // debug: instructions per clock
     reg [66:0] csa_;
@@ -926,7 +993,7 @@ module rv64_core #(
         end
     end
     wire [63:0] st_addr = rb_addr[st_idx];
-    wire [63:0] st_wdata = (prf[rb_sps2[st_idx]] + rb_soff[st_idx]) << {st_addr[2:0],3'b000};
+    wire [63:0] st_wdata = ((prf[rb_sps2[st_idx]] + rb_soff[st_idx]) & (rb_fsw[st_idx] ? 64'h00000000ffffffff : 64'hffffffffffffffff)) << {st_addr[2:0],3'b000};
     wire [63:0] st2_addr = rb_addr[st2_idx];
     wire pair_now = bus_hold == 3 ? hold_pair : st2_cand;
     // Extra stores carried by this write (held unchanged while the bus waits).
@@ -972,12 +1039,12 @@ module rv64_core #(
     assign mem_wdata = bus_kind == 3 ? st_wdata : 64'b0;
     assign mem_wstrb = bus_kind == 3 ? rb_wstrb[st_idx] : 8'b0;
     assign mem_addr2 = bus_kind == 3 && pair_now ? {st2_addr[63:3],3'b000} : 64'b0;
-    assign mem_wdata2 = bus_kind == 3 && pair_now ? (prf[rb_sps2[st2_idx]] + rb_soff[st2_idx]) << {st2_addr[2:0],3'b000} : 64'b0;
+    assign mem_wdata2 = bus_kind == 3 && pair_now ? ((prf[rb_sps2[st2_idx]] + rb_soff[st2_idx]) & (rb_fsw[st2_idx] ? 64'h00000000ffffffff : 64'hffffffffffffffff)) << {st2_addr[2:0],3'b000} : 64'b0;
     assign mem_wstrb2 = bus_kind == 3 && pair_now ? rb_wstrb[st2_idx] : 8'b0;
     wire x0v = bus_kind == 3 && pair_now && nx_now != 0, x1v = bus_kind == 3 && pair_now && nx_now == 2;
     assign mem_xaddr = {x1v ? {rb_addr[sx1_idx][63:3],3'b000} : 64'b0, x0v ? {rb_addr[sx0_idx][63:3],3'b000} : 64'b0};
-    assign mem_xwdata = {x1v ? (prf[rb_sps2[sx1_idx]] + rb_soff[sx1_idx]) << {rb_addr[sx1_idx][2:0],3'b000} : 64'b0,
-                         x0v ? (prf[rb_sps2[sx0_idx]] + rb_soff[sx0_idx]) << {rb_addr[sx0_idx][2:0],3'b000} : 64'b0};
+    assign mem_xwdata = {x1v ? ((prf[rb_sps2[sx1_idx]] + rb_soff[sx1_idx]) & (rb_fsw[sx1_idx] ? 64'h00000000ffffffff : 64'hffffffffffffffff)) << {rb_addr[sx1_idx][2:0],3'b000} : 64'b0,
+                         x0v ? ((prf[rb_sps2[sx0_idx]] + rb_soff[sx0_idx]) & (rb_fsw[sx0_idx] ? 64'h00000000ffffffff : 64'hffffffffffffffff)) << {rb_addr[sx0_idx][2:0],3'b000} : 64'b0};
     assign mem_xwstrb = {x1v ? rb_wstrb[sx1_idx] : 8'b0, x0v ? rb_wstrb[sx0_idx] : 8'b0};
     wire [2:0] state = halted ? HALTED : (bus_kind >= 2) ? MEMORY : (bus_kind == 1) ? FETCH : EXECUTE;
 
@@ -1002,7 +1069,7 @@ module rv64_core #(
     reg [63:0] mp_fix, rflush_pc, d_want, v, ea, tgt, npc, lw;
     reg [197:0] ef;
     reg [66:0] sa;
-    reg [P_B-1:0] trat [0:31];
+    reg [P_B-1:0] trat [0:NAR-1];
     reg [PRF_N-1:0] tready;
     reg [IQ_N-1:0] chosen;
     reg [IQ_B-1:0] pick [0:NP-1];
@@ -1016,7 +1083,7 @@ module rv64_core #(
     reg [4:0] rd_, rs1_, rs2_;
     reg writes_, uses1_, uses2_, isfault, tkp, isctl;
     reg [P_B-1:0] ps1_, ps2_, pd_;
-    reg [1:0] cls_;
+    reg [2:0] cls_;
     reg [7:0] bytes_;
     reg [ROB_B-1:0] fwd_e;
     reg fwd_hit, fwd_full;
@@ -1055,6 +1122,7 @@ module rv64_core #(
     reg [Q_B-1:0] qa;
 
     initial if (RW < 3 || RW > 32) $fatal(1, "rv64_ooo.sv supports RW from 3 to 32, got %0d", RW);
+    initial if (FDIV_II_S < 2 || FDIV_II_D < 2 || FSQRT_II_S < 2 || FSQRT_II_D < 2) $fatal(1, "FP divide/sqrt initiation intervals must be >= 2");
     initial if (LD_LAT < 1 || LD_LAT > 16) $fatal(1, "rv64_ooo.sv needs LD_LAT from 1 to 16, got %0d", LD_LAT);
     initial if (L0_N < 0 || L0_N > 64 || (L0_N > 0 && (L0_LAT < 2 || L0_LAT >= LD_LAT)))
         $fatal(1, "rv64_ooo.sv: L0_N 0..64, and with L0_N > 0 2 <= L0_LAT < LD_LAT (got L0_N %0d, L0_LAT %0d, LD_LAT %0d)", L0_N, L0_LAT, LD_LAT);
@@ -1076,6 +1144,425 @@ module rv64_core #(
     function [63:0] opb(input integer pp);
         opb = (ex_fz2[pp] && !prf_written[ex_ps2[pp]]) ? fz_value(pp) : prf[ex_ps2[pp]] + ex_off2[pp];
     endfunction
+    // F/D arithmetic and decoder (council backend; bit exact, checked against the FP golden model).
+    // Bit-exact RISC-V F/D arithmetic as SystemVerilog functions (council backend, draft).
+    // Pure SystemVerilog (no DPI), so Icarus and Verilator both run it. One entry point:
+    //   fp_exec(op, d, rm, a, b, c) -> {fflags[4:0], result[63:0]}
+    // d = 1: binary64, 0: binary32 (NaN-boxed in 64 bits). rm: 0 RNE, 1 RTZ, 2 RDN, 3 RUP, 4 RMM
+    // (already resolved from frm by the caller). fflags: {NV, DZ, OF, UF, NX}. Tininess is
+    // detected after rounding (RISC-V). NaN results are canonical. Encodings and the contract
+    // (build/cpu/fp/FP-CONTRACT.md) decide how instructions map to these ops.
+    localparam [4:0] FOP_ADD = 0, FOP_SUB = 1, FOP_MUL = 2, FOP_DIV = 3, FOP_SQRT = 4,
+                     FOP_MADD = 5, FOP_MSUB = 6, FOP_NMSUB = 7, FOP_NMADD = 8,
+                     FOP_MIN = 9, FOP_MAX = 10, FOP_EQ = 11, FOP_LT = 12, FOP_LE = 13, FOP_CLASS = 14,
+                     FOP_SGNJ = 15, FOP_SGNJN = 16, FOP_SGNJX = 17,
+                     FOP_CVT_W = 18, FOP_CVT_WU = 19, FOP_CVT_L = 20, FOP_CVT_LU = 21,     // fp -> int
+                     FOP_CVT_FW = 22, FOP_CVT_FWU = 23, FOP_CVT_FL = 24, FOP_CVT_FLU = 25, // int -> fp
+                     FOP_CVT_SD = 26, FOP_CVT_DS = 27,                                     // D->S, S->D
+                     FOP_MV_XF = 28, FOP_MV_FX = 29;
+
+    localparam integer FPW = 320;   // exact-arithmetic workspace
+
+    // ---- formats
+    function automatic integer fp_p(input d); fp_p = d ? 53 : 24; endfunction       // precision
+    function automatic integer fp_bias(input d); fp_bias = d ? 1023 : 127; endfunction
+    function automatic integer fp_emax_field(input d); fp_emax_field = d ? 2047 : 255; endfunction
+    function automatic [63:0] fp_qnan(input d); fp_qnan = d ? 64'h7ff8000000000000 : 64'hffffffff7fc00000; endfunction
+    // An FP32 value must be NaN-boxed; an unboxed one reads as the canonical NaN.
+    function automatic [63:0] fp_in(input d, input [63:0] x);
+        fp_in = d ? x : (x[63:32] == 32'hffffffff ? x : 64'hffffffff7fc00000);
+    endfunction
+    function automatic fp_sign(input d, input [63:0] x); fp_sign = d ? x[63] : x[31]; endfunction
+    function automatic [10:0] fp_expf(input d, input [63:0] x); fp_expf = d ? x[62:52] : {3'b0, x[30:23]}; endfunction
+    function automatic [51:0] fp_frac(input d, input [63:0] x); fp_frac = d ? x[51:0] : {29'b0, x[22:0]}; endfunction
+    function automatic fp_isnan(input d, input [63:0] x);
+        fp_isnan = fp_expf(d, x) == fp_emax_field(d) && fp_frac(d, x) != 0;
+    endfunction
+    function automatic fp_issnan(input d, input [63:0] x);
+        fp_issnan = fp_isnan(d, x) && !(d ? x[51] : x[22]);
+    endfunction
+    function automatic fp_isinf(input d, input [63:0] x);
+        fp_isinf = fp_expf(d, x) == fp_emax_field(d) && fp_frac(d, x) == 0;
+    endfunction
+    function automatic fp_iszero(input d, input [63:0] x);
+        fp_iszero = fp_expf(d, x) == 0 && fp_frac(d, x) == 0;
+    endfunction
+    function automatic [63:0] fp_pack(input d, input s, input [10:0] e, input [51:0] f);
+        fp_pack = d ? {s, e, f} : {32'hffffffff, s, e[7:0], f[22:0]};
+    endfunction
+    function automatic [63:0] fp_inf(input d, input s); fp_inf = fp_pack(d, s, d ? 11'h7ff : 11'hff, 52'b0); endfunction
+    function automatic [63:0] fp_zero(input d, input s); fp_zero = fp_pack(d, s, 11'b0, 52'b0); endfunction
+    // Finite nonzero value as an integer significand and exponent: x = sig * 2^e.
+    function automatic [52:0] fp_sig(input d, input [63:0] x);
+        fp_sig = fp_expf(d, x) == 0 ? {1'b0, fp_frac(d, x)} : (d ? {1'b1, x[51:0]} : {30'b1, x[22:0]});
+    endfunction
+    function automatic integer fp_exp(input d, input [63:0] x);
+        fp_exp = (fp_expf(d, x) == 0 ? 1 : fp_expf(d, x)) - fp_bias(d) - (fp_p(d) - 1);
+    endfunction
+    function automatic integer fp_msb(input [FPW-1:0] v);   // index of the highest set bit, -1 if zero
+        integer i; begin fp_msb = -1; for (i = 0; i < FPW; i = i + 1) if (v[i]) fp_msb = i; end
+    endfunction
+
+    // ---- rounding: value = (-1)^s * sig * 2^e, sig != 0 -> {flags, result}
+    function automatic [68:0] fp_round(input d, input s, input integer e, input [FPW-1:0] sig, input [2:0] rm);
+        integer p, msb, E, emin, lsbexp, sh, bexp;
+        reg [FPW-1:0] m, mu;
+        reg g, st, inc, incu, tiny, nx, of;
+        reg [63:0] r;
+        begin
+            p = fp_p(d); emin = 1 - fp_bias(d);
+            msb = fp_msb(sig); E = msb + e;
+            lsbexp = (E > emin ? E : emin) - (p - 1);
+            sh = lsbexp - e;
+            if (sh > 0) begin
+                m = sig >> sh; g = sh <= FPW ? sig[sh - 1] : 1'b0;
+                st = (sig & ((({{(FPW-1){1'b0}}, 1'b1}) << (sh - 1)) - 1)) != 0;
+            end else begin m = sig << (-sh); g = 0; st = 0; end
+            nx = g | st;
+            case (rm)
+                3'd0: inc = g && (st || m[0]);
+                3'd1: inc = 0;
+                3'd2: inc = s && nx;
+                3'd3: inc = !s && nx;
+                default: inc = g;
+            endcase
+            // Tininess after rounding: round with the exponent unbounded and see whether 2^emin is reached.
+            tiny = 0;
+            if (E < emin) begin
+                sh = (E - (p - 1)) - e;
+                if (sh > 0) begin
+                    mu = sig >> sh; g = sig[sh - 1]; st = (sig & ((({{(FPW-1){1'b0}}, 1'b1}) << (sh - 1)) - 1)) != 0;
+                end else begin mu = sig << (-sh); g = 0; st = 0; end
+                case (rm)
+                    3'd0: incu = g && (st || mu[0]);
+                    3'd1: incu = 0;
+                    3'd2: incu = s && (g | st);
+                    3'd3: incu = !s && (g | st);
+                    default: incu = g;
+                endcase
+                mu = mu + incu;
+                tiny = !(E == emin - 1 && mu[p]);
+            end
+            m = m + inc;
+            if (m[p]) begin m = m >> 1; lsbexp = lsbexp + 1; end
+            of = 0;
+            if (m[p - 1]) begin
+                bexp = lsbexp + (p - 1) + fp_bias(d);
+                if (bexp >= fp_emax_field(d)) begin
+                    of = 1; nx = 1;
+                    if (rm == 3'd1 || (rm == 3'd2 && !s) || (rm == 3'd3 && s))
+                        r = fp_pack(d, s, fp_emax_field(d) - 1, d ? 52'hfffffffffffff : 52'h7fffff);
+                    else r = fp_inf(d, s);
+                end else r = fp_pack(d, s, bexp[10:0], m[51:0]);
+            end else r = fp_pack(d, s, 11'b0, m[51:0]);
+            fp_round = {1'b0, 1'b0, of, tiny && nx, nx, r};
+        end
+    endfunction
+
+    // Exact sum of two signed values sig * 2^e (sig < 2^128), rounded.
+    function automatic [68:0] fp_addx(input d, input s1, input [127:0] m1, input integer e1,
+                                      input s2, input [127:0] m2, input integer e2, input [2:0] rm);
+        reg [FPW-1:0] a, b, r;
+        integer ea, eb, n1, n2, gap, ee;
+        reg sr, sa, sb;
+        begin
+            // normalize both to the msb at bit 127
+            n1 = fp_msb({192'b0, m1}); n2 = fp_msb({192'b0, m2});
+            a = {192'b0, m1} << (127 - n1); ea = e1 - (127 - n1); sa = s1;
+            b = {192'b0, m2} << (127 - n2); eb = e2 - (127 - n2); sb = s2;
+            if (eb > ea) begin r = a; a = b; b = r; ee = ea; ea = eb; eb = ee; sr = sa; sa = sb; sb = sr; end
+            gap = ea - eb;
+            if (gap > 130) begin a = a << 131; ea = ea - 131; b = 1; eb = ea; end
+            else begin a = a << gap; ea = eb; end
+            if (sa == sb) begin r = a + b; sr = sa; end
+            else if (a >= b) begin r = a - b; sr = sa; end
+            else begin r = b - a; sr = sb; end
+            if (r == 0) fp_addx = {5'b0, fp_zero(d, rm == 3'd2)};   // exact cancellation
+            else fp_addx = fp_round(d, sr, ea, r, rm);
+        end
+    endfunction
+
+    // ---- the operations
+    function automatic [68:0] fp_exec(input [4:0] op, input d, input [2:0] rm, input [63:0] ai, input [63:0] bi, input [63:0] ci);
+        reg [63:0] a, b, c, r;
+        reg [4:0] fl;
+        reg sa, sb, sc, sp, nv, sx;
+        reg [127:0] pm, q, rem, x, root, tmp;
+        reg [FPW-1:0] wide;
+        integer ea, eb, ec, ep, k, i, p, n;
+        reg [68:0] t;
+        reg [63:0] iv, lim;
+        reg [63:0] bits_;
+        begin
+            fl = 0; r = 0;
+            // NaN-boxing applies to FP32 sources (not to integer sources of int->fp, nor FMV.W.X)
+            a = fp_in(op == FOP_CVT_DS ? 1'b0 : (op == FOP_CVT_SD ? 1'b1 : d), ai);
+            b = fp_in(d, bi); c = fp_in(d, ci);
+            sa = fp_sign(d, a); sb = fp_sign(d, b); sc = fp_sign(d, c);
+            p = fp_p(d);
+            case (op)
+            FOP_ADD, FOP_SUB: begin
+                if (op == FOP_SUB) sb = !sb;
+                if (fp_isnan(d, a) || fp_isnan(d, b)) begin r = fp_qnan(d); fl[4] = fp_issnan(d, a) || fp_issnan(d, b); end
+                else if (fp_isinf(d, a) && fp_isinf(d, b) && sa != sb) begin r = fp_qnan(d); fl[4] = 1; end
+                else if (fp_isinf(d, a)) r = fp_inf(d, sa);
+                else if (fp_isinf(d, b)) r = fp_inf(d, sb);
+                else if (fp_iszero(d, a) && fp_iszero(d, b)) r = fp_zero(d, sa == sb ? sa : rm == 3'd2);
+                else if (fp_iszero(d, a)) begin t = fp_round(d, sb, fp_exp(d, b), {267'b0, fp_sig(d, b)}, rm); fl = t[68:64]; r = t[63:0]; end
+                else if (fp_iszero(d, b)) begin t = fp_round(d, sa, fp_exp(d, a), {267'b0, fp_sig(d, a)}, rm); fl = t[68:64]; r = t[63:0]; end
+                else begin
+                    t = fp_addx(d, sa, {75'b0, fp_sig(d, a)}, fp_exp(d, a), sb, {75'b0, fp_sig(d, b)}, fp_exp(d, b), rm);
+                    fl = t[68:64]; r = t[63:0];
+                end
+            end
+            FOP_MUL: begin
+                sp = sa ^ sb;
+                if (fp_isnan(d, a) || fp_isnan(d, b)) begin r = fp_qnan(d); fl[4] = fp_issnan(d, a) || fp_issnan(d, b); end
+                else if ((fp_isinf(d, a) && fp_iszero(d, b)) || (fp_iszero(d, a) && fp_isinf(d, b))) begin r = fp_qnan(d); fl[4] = 1; end
+                else if (fp_isinf(d, a) || fp_isinf(d, b)) r = fp_inf(d, sp);
+                else if (fp_iszero(d, a) || fp_iszero(d, b)) r = fp_zero(d, sp);
+                else begin
+                    pm = fp_sig(d, a) * fp_sig(d, b);
+                    t = fp_round(d, sp, fp_exp(d, a) + fp_exp(d, b), {192'b0, pm}, rm); fl = t[68:64]; r = t[63:0];
+                end
+            end
+            FOP_MADD, FOP_MSUB, FOP_NMSUB, FOP_NMADD: begin
+                sp = sa ^ sb ^ (op == FOP_NMSUB || op == FOP_NMADD);
+                sc = sc ^ (op == FOP_MSUB || op == FOP_NMADD);
+                nv = fp_issnan(d, a) || fp_issnan(d, b) || fp_issnan(d, c) ||
+                     (fp_isinf(d, a) && fp_iszero(d, b)) || (fp_iszero(d, a) && fp_isinf(d, b));
+                if (fp_isnan(d, a) || fp_isnan(d, b) || fp_isnan(d, c) || nv) begin r = fp_qnan(d); fl[4] = nv; end
+                else if (fp_isinf(d, a) || fp_isinf(d, b)) begin
+                    if (fp_isinf(d, c) && sc != sp) begin r = fp_qnan(d); fl[4] = 1; end
+                    else r = fp_inf(d, sp);
+                end
+                else if (fp_isinf(d, c)) r = fp_inf(d, sc);
+                else if (fp_iszero(d, a) || fp_iszero(d, b)) begin
+                    if (fp_iszero(d, c)) r = fp_zero(d, sp == sc ? sp : rm == 3'd2);
+                    else begin t = fp_round(d, sc, fp_exp(d, c), {267'b0, fp_sig(d, c)}, rm); fl = t[68:64]; r = t[63:0]; end
+                end else begin
+                    pm = fp_sig(d, a) * fp_sig(d, b); ep = fp_exp(d, a) + fp_exp(d, b);
+                    if (fp_iszero(d, c)) begin t = fp_round(d, sp, ep, {192'b0, pm}, rm); end
+                    else t = fp_addx(d, sp, pm, ep, sc, {75'b0, fp_sig(d, c)}, fp_exp(d, c), rm);
+                    fl = t[68:64]; r = t[63:0];
+                end
+            end
+            FOP_DIV: begin
+                sp = sa ^ sb;
+                if (fp_isnan(d, a) || fp_isnan(d, b)) begin r = fp_qnan(d); fl[4] = fp_issnan(d, a) || fp_issnan(d, b); end
+                else if ((fp_isinf(d, a) && fp_isinf(d, b)) || (fp_iszero(d, a) && fp_iszero(d, b))) begin r = fp_qnan(d); fl[4] = 1; end
+                else if (fp_isinf(d, a)) r = fp_inf(d, sp);
+                else if (fp_isinf(d, b)) r = fp_zero(d, sp);
+                else if (fp_iszero(d, b)) begin r = fp_inf(d, sp); fl[3] = 1; end
+                else if (fp_iszero(d, a)) r = fp_zero(d, sp);
+                else begin
+                    // q = (sig_a << k) / sig_b with k so the quotient keeps at least p + 2 bits; remainder -> sticky
+                    // both significands normalized to the msb at bit 52 (subnormals shifted up)
+                    x = fp_sig(d, a); ea = fp_exp(d, a); n = fp_msb({192'b0, x}); x = x << (52 - n); ea = ea - (52 - n);
+                    tmp = fp_sig(d, b); eb = fp_exp(d, b); n = fp_msb({192'b0, tmp}); tmp = tmp << (52 - n); eb = eb - (52 - n);
+                    k = p + 3;
+                    x = x << k;
+                    q = x / tmp; rem = x % tmp;
+                    wide = {192'b0, q} << 1 | (rem != 0);
+                    t = fp_round(d, sp, ea - eb - k - 1, wide, rm); fl = t[68:64]; r = t[63:0];
+                end
+            end
+            FOP_SQRT: begin
+                if (fp_isnan(d, a)) begin r = fp_qnan(d); fl[4] = fp_issnan(d, a); end
+                else if (fp_iszero(d, a)) r = a;
+                else if (sa) begin r = fp_qnan(d); fl[4] = 1; end
+                else if (fp_isinf(d, a)) r = a;
+                else begin
+                    ea = fp_exp(d, a); x = fp_sig(d, a);
+                    n = fp_msb({192'b0, x}); x = x << (52 - n); ea = ea - (52 - n);
+                    if (ea % 2 != 0) begin x = x << 1; ea = ea - 1; end
+                    x = x << 72; ea = ea - 72;                   // even shift: the root keeps at least 63 bits
+                    root = 0; rem = 0;
+                    for (i = 127; i >= 0; i = i - 2) begin
+                        rem = (rem << 2) | ((x >> i - 1) & 3);
+                        tmp = (root << 2) | 1;
+                        root = root << 1;
+                        if (rem >= tmp) begin rem = rem - tmp; root = root | 1; end
+                    end
+                    wide = {192'b0, root} << 1 | (rem != 0);
+                    t = fp_round(d, 1'b0, ea / 2 - 1, wide, rm); fl = t[68:64]; r = t[63:0];
+                end
+            end
+            FOP_MIN, FOP_MAX: begin
+                fl[4] = fp_issnan(d, a) || fp_issnan(d, b);
+                if (fp_isnan(d, a) && fp_isnan(d, b)) r = fp_qnan(d);
+                else if (fp_isnan(d, a)) r = b;
+                else if (fp_isnan(d, b)) r = a;
+                else begin
+                    // a < b ?  (-0 < +0)
+                    if (sa != sb) sx = sa;
+                    else sx = sa ? (d ? a[62:0] > b[62:0] : a[30:0] > b[30:0]) : (d ? a[62:0] < b[62:0] : a[30:0] < b[30:0]);
+                    r = (op == FOP_MIN) == sx ? a : b;
+                end
+            end
+            FOP_EQ, FOP_LT, FOP_LE: begin
+                if (fp_isnan(d, a) || fp_isnan(d, b)) begin
+                    r = 0; fl[4] = op == FOP_EQ ? (fp_issnan(d, a) || fp_issnan(d, b)) : 1'b1;
+                end else begin
+                    if (fp_iszero(d, a) && fp_iszero(d, b)) sx = 0;   // a < b?
+                    else if (sa != sb) sx = sa;
+                    else sx = sa ? (d ? a[62:0] > b[62:0] : a[30:0] > b[30:0]) : (d ? a[62:0] < b[62:0] : a[30:0] < b[30:0]);
+                    nv = (fp_iszero(d, a) && fp_iszero(d, b)) || (d ? a == b : a[31:0] == b[31:0]);   // equal
+                    r = op == FOP_EQ ? nv : op == FOP_LT ? sx : (sx || nv);
+                end
+            end
+            FOP_CLASS: begin
+                r = 0;
+                if (fp_isinf(d, a)) r[sa ? 0 : 7] = 1;
+                else if (fp_isnan(d, a)) r[fp_issnan(d, a) ? 8 : 9] = 1;
+                else if (fp_iszero(d, a)) r[sa ? 3 : 4] = 1;
+                else if (fp_expf(d, a) == 0) r[sa ? 2 : 5] = 1;
+                else r[sa ? 1 : 6] = 1;
+            end
+            FOP_SGNJ, FOP_SGNJN, FOP_SGNJX: begin
+                sx = op == FOP_SGNJ ? sb : op == FOP_SGNJN ? !sb : sa ^ sb;
+                r = d ? {sx, a[62:0]} : {32'hffffffff, sx, a[30:0]};
+            end
+            FOP_CVT_W, FOP_CVT_WU, FOP_CVT_L, FOP_CVT_LU: begin
+                // limits: W [-2^31, 2^31-1], WU [0, 2^32-1], L [-2^63, 2^63-1], LU [0, 2^64-1]
+                if (fp_isnan(d, a) || (fp_isinf(d, a) && !sa)) begin
+                    fl[4] = 1;
+                    r = op == FOP_CVT_W ? 64'h7fffffff : op == FOP_CVT_WU ? 64'hffffffffffffffff :
+                        op == FOP_CVT_L ? 64'h7fffffffffffffff : 64'hffffffffffffffff;
+                end else if (fp_isinf(d, a)) begin
+                    fl[4] = 1;
+                    r = op == FOP_CVT_W ? 64'hffffffff80000000 : op == FOP_CVT_L ? 64'h8000000000000000 : 64'h0;
+                end else if (fp_iszero(d, a)) r = 0;
+                else begin
+                    // round |a| to an integer (value = sig * 2^e)
+                    ea = fp_exp(d, a); x = fp_sig(d, a);
+                    if (ea >= 0) begin
+                        if (ea > 70) begin iv = 64'hffffffffffffffff; nv = 1; sx = 0; end
+                        else begin tmp = x << ea; iv = tmp[63:0]; nv = tmp[127:64] != 0; sx = 0; end
+                    end else begin
+                        k = -ea;
+                        tmp = k > 120 ? 0 : x >> k;
+                        sx = k > 120 ? (x != 0) : ((x & ((128'b1 << k) - 1)) != 0);    // inexact
+                        // rounding increment
+                        case (rm)
+                            3'd0: begin
+                                if (k <= 120) begin
+                                    if (x[k - 1] && (((x & ((128'b1 << (k - 1)) - 1)) != 0) || tmp[0])) tmp = tmp + 1;
+                                end
+                            end
+                            3'd1: ;
+                            3'd2: if (sa && sx) tmp = tmp + 1;
+                            3'd3: if (!sa && sx) tmp = tmp + 1;
+                            default: if (k <= 120 && x[k - 1]) tmp = tmp + 1;
+                        endcase
+                        iv = tmp[63:0]; nv = tmp[127:64] != 0;
+                    end
+                    // range check on the signed result
+                    if (op == FOP_CVT_W) begin
+                        if (nv || (!sa && iv > 64'h7fffffff) || (sa && iv > 64'h80000000)) begin fl[4] = 1; r = sa ? 64'hffffffff80000000 : 64'h7fffffff; end
+                        else begin r = sa ? -iv : iv; r = {{32{r[31]}}, r[31:0]}; fl[0] = sx; end
+                    end else if (op == FOP_CVT_WU) begin
+                        if ((sa && iv != 0) || nv || iv > 64'hffffffff) begin fl[4] = 1; r = sa ? 64'h0 : 64'hffffffffffffffff; end
+                        else begin r = {{32{iv[31]}}, iv[31:0]}; fl[0] = sx; end
+                    end else if (op == FOP_CVT_L) begin
+                        if (nv || (!sa && iv > 64'h7fffffffffffffff) || (sa && iv > 64'h8000000000000000)) begin fl[4] = 1; r = sa ? 64'h8000000000000000 : 64'h7fffffffffffffff; end
+                        else begin r = sa ? -iv : iv; fl[0] = sx; end
+                    end else begin
+                        if ((sa && iv != 0) || nv) begin fl[4] = 1; r = sa ? 64'h0 : 64'hffffffffffffffff; end
+                        else begin r = iv; fl[0] = sx; end
+                    end
+                end
+            end
+            FOP_CVT_FW, FOP_CVT_FWU, FOP_CVT_FL, FOP_CVT_FLU: begin
+                iv = op == FOP_CVT_FW ? {{32{ai[31]}}, ai[31:0]} : op == FOP_CVT_FWU ? {32'b0, ai[31:0]} : ai;
+                sx = (op == FOP_CVT_FW || op == FOP_CVT_FL) && iv[63];
+                if (sx) iv = -iv;
+                if (iv == 0) r = fp_zero(d, 1'b0);
+                else begin t = fp_round(d, sx, 0, {256'b0, iv}, rm); fl = t[68:64]; r = t[63:0]; end
+            end
+            FOP_CVT_SD: begin   // binary64 a -> binary32
+                if (fp_isnan(1'b1, a)) begin r = fp_qnan(1'b0); fl[4] = fp_issnan(1'b1, a); end
+                else if (fp_isinf(1'b1, a)) r = fp_inf(1'b0, a[63]);
+                else if (fp_iszero(1'b1, a)) r = fp_zero(1'b0, a[63]);
+                else begin t = fp_round(1'b0, a[63], fp_exp(1'b1, a), {267'b0, fp_sig(1'b1, a)}, rm); fl = t[68:64]; r = t[63:0]; end
+            end
+            FOP_CVT_DS: begin   // binary32 a -> binary64 (exact)
+                if (fp_isnan(1'b0, a)) begin r = fp_qnan(1'b1); fl[4] = fp_issnan(1'b0, a); end
+                else if (fp_isinf(1'b0, a)) r = fp_inf(1'b1, a[31]);
+                else if (fp_iszero(1'b0, a)) r = fp_zero(1'b1, a[31]);
+                else begin t = fp_round(1'b1, a[31], fp_exp(1'b0, a), {267'b0, fp_sig(1'b0, a)}, rm); fl = t[68:64]; r = t[63:0]; end
+            end
+            FOP_MV_XF: r = d ? ai : {{32{ai[31]}}, ai[31:0]};     // raw bits, no box check
+            FOP_MV_FX: r = d ? ai : {32'hffffffff, ai[31:0]};
+            default: r = 0;
+            endcase
+            fp_exec = {fl, r};
+        end
+    endfunction
+    // RISC-V F/D decoder for the out-of-order core (council backend, draft; standard encodings,
+    // to be checked against build/cpu/fp/FP-CONTRACT.md). Requires fpu.svh (FOP_*).
+    // fp_decode(insn) -> fields below; valid = 0 for anything that is not an F/D instruction or
+    // is a reserved F/D encoding (illegal: rename treats it as an illegal instruction).
+    //   [0]     valid
+    //   [2:1]   kind: 0 FP execute (C_FP), 1 FP load (flw/fld, C_LD), 2 FP store (fsw/fsd, C_ST)
+    //   [7:3]   fop (FOP_*), for kind 0
+    //   [8]     d: 1 binary64 (for loads/stores: 8-byte access)
+    //   [11:9]  rm: the instruction's rm field (7 = dynamic); ops that ignore rm have 0
+    //   [13:12] unit: 0 FMA pipe (FMA, FMUL), 1 add (FMA or misc port), 2 misc, 3 divide/sqrt
+    //   [14]    rs1 is an FP register (else integer)
+    //   [15]    rs2 used, [16] rs2 is an FP register
+    //   [17]    rs3 used (FP)
+    //   [18]    rd written, [19] rd is an FP register (else integer)
+    //   [20]    uses rm (rounding or reserved-rm check applies)
+    function automatic [20:0] fp_decode(input [31:0] insn);
+        reg [6:0] opc, f7; reg [2:0] f3; reg [4:0] rs2; reg [1:0] fmt;
+        reg v; reg [1:0] kind, unit; reg [4:0] fop; reg d, r1f, r2u, r2f, r3u, rdw, rdf, urm; reg [2:0] rm;
+        begin
+            opc = insn[6:0]; f7 = insn[31:25]; f3 = insn[14:12]; rs2 = insn[24:20]; fmt = insn[26:25];
+            v = 0; kind = 0; unit = 2; fop = 0; d = 0; r1f = 1; r2u = 0; r2f = 1; r3u = 0; rdw = 1; rdf = 1; urm = 0; rm = 0;
+            case (opc)
+            7'h07: if (f3 == 3'd2 || f3 == 3'd3) begin v = 1; kind = 1; d = f3[0]; r1f = 0; end            // flw, fld
+            7'h27: if (f3 == 3'd2 || f3 == 3'd3) begin v = 1; kind = 2; d = f3[0]; r1f = 0; r2u = 1; rdw = 0; end  // fsw, fsd
+            7'h43, 7'h47, 7'h4b, 7'h4f: if (fmt <= 2'd1) begin
+                v = 1; d = fmt[0]; unit = 0; r2u = 1; r3u = 1; urm = 1; rm = f3;
+                fop = opc == 7'h43 ? FOP_MADD : opc == 7'h47 ? FOP_MSUB : opc == 7'h4b ? FOP_NMSUB : FOP_NMADD;
+            end
+            7'h53: if (f7[1] == 1'b0 || f7[6:2] == 5'b01000) begin
+                d = f7[0];
+                case (f7[6:2])
+                5'b00000: begin v = 1; fop = FOP_ADD; unit = 1; r2u = 1; urm = 1; rm = f3; end
+                5'b00001: begin v = 1; fop = FOP_SUB; unit = 1; r2u = 1; urm = 1; rm = f3; end
+                5'b00010: begin v = 1; fop = FOP_MUL; unit = 0; r2u = 1; urm = 1; rm = f3; end
+                5'b00011: begin v = 1; fop = FOP_DIV; unit = 3; r2u = 1; urm = 1; rm = f3; end
+                5'b01011: if (rs2 == 0) begin v = 1; fop = FOP_SQRT; unit = 3; urm = 1; rm = f3; end
+                5'b00100: if (f3 <= 3'd2) begin v = 1; fop = f3 == 0 ? FOP_SGNJ : f3 == 1 ? FOP_SGNJN : FOP_SGNJX; r2u = 1; end
+                5'b00101: if (f3 <= 3'd1) begin v = 1; fop = f3 == 0 ? FOP_MIN : FOP_MAX; r2u = 1; end
+                5'b01000: if ((f7[1:0] == 2'b00 && rs2 == 5'd1) || (f7[1:0] == 2'b01 && rs2 == 5'd0)) begin   // fcvt.s.d, fcvt.d.s
+                    v = 1; d = f7[0]; fop = f7[0] ? FOP_CVT_DS : FOP_CVT_SD; urm = 1; rm = f3;
+                end
+                5'b11000: if (rs2 <= 5'd3) begin            // fcvt.{w,wu,l,lu}.{s,d}: integer rd
+                    v = 1; fop = rs2 == 0 ? FOP_CVT_W : rs2 == 1 ? FOP_CVT_WU : rs2 == 2 ? FOP_CVT_L : FOP_CVT_LU; rdf = 0; urm = 1; rm = f3;
+                end
+                5'b11010: if (rs2 <= 5'd3) begin            // fcvt.{s,d}.{w,wu,l,lu}: integer rs1
+                    v = 1; fop = rs2 == 0 ? FOP_CVT_FW : rs2 == 1 ? FOP_CVT_FWU : rs2 == 2 ? FOP_CVT_FL : FOP_CVT_FLU; r1f = 0; urm = 1; rm = f3;
+                end
+                5'b10100: if (f3 <= 3'd2) begin v = 1; fop = f3 == 2 ? FOP_EQ : f3 == 1 ? FOP_LT : FOP_LE; r2u = 1; rdf = 0; end
+                5'b11100: if (rs2 == 0 && f3 <= 3'd1) begin v = 1; fop = f3 == 0 ? FOP_MV_XF : FOP_CLASS; rdf = 0; end
+                5'b11110: if (rs2 == 0 && f3 == 0) begin v = 1; fop = FOP_MV_FX; r1f = 0; end
+                default: ;
+                endcase
+                if (v && f7[1]) v = 0;                    // fmt 2/3 (H/Q) are not implemented
+                if (v && urm && (rm == 3'd5 || rm == 3'd6)) v = 0;   // reserved static rm
+                if (fop == FOP_SQRT || fop == FOP_CVT_SD || fop == FOP_CVT_DS || fop == FOP_CLASS || fop == FOP_MV_XF ||
+                    fop == FOP_MV_FX || fop >= FOP_CVT_W) r2u = r2u;     // rs2 is an op selector there, not a source
+            end
+            default: ;
+            endcase
+            if (v && opc[6:4] == 3'b100 && (rm == 3'd5 || rm == 3'd6)) v = 0;   // FMA reserved rm
+            fp_decode = {urm, rdf, rdw, r3u, r2f, r2u, r1f, unit, rm, d, fop, kind, v};
+        end
+    endfunction
+    function rdy3(input integer kk); rdy3 = prf_ready[iq_ps3[kk]]; endfunction
     // Source readiness in the issue queue.
     function rdy1(input integer kk);
         rdy1 = (prf_ready[iq_ps1[kk]] && (OFF_LAT == 0 || iq_off1[kk] == 0 || iq_cls[kk] == C_LD ||
@@ -1105,6 +1592,9 @@ module rv64_core #(
             for (k = 0; k < LW_N; k = k + 1)
                 if (lw_valid[k] && (lw_rob[k] - rb_head) > keep_age) lw_valid[k] = 0;
             if (dv_busy && (dv_rob - rb_head) > keep_age) dv_busy = 0;
+            for (k = 0; k < FQ_N; k = k + 1)
+                if (fq_valid[k] && (fq_rob[k] - rb_head) > keep_age) fq_valid[k] = 0;
+            if (fd_busy && (fd_rob - rb_head) > keep_age) fd_busy = 0;
             if (fb_lock && (fb_owner - rb_head) > keep_age) fb_lock = 0;
             if (mu_owner_v && (mu_owner - rb_head) > keep_age) mu_owner_v = 0;
             if (mu_errv && (mu_err_owner - rb_head) > keep_age) mu_errv = 0;
@@ -1119,11 +1609,12 @@ module rv64_core #(
             mu_sent = 0; mu_stale = 0; pm_valid = 0; pm_sent = 0; pm_stale = 0; hold_tag = 0; sf_wait = 0; iq_slp = 0; iq_wany = 0;
             for (i = 0; i < PRF_N; i = i + 1) prf[i] = 0;
             prf_ready = {PRF_N{1'b1}}; prf_written = {PRF_N{1'b1}}; prf_late = 0;
-            free_mask = {PRF_N{1'b1}}; for (i = 0; i < 32; i = i + 1) free_mask[i] = 0;
-            for (i = 0; i < 32; i = i + 1) begin rat[i] = i; rrat[i] = i; rat_off[i] = 0; rrat_off[i] = 0; end
-            for (i = 0; i < PRF_N; i = i + 1) refcnt[i] = i < 32 ? 1 : 0;
+            free_mask = {PRF_N{1'b1}}; for (i = 0; i < NAR; i = i + 1) free_mask[i] = 0;
+            for (i = 0; i < NAR; i = i + 1) begin rat[i] = i; rrat[i] = i; rat_off[i] = 0; rrat_off[i] = 0; end
+            for (i = 0; i < PRF_N; i = i + 1) refcnt[i] = i < NAR ? 1 : 0;
+            rt_rdfp <= 0; rt_ff <= 0; rt_csrw <= 0; csr_busy = 0;
             pv_ok = 0; rb_viol = 0; mdp_wait = 0; rb_live = 0; rb_done = 0; rb_head = 0; rb_tail = 0; rb_count = 0;
-            iq_valid = 0; iq_issued = 0; ex_valid = 0; mq_valid = 0; dv_busy = 0; lw_valid = 0; rb_ans = 0; l0_v = 0; l0_p = 0; ld_lat_now = LD_LAT;
+            iq_valid = 0; iq_issued = 0; ex_valid = 0; mq_valid = 0; dv_busy = 0; fq_valid = 0; fd_busy = 0; fd_gap = 0; fcsr = 0; lw_valid = 0; rb_ans = 0; l0_v = 0; l0_p = 0; ld_lat_now = LD_LAT;
             ic_valid = 0; dc_valid = 0; btb_valid = 0; btb_ret = 0; ras_sp = 0; vp_valid = 0; lp_valid = 0; lp_dir = 0; tg_v = 0; tg_alt = 8; tg_age = 0; tg_ap = 0; f_gh = 0; r_gh = 0; tq_cnt = 0; tq_h = 0;
             for (i = 0; i < RAS_N; i = i + 1) ras[i] = 0;
             q_head = 0; q_tail = 0; q_count = 0;
@@ -1133,7 +1624,7 @@ module rv64_core #(
             retire3_valid <= 0; retire3_pc <= 0; retire3_insn <= 0; retire3_rd <= 0; retire3_data <= 0; retire3_next_pc <= 0;
             rt_valid <= 0; rt_pc <= 0; rt_insn <= 0; rt_rd <= 0; rt_data <= 0; rt_next <= 0;
         end else if (!halted) begin
-            retire_valid <= 0; retire2_valid <= 0; retire3_valid <= 0; rt_valid <= 0;
+            retire_valid <= 0; retire2_valid <= 0; retire3_valid <= 0; rt_valid <= 0; rt_rdfp <= 0; rt_csrw <= 0;
             if (!started) started = 1;
             fe_clk = fe_clk + 1;
             // ================= bus completion =================
@@ -1216,6 +1707,8 @@ module rv64_core #(
                 e = rb_head + k[ROB_B-1:0];
                 if (k < rb_count && rb_fence[e]) begin fo_valid = 1; fo_age = k[ROB_B-1:0]; end
             end
+            fd_pend = 0;
+            for (p = P_FP; p < NP; p = p + 1) if (ex_valid[p] && ex_cls[p] == C_FP && ex_funit[p] == 2'd3) fd_pend = 1;
             dv_pend = 0;
             for (p = 0; p < N_BR; p = p + 1)
                 if (ex_valid[p] && ex_cls[p] == C_FULL && (ex_insn[p][6:0] == 7'h33 || ex_insn[p][6:0] == 7'h3b) &&
@@ -1227,7 +1720,7 @@ module rv64_core #(
                 e = rb_head + k[ROB_B-1:0];
                 if (k < rb_count && rb_load[e] && !rb_done[e] && !rb_ans[e]) begin ol_valid = 1; ol_age = k[ROB_B-1:0]; end
             end
-            chosen = 0; pick_v = 0; divtaken = 0;
+            chosen = 0; pick_v = 0; divtaken = 0; fdtaken = 0;
             for (p = 0; p < NP; p = p + 1) begin
                 bestv = 0; best = 0; best_age = 0;
                 for (k = 0; k < IQ_N; k = k + 1) begin
@@ -1238,7 +1731,13 @@ module rv64_core #(
                              (iq_cls[k] == C_ALU || (p < N_BR && iq_cls[k] == C_FULL &&
                               !(iq_mdu[k] && iq_insn[k][14] && (dv_busy || dv_pend || divtaken))));
                     end else if (p < N_ALU + N_LD) ok = ok && iq_cls[k] == C_LD && (!iq_slp[k] || (ol_valid && a_age == ol_age)) && (!ou_valid || a_age < ou_age || !mdp_wait[mdp_i(iq_pc[k])]) && (!fo_valid || a_age < fo_age);
-                    else ok = ok && iq_cls[k] == C_ST;
+                    else if (p < P_FP) ok = ok && iq_cls[k] == C_ST;
+                    // FP ports: FMA-capable ports take FMA/FMUL/FADD, misc ports FADD and the rest;
+                    // the first misc port starts divide/sqrt when the unit is free.
+                    else ok = ok && iq_cls[k] == C_FP && rdy2(k) && rdy3(k) &&
+                              (p < P_FP + N_FMA ? iq_funit[k] <= 2'd1 :
+                               (iq_funit[k] == 2'd1 || iq_funit[k] == 2'd2 ||
+                                (iq_funit[k] == 2'd3 && p == P_FP + N_FMA && !(fd_gap != 0 || fd_pend || fdtaken))));
                     // Branch-capable ports: a full-class instruction (branch, jump, system, M)
                     // before any plain ALU one, oldest first within each.
                     if (ok && (!bestv || (p < N_BR && iq_cls[k] == C_FULL && iq_cls[best] != C_FULL) ||
@@ -1249,6 +1748,7 @@ module rv64_core #(
                 if (bestv) begin
                     pick_v[p] = 1; pick[p] = best; chosen[best] = 1;
                     if (iq_mdu[best] && iq_insn[best][14]) divtaken = 1;
+                    if (iq_cls[best] == C_FP && iq_funit[best] == 2'd3) fdtaken = 1;
                 end
             end
             prf_late = 0;
@@ -1322,19 +1822,20 @@ module rv64_core #(
                 if (rb_elim[e]) rb_value[e] = prf[rb_pdst[e]] + rb_off[e];
                 v = rb_writes[e] ? rb_value[e] : 64'b0;
                 rt_valid[s] <= 1'b1; rt_pc[64*s +: 64] <= rb_pc[e]; rt_insn[32*s +: 32] <= rb_insn[e];
-                rt_rd[5*s +: 5] <= rb_writes[e] ? rb_rd[e] : 5'd0; rt_data[64*s +: 64] <= v;
+                rt_rd[5*s +: 5] <= rb_writes[e] ? rb_rd[e][4:0] : 5'd0; rt_data[64*s +: 64] <= v;
+                if (FPU != 0) begin rt_rdfp[s] <= rb_writes[e] && rb_rd[e][AR_B-1]; rt_ff[5*s +: 5] <= rb_fflags[e]; fcsr[4:0] = fcsr[4:0] | rb_fflags[e]; end
                 rt_next[64*s +: 64] <= rb_next[e];
                 if (s == 0) begin
                     retire_valid <= 1; retire_pc <= rb_pc[e]; retire_insn <= rb_insn[e];
-                    retire_rd <= rb_writes[e] ? rb_rd[e] : 5'd0; retire_data <= v; retire_next_pc <= rb_next[e];
+                    retire_rd <= rb_writes[e] ? rb_rd[e][4:0] : 5'd0; retire_data <= v; retire_next_pc <= rb_next[e];
                 end
                 if (s == 1) begin
                     retire2_valid <= 1; retire2_pc <= rb_pc[e]; retire2_insn <= rb_insn[e];
-                    retire2_rd <= rb_writes[e] ? rb_rd[e] : 5'd0; retire2_data <= v; retire2_next_pc <= rb_next[e];
+                    retire2_rd <= rb_writes[e] ? rb_rd[e][4:0] : 5'd0; retire2_data <= v; retire2_next_pc <= rb_next[e];
                 end
                 if (s == 2) begin
                     retire3_valid <= 1; retire3_pc <= rb_pc[e]; retire3_insn <= rb_insn[e];
-                    retire3_rd <= rb_writes[e] ? rb_rd[e] : 5'd0; retire3_data <= v; retire3_next_pc <= rb_next[e];
+                    retire3_rd <= rb_writes[e] ? rb_rd[e][4:0] : 5'd0; retire3_data <= v; retire3_next_pc <= rb_next[e];
                 end
                 if (rb_writes[e]) begin
                     rrat[rb_rd[e]] = rb_pdst[e]; rrat_off[rb_rd[e]] = rb_elim[e] ? rb_off[e] : 64'b0;
@@ -1343,7 +1844,7 @@ module rv64_core #(
                         if (refcnt[rb_opdst[e]] == 0) free_mask[rb_opdst[e]] = 1;
                     end
                 end
-                if (rb_writes[e] && (rb_load[e] || ((rb_insn[e][6:0] == 7'h33 || rb_insn[e][6:0] == 7'h3b) && rb_insn[e][31:25] == 7'h01))) begin
+                if (rb_writes[e] && !(FPU != 0 && rb_rd[e][AR_B-1]) && (rb_load[e] || ((rb_insn[e][6:0] == 7'h33 || rb_insn[e][6:0] == 7'h3b) && rb_insn[e][31:25] == 7'h01))) begin
                     vpi = rb_pc[e][2 +: VP_BITS];
                     if (vp_valid[vpi] && vp_tag[vpi] == rb_pc[e][2+VP_BITS +: VP_TAG] && vp_val[vpi] == rb_value[e]) begin
                         if (vp_conf[vpi] != 63) vp_conf[vpi] = vp_conf[vpi] + 1;
@@ -1387,7 +1888,7 @@ module rv64_core #(
                 end
                 if (rb_store[e]) begin
                     // Write-through: update a cached line; drop a cached instruction beat.
-                    r_wd = (prf[rb_sps2[e]] + rb_soff[e]) << {rb_addr[e][2:0],3'b000};
+                    r_wd = ((prf[rb_sps2[e]] + rb_soff[e]) & (rb_fsw[e] ? 64'h00000000ffffffff : 64'hffffffffffffffff)) << {rb_addr[e][2:0],3'b000};
                     fi = rb_addr[e][3 +: IC_INDEX];
                     if (dc_line(rb_addr[e]) >= 0)
                         for (k = 0; k < 8; k = k + 1)
@@ -1409,6 +1910,8 @@ module rv64_core #(
                     if (hit) smc = 1;
                 end
                 if (rb_fencei[e]) ic_valid = 0;
+                if (FPU != 0 && rb_csrw[e]) begin fcsr = rb_csrv[e]; rt_csrw[s] <= 1; rt_csrv[8*s +: 8] <= rb_csrv[e]; end
+                if (FPU != 0 && rb_live[e] && rb_insn[e][6:0] == 7'h73 && rb_insn[e][14:12] != 0) csr_busy = 0;
                 rb_live[e] = 0; rb_done[e] = 0;
             end
             // A retired store wrote the beat of a younger fetched instruction: refetch
@@ -1503,7 +2006,7 @@ module rv64_core #(
                             e = rb_head + k[ROB_B-1:0];
                             if (k[ROB_B-1:0] < a_age && rb_live[e] && rb_store[e] && rb_sta[e] &&
                                 rb_addr[e][63:3] == ea[63:3] && (rb_wstrb[e] & bytes_) != 0) begin
-                                lw = (prf[rb_sps2[e]] + rb_soff[e]) << {rb_addr[e][2:0],3'b000};
+                                lw = ((prf[rb_sps2[e]] + rb_soff[e]) & (rb_fsw[e] ? 64'h00000000ffffffff : 64'hffffffffffffffff)) << {rb_addr[e][2:0],3'b000};
                                 for (b2 = 0; b2 < 8; b2 = b2 + 1) if (rb_wstrb[e][b2] && bytes_[b2]) begin
                                     fwd_mask[b2] = 1; fwd_byte_w[b2] = prf_written[rb_sps2[e]]; fwd_data[8*b2 +: 8] = lw[8*b2 +: 8];
                                 end
@@ -1517,11 +2020,13 @@ module rv64_core #(
                             lw = dc_hit_ ? dc_data[dc_line(ea)] : fb_data;
                             for (b2 = 0; b2 < 8; b2 = b2 + 1) if (fwd_mask[b2]) lw[8*b2 +: 8] = fwd_data[8*b2 +: 8];
                             v = load_align(lw, ea[2:0], f3_); fdone = 1;
+                            if (FPU != 0 && ex_insn[p][6:0] == 7'h07 && f3_ == 3'd2) v = {32'hffffffff, v[31:0]};   // flw: NaN-box
                         end else begin
                             // Stores cover every byte but the beat has not been read: the value
                             // goes to consumers now, and the load finishes after the read.
                             if (fwd_mask == bytes_ && ex_writes[p]) begin
-                                prf[ex_pdst[p]] = load_align(fwd_data, ea[2:0], f3_);
+                                prf[ex_pdst[p]] = (FPU != 0 && ex_insn[p][6:0] == 7'h07 && f3_ == 3'd2) ?
+                                    fbox(load_align(fwd_data, ea[2:0], f3_)) : load_align(fwd_data, ea[2:0], f3_);
                                 prf_written[ex_pdst[p]] = 1;
                                 if (LD_LAT < 2 || rb_vp[x_rob]) prf_ready[ex_pdst[p]] = 1;
                                 else if (!prf_ready[ex_pdst[p]]) ld_wake(ex_pdst[p], x_rob, 1'b0);
@@ -1567,7 +2072,7 @@ module rv64_core #(
                             iq_valid[ex_iq[p]] = 0;
                         end else iq_issued[ex_iq[p]] = 0;
                     end
-                end else begin
+                end else if (p < P_FP) begin
                     // Store: record the address; the data register is read at retirement.
                     f3_ = ex_insn[p][14:12];
                     ea = opa(p) + {{52{ex_insn[p][31]}}, ex_insn[p][31:25], ex_insn[p][11:7]};
@@ -1592,6 +2097,31 @@ module rv64_core #(
                                     vc_mask = vc_mask & ~rb_wstrb[vc_e];
                             end
                             if (vc_mask != 0) rb_viol[e] = 1;
+                        end
+                    end
+                end else begin
+                    // F/D execute (RV64_OOO_FPU). DYN rounding with frm 5-7 is an illegal instruction.
+                    if (ex_rm[p] == 3'd7 && fcsr[7:5] > 3'd4) begin
+                        rb_done[x_rob] = 1; rb_exc[x_rob] = 1; rb_cause[x_rob] = 2; rb_tval[x_rob] = {32'b0, ex_insn[p]};
+                    end else begin
+                        frm_now = ex_rm[p] == 3'd7 ? fcsr[7:5] : ex_rm[p];
+                        fy = fp_exec(ex_fop[p], ex_fsz[p], frm_now, opa(p), opb(p), prf[ex_ps3[p]]);
+                        rb_next[x_rob] = ex_pc[p] + 64'd4;
+                        begin : fq_start
+                            reg placed;
+                            placed = 0;
+                            // Divide/sqrt: pipelined at its initiation interval (the next start waits fd_gap).
+                            if (ex_funit[p] == 2'd3) begin
+                                flat = ex_fop[p] == FOP_SQRT ? (ex_fsz[p] ? FSQRT_D : FSQRT_S) : (ex_fsz[p] ? FDIV_D : FDIV_S);
+                                fd_gap = (ex_fop[p] == FOP_SQRT ? (ex_fsz[p] ? FSQRT_II_D : FSQRT_II_S) : (ex_fsz[p] ? FDIV_II_D : FDIV_II_S)) - 1;
+                            end else
+                                flat = ex_funit[p] == 2'd0 ? FMA_LAT : ex_funit[p] == 2'd1 ? FADD_LAT :
+                                       (ex_fop[p] >= FOP_CVT_W && ex_fop[p] <= FOP_CVT_DS) ? FCVT_LAT : FMISC_LAT;
+                            for (k = 0; k < FQ_N; k = k + 1) if (!fq_valid[k] && !placed) begin
+                                placed = 1; fq_valid[k] = 1; fq_cnt[k] = flat - 2; fq_rob[k] = x_rob; fq_pdst[k] = ex_pdst[p];
+                                fq_writes[k] = ex_writes[p]; fq_val[k] = fy[63:0]; fq_fl[k] = fy[68:64];
+                            end
+                            if (!placed) $fatal(1, "FP pipeline full (FQ_N)");
                         end
                     end
                 end
@@ -1638,6 +2168,24 @@ module rv64_core #(
                     if (lw_fin[k]) rb_done[lw_rob[k]] = 1;
                 end else lw_cnt[k] = lw_cnt[k] - 1;
             end
+            // ---- FP pipelines and the FP divide/sqrt unit (RV64_OOO_FPU)
+            if (fd_gap != 0) fd_gap = fd_gap - 1;
+            for (k = 0; k < FQ_N; k = k + 1) if (fq_valid[k]) begin
+                if (rflush || (mp_any && (fq_rob[k] - rb_head) > o_age)) fq_valid[k] = 0;
+                else if (fq_cnt[k] == 0) begin
+                    fq_valid[k] = 0;
+                    if (fq_writes[k]) begin prf_late[fq_pdst[k]] = !prf_ready[fq_pdst[k]]; prf[fq_pdst[k]] = fq_val[k]; prf_written[fq_pdst[k]] = 1; prf_ready[fq_pdst[k]] = 1; end
+                    rb_value[fq_rob[k]] = fq_val[k]; rb_done[fq_rob[k]] = 1; rb_exc[fq_rob[k]] = 0; rb_fflags[fq_rob[k]] = fq_fl[k];
+                end else fq_cnt[k] = fq_cnt[k] - 1;
+            end
+            if (fd_busy) begin
+                if (rflush || (mp_any && (fd_rob - rb_head) > o_age)) fd_busy = 0;
+                else if (fd_cnt == 0) begin
+                    fd_busy = 0;
+                    if (fd_writes) begin prf_late[fd_pdst] = !prf_ready[fd_pdst]; prf[fd_pdst] = fd_val; prf_written[fd_pdst] = 1; prf_ready[fd_pdst] = 1; end
+                    rb_value[fd_rob] = fd_val; rb_done[fd_rob] = 1; rb_exc[fd_rob] = 0; rb_fflags[fd_rob] = fd_fl;
+                end else fd_cnt = fd_cnt - 1;
+            end
             // ---- multiply pipeline and divide unit
             for (k = 0; k < MQ_N; k = k + 1) if (mq_valid[k]) begin
                 if (rflush || (mp_any && (mq_rob[k] - rb_head) > o_age)) mq_valid[k] = 0;
@@ -1665,12 +2213,13 @@ module rv64_core #(
                 // Sources are checked again: a load that did not answer this clock takes
                 // back the wakeup it gave when it issued.
                 if (iq_valid[k] && !rflush && !(mp_any && (iq_rob[k] - rb_head) > o_age) && rdy1(k) &&
-                    (iq_cls[k] == C_LD || iq_cls[k] == C_ST || rdy2(k))) begin
+                    (iq_cls[k] == C_LD || iq_cls[k] == C_ST || rdy2(k)) && (iq_cls[k] != C_FP || rdy3(k))) begin
                     ex_valid[p] = 1; ex_iq[p] = k; ex_cls[p] = iq_cls[k]; ex_rob[p] = iq_rob[k]; ex_pc[p] = iq_pc[k];
                     ex_insn[p] = iq_insn[k]; ex_ps1[p] = iq_ps1[k]; ex_ps2[p] = iq_ps2[k]; ex_pdst[p] = iq_pdst[k];
                     ex_fz1[p] = iq_fz1[k]; ex_fz2[p] = iq_fz2[k]; ex_fzi[p] = iq_fzi[k]; ex_fzpc[p] = iq_fzpc[k];
                     ex_fza[p] = iq_fza[k]; ex_fzb[p] = iq_fzb[k]; ex_off1[p] = iq_off1[k]; ex_off2[p] = iq_off2[k];
                     ex_writes[p] = iq_writes[k]; ex_pred[p] = iq_pred[k]; ex_alt[p] = iq_alt[k]; ex_ptaken[p] = iq_ptaken[k];
+                    ex_ps3[p] = iq_ps3[k]; ex_fop[p] = iq_fop[k]; ex_fsz[p] = iq_fsz[k]; ex_rm[p] = iq_rm[k]; ex_funit[p] = iq_funit[k];
                     if (iq_cls[k] == C_LD) iq_issued[k] = 1;
                     else iq_valid[k] = 0;
                     // A result one clock away wakes its consumers now.
@@ -1683,13 +2232,13 @@ module rv64_core #(
             // ---- recovery
             h_after = rb_head + n_ret[ROB_B-1:0];
             rb_count_new = rb_count - n_ret;
-            if (rflush || mp_any) pv_ok = 0;
+            if (rflush || mp_any) begin pv_ok = 0; csr_busy = 0; end
             if (rflush) begin
                 squash_after(n_ret[ROB_B-1:0] - 1);
-                for (i = 0; i < 32; i = i + 1) begin rat[i] = rrat[i]; rat_off[i] = rrat_off[i]; end
+                for (i = 0; i < NAR; i = i + 1) begin rat[i] = rrat[i]; rat_off[i] = rrat_off[i]; end
                 free_mask = {PRF_N{1'b1}};
                 for (i = 0; i < PRF_N; i = i + 1) refcnt[i] = 0;
-                for (i = 0; i < 32; i = i + 1) begin free_mask[rrat[i]] = 0; refcnt[rrat[i]] = refcnt[rrat[i]] + 1; end
+                for (i = 0; i < NAR; i = i + 1) begin free_mask[rrat[i]] = 0; refcnt[rrat[i]] = refcnt[rrat[i]] + 1; end
                 prf_ready = {PRF_N{1'b1}}; prf_written = {PRF_N{1'b1}}; prf_late = 0;
                 ex_valid = 0; iq_valid = 0; iq_issued = 0; fb_lock = 0; mu_owner_v = 0; mu_errv = 0;
                 rb_live = 0; rb_tail = h_after; rb_count_new = 0;
@@ -1701,7 +2250,7 @@ module rv64_core #(
                 f_gh = rflush_ld ? rb_gh[rflush_e] : r_gh;
             end else if (mp_any) begin
                 squash_after(o_age);
-                for (i = 0; i < 32; i = i + 1) begin rat[i] = snap[b_rob][i]; rat_off[i] = snap_off[b_rob][i]; end
+                for (i = 0; i < NAR; i = i + 1) begin rat[i] = snap[b_rob][i]; rat_off[i] = snap_off[b_rob][i]; end
                 ras_sp = rb_rsp[b_rob]; ras[ras_sp] = rb_rtos[b_rob];
                 f_gh = rb_insn[b_rob][6:0] == 7'h63 ? {rb_gh[b_rob][GH_L-2:0], rb_taken[b_rob]} : rb_gh[b_rob];
                 rb_tail = b_rob + 1;
@@ -1719,25 +2268,33 @@ module rv64_core #(
                 for (k = 0; k < IQ_N; k = k + 1) if (!iq_valid[k] && nfi < FW) begin fiq[nfi] = k; nfi = nfi + 1; end
                 for (k = 1; k < PRF_N; k = k + 1) if (free_mask[k] && nfp < FW) begin fpl[nfp] = k; nfp = nfp + 1; end
                 for (s = 0; s < FW; s = s + 1) if (!stop) begin
-                    if (s >= q_count || (FE_DEPTH > 0 && q_t[(q_head + s) % Q_N] >= fe_clk)) stop = 1;
+                    if (s >= q_count || (FE_DEPTH > 0 && q_t[(q_head + s) % Q_N] >= fe_clk) || (FPU != 0 && csr_busy)) stop = 1;
                     else begin
                         j = (q_head + s) % Q_N;
                         wi = q_insn[j]; wpc = q_pc[j]; isfault = q_fault[j];
                         op = wi[6:0]; rd_ = wi[11:7]; rs1_ = wi[19:15]; rs2_ = wi[24:20]; f3_ = wi[14:12];
-                        writes_ = !isfault && rd_ != 0 && (op == 7'h37 || op == 7'h17 || op == 7'h6f || op == 7'h67 ||
+                        fdc_ = (FPU != 0 && !isfault) ? fp_decode(wi) : 21'b0;
+                        fpop_ = fdc_[0] && fdc_[2:1] == 2'd0; fpld_ = fdc_[0] && fdc_[2:1] == 2'd1; fpst_ = fdc_[0] && fdc_[2:1] == 2'd2;
+                        fs1_ = fdc_[0] && fdc_[14]; u2fp_ = fdc_[0] && fdc_[15]; fs2_ = fdc_[0] && fdc_[16]; uses3_ = fdc_[0] && fdc_[17];
+                        fpw_ = fdc_[0] && fdc_[18]; fdst_ = fdc_[0] && fdc_[19];
+                        if (FPU != 0) begin ard_ = {fdst_, rd_}; ars1_ = {fs1_, rs1_}; ars2_ = {fs2_, rs2_}; ars3_ = {1'b1, wi[31:27]}; end
+                        else begin ard_ = rd_; ars1_ = rs1_; ars2_ = rs2_; ars3_ = 0; end
+                        csr_ = FPU != 0 && !isfault && op == 7'h73 && f3_ != 0 && f3_ != 3'd4 && wi[31:22] == 0 && wi[21:20] != 0;
+                        writes_ = !isfault && ard_ != 0 && (fpw_ || csr_ || op == 7'h37 || op == 7'h17 || op == 7'h6f || op == 7'h67 ||
                                   op == 7'h13 || op == 7'h1b || op == 7'h33 || op == 7'h3b || op == 7'h03);
                         uses1_ = !(op == 7'h37 || op == 7'h17 || op == 7'h6f);
-                        uses2_ = op == 7'h33 || op == 7'h3b || op == 7'h63 || op == 7'h23;
+                        uses2_ = op == 7'h33 || op == 7'h3b || op == 7'h63 || op == 7'h23 || u2fp_;
                         // Prediction check (what D did in the earlier cores).
                         tgt = wpc + (op == 7'h6f ? {{43{wi[31]}},wi[31],wi[19:12],wi[20],wi[30:21],1'b0}
                                                  : {{51{wi[31]}},wi[31],wi[7],wi[30:25],wi[11:8],1'b0});
                         tkp = (op == 7'h6f || (op == 7'h63 && q_fpred[j])) && tgt[1:0] == 0 && !isfault;
                         npc = wpc + 64'd4;
                         d_want = isfault ? q_pred[j] : op == 7'h67 ? q_pred[j] : tkp ? tgt : npc;
-                        ps1_ = (uses1_ && rs1_ != 0) ? rat[rs1_] : 0;
-                        ps2_ = (uses2_ && rs2_ != 0) ? rat[rs2_] : 0;
-                        o1_ = (uses1_ && rs1_ != 0) ? rat_off[rs1_] : 64'b0;
-                        o2_ = (uses2_ && rs2_ != 0) ? rat_off[rs2_] : 64'b0;
+                        ps1_ = (uses1_ && ars1_ != 0) ? rat[ars1_] : 0;
+                        ps2_ = (uses2_ && ars2_ != 0) ? rat[ars2_] : 0;
+                        o1_ = (uses1_ && ars1_ != 0) ? rat_off[ars1_] : 64'b0;
+                        o2_ = (uses2_ && ars2_ != 0) ? rat_off[ars2_] : 64'b0;
+                        ps3_ = (FPU != 0 && uses3_) ? rat[ars3_] : 0;   // before the destination map update (rd may equal rs3)
                         // Folding: finished at rename, no issue-queue entry, no port; a
                         // writer maps rd to (ep_, eoff) without a new physical register.
                         elim_ = 0; done_ = 0; ep_ = 0; eoff = 0;
@@ -1756,13 +2313,23 @@ module rv64_core #(
                                 done_ = 1; elim_ = writes_; eoff = npc; d_want = jt_;
                             end
                         end
+                        if (csr_) begin
+                            csr_fcsr = fcsr;
+                            csr_old = wi[21:20] == 2'd1 ? {59'b0, fcsr[4:0]} : wi[21:20] == 2'd2 ? {61'b0, fcsr[7:5]} : {56'b0, fcsr};
+                            csr_src = f3_[2] ? {59'b0, rs1_} : (rs1_ == 0 ? 64'b0 : prf[rat[rs1_]] + rat_off[rs1_]);
+                            csr_new = f3_[1:0] == 2'd1 ? csr_src : f3_[1:0] == 2'd2 ? (csr_old | csr_src) : (csr_old & ~csr_src);
+                            if (wi[21:20] == 2'd1) csr_fcsr[4:0] = csr_new[4:0];
+                            else if (wi[21:20] == 2'd2) csr_fcsr[7:5] = csr_new[2:0];
+                            else csr_fcsr = csr_new[7:0];
+                            done_ = 1; elim_ = writes_; ep_ = 0; eoff = csr_old;
+                        end
                         cf_now = 0; br_now = 0; bt_ = 0;
                         // Every source a constant: a simple op is computed here.
                         if (CFOLD != 0 && !isfault && !done_ && writes_ &&
                             (op == 7'h13 || op == 7'h1b || op == 7'h33 || op == 7'h3b) &&
                             !((op == 7'h33 || op == 7'h3b) && wi[31:25] == 7'h01) &&
                             ps1_ == 0 && (!uses2_ || ps2_ == 0) &&
-                            (CFOLD > 1 || (!cf_lvl[rs1_] && !(uses2_ && cf_lvl[rs2_])))) begin
+                            (CFOLD > 1 || (!cf_lvl[ars1_] && !(uses2_ && cf_lvl[ars2_])))) begin
                             csa_ = simple_alu(wi, o1_, o2_, wpc);
                             if (csa_[66]) begin
                                 done_ = 1; elim_ = 1; ep_ = 0; eoff = csa_[63:0]; cf_now = 1; n_cf = n_cf + 1;
@@ -1786,20 +2353,20 @@ module rv64_core #(
                         // Resources: ROB entry, issue-queue entry, physical register.
                         slot_ok = ui < nfi; slot = fiq[ui % FW];
                         fp_ok = up < nfp; fp = fpl[up % FW];
-                        if (rb_count_new >= ROB_N || (!isfault && !done_ && !slot_ok) || (writes_ && !elim_ && !fp_ok)) stop = 1;
+                        if ((csr_ && (s != 0 || rb_count_new != 0)) || rb_count_new >= ROB_N || (!isfault && !done_ && !slot_ok) || (writes_ && !elim_ && !fp_ok)) stop = 1;
                         else begin
                             sa = simple_alu(wi, 64'b0, 64'b0, 64'b0);
-                            cls_ = op == 7'h03 ? C_LD : op == 7'h23 ? C_ST : sa[66] ? C_ALU : C_FULL;
+                            cls_ = (op == 7'h03 || fpld_) ? C_LD : (op == 7'h23 || fpst_) ? C_ST : fpop_ ? C_FP : sa[66] ? C_ALU : C_FULL;
                             e = rb_tail;
                             rb_live[e] = 1; rb_done[e] = isfault; rb_exc[e] = isfault;
                             rb_cause[e] = q_fmis[j] ? 64'd0 : 64'd1; rb_tval[e] = wpc;
-                            rb_pc[e] = wpc; rb_insn[e] = wi; rb_next[e] = d_want; rb_rd[e] = rd_; rb_writes[e] = writes_;
-                            rb_store[e] = op == 7'h23 && !isfault; rb_load[e] = op == 7'h03 && !isfault;
+                            rb_pc[e] = wpc; rb_insn[e] = wi; rb_next[e] = d_want; rb_rd[e] = ard_; rb_writes[e] = writes_; rb_fflags[e] = 0; rb_csrw[e] = csr_ && (f3_[1:0] == 2'd1 || rs1_ != 0); rb_csrv[e] = csr_fcsr; rb_fsw[e] = fpst_ && f3_ == 3'd2;
+                            rb_store[e] = (op == 7'h23 || fpst_) && !isfault; rb_load[e] = (op == 7'h03 || fpld_) && !isfault;
                             rb_fencei[e] = 0; rb_ctl[e] = 0; rb_sta[e] = 0; rb_viol[e] = 0; rb_ldv[e] = 0; rb_ans[e] = 0; rb_wstrb[e] = 0; rb_taken[e] = 0; rb_ret[e] = 0;
                             rb_bhit[e] = q_bhit[j]; rb_bctr[e] = q_bctr[j]; rb_rsp[e] = q_rsp[j]; rb_rtos[e] = q_rtos[j]; rb_gh[e] = q_gh[j]; rb_tp[e] = q_tp[j];
                             rb_li[e] = q_li[j]; rb_lp[e] = op == 7'h63 && !isfault; rb_ld[e] = tkp;
                             rb_fence[e] = op == 7'h0f && f3_ == 3'd0 && !isfault;
-                            rb_opdst[e] = rat[rd_]; rb_pdst[e] = writes_ ? (elim_ ? ep_ : fp) : 0;
+                            rb_opdst[e] = rat[ard_]; rb_pdst[e] = writes_ ? (elim_ ? ep_ : fp) : 0;
                             rb_elim[e] = elim_; rb_off[e] = eoff;
                             if (done_) begin
                                 rb_done[e] = 1; rb_exc[e] = 0;
@@ -1810,12 +2377,12 @@ module rv64_core #(
                                     rb_ctl[e] = 1; rb_taken[e] = bt_;
                                 end
                             end
-                            if (writes_) cf_lvl[rd_] = cf_now;
+                            if (writes_) cf_lvl[ard_] = cf_now;
                             if (writes_ && elim_) begin
-                                rat[rd_] = ep_; rat_off[rd_] = eoff;
+                                rat[ard_] = ep_; rat_off[ard_] = eoff;
                                 if (ep_ != 0) refcnt[ep_] = refcnt[ep_] + 1;
                             end else if (writes_) begin
-                                rat[rd_] = fp; rat_off[rd_] = 0; refcnt[fp] = 1;
+                                rat[ard_] = fp; rat_off[ard_] = 0; refcnt[fp] = 1;
                                 free_mask[fp] = 0; prf_ready[fp] = 0; prf_written[fp] = 0;
                             end
                             vpi = wpc[2 +: VP_BITS];
@@ -1825,24 +2392,27 @@ module rv64_core #(
                                 rb_vp[e] = 1; rb_vpv[e] = vp_val[vpi];
                                 prf[fp] = vp_val[vpi]; prf_written[fp] = 1; prf_ready[fp] = 1; prf_late[fp] = 1;
                             end
-                            if (op == 7'h63 || op == 7'h67) for (i = 0; i < 32; i = i + 1) begin snap[e][i] = rat[i]; snap_off[e][i] = rat_off[i]; end
+                            if (op == 7'h63 || op == 7'h67) for (i = 0; i < NAR; i = i + 1) begin snap[e][i] = rat[i]; snap_off[e][i] = rat_off[i]; end
                             if (!isfault && !done_) begin
                                 iq_valid[slot] = 1; iq_issued[slot] = 0; iq_slp[slot] = 0; iq_wany[slot] = 0; iq_cls[slot] = cls_; iq_rob[slot] = e;
                                 iq_pc[slot] = wpc; iq_insn[slot] = wi; iq_ps1[slot] = ps1_; iq_ps2[slot] = ps2_;
                                 iq_pdst[slot] = writes_ ? fp : 0; iq_writes[slot] = writes_;
                                 iq_mdu[slot] = (op == 7'h33 || op == 7'h3b) && wi[31:25] == 7'h01;
                                 iq_pred[slot] = d_want; iq_ptaken[slot] = tkp; iq_alt[slot] = tkp ? npc : tgt;
-                                iq_fz1[slot] = pv_ok && uses1_ && rs1_ == pv_rd;
-                                iq_fz2[slot] = pv_ok && uses2_ && rs2_ == pv_rd && cls_ != C_ST;
+                                iq_fz1[slot] = pv_ok && uses1_ && ars1_ == pv_rd && cls_ != C_FP;
+                                iq_fz2[slot] = pv_ok && uses2_ && ars2_ == pv_rd && cls_ != C_ST && cls_ != C_FP;
                                 iq_fzi[slot] = pv_insn; iq_fzpc[slot] = pv_pc; iq_fza[slot] = pv_a; iq_fzb[slot] = pv_b;
                                 iq_off1[slot] = o1_; iq_off2[slot] = o2_;
+                                iq_ps3[slot] = ps3_;
+                                iq_fop[slot] = fdc_[7:3]; iq_fsz[slot] = fdc_[8]; iq_rm[slot] = fdc_[11:9]; iq_funit[slot] = fdc_[13:12];
                             end
-                            cur_fz = pv_ok && ((uses1_ && rs1_ == pv_rd) || (uses2_ && rs2_ == pv_rd && cls_ != C_ST));
+                            cur_fz = pv_ok && cls_ != C_FP && ((uses1_ && ars1_ == pv_rd) || (uses2_ && ars2_ == pv_rd && cls_ != C_ST));
                             pv_ok = !isfault && cls_ == C_ALU && writes_ && !cur_fz && !done_ && o1_ == 0 && o2_ == 0;
-                            pv_rd = rd_; pv_insn = wi; pv_pc = wpc; pv_a = ps1_; pv_b = ps2_;
+                            pv_rd = ard_; pv_insn = wi; pv_pc = wpc; pv_a = ps1_; pv_b = ps2_;
                             rb_tail = rb_tail + 1; rb_count_new = rb_count_new + 1; n_ren = n_ren + 1;
                             if (!isfault && !done_) ui = ui + 1;
                             if (writes_ && !elim_) up = up + 1;
+                            if (csr_) begin csr_busy = 1; stop = 1; end
                             if (d_want != q_pred[j] || (TG_N != 0 && op == 7'h63 && !isfault && (br_now ? bt_ : tkp) != q_fpred[j])) begin
                                 d_redirect = 1; d_redirect_pc = d_want; d_redirect_sp = q_rsp[j]; d_redirect_tos = q_rtos[j];
                                 d_redirect_gh = op == 7'h63 ? {q_gh[j][GH_L-2:0], br_now ? bt_ : tkp} : q_gh[j]; stop = 1;

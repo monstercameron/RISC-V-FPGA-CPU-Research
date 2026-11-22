@@ -101,23 +101,28 @@ module tb_bench #(parameter integer RAM_WORDS = 8192, parameter integer ICACHE_B
         if (retired2) retirements=retirements+1;
         if (retired3) retirements=retirements+1;
 `endif
+`ifdef RV64_OOO_FPU
+`define TB_PRD(s,r) {2'b0,dut.cpu.rt_rdfp[s],r}
+`else
+`define TB_PRD(s,r) r
+`endif
         // +profile: one line per instruction retired inside the timed region with
         // the clocks it spent in FETCH, EXECUTE (with DIVIDE) and MEMORY.
         if (retired) begin
             if (profile_fd!=0 && start_cycle>=0 && stop_cycle<0)
                 $fdisplay(profile_fd,"R %016h %08h %02h %016h %0d %0d %0d",dut.cpu.retire_pc,
-                    dut.cpu.retire_insn,dut.cpu.retire_rd,dut.cpu.retire_next_pc,in_fetch,in_execute,in_memory);
+                    dut.cpu.retire_insn,`TB_PRD(0,dut.cpu.retire_rd),dut.cpu.retire_next_pc,in_fetch,in_execute,in_memory);
             // The second slot retires in the same clock and adds no clocks of its own.
             if (retired2 && profile_fd!=0 && start_cycle>=0 && stop_cycle<0)
                 $fdisplay(profile_fd,"R %016h %08h %02h %016h 0 0 0",dut.cpu.retire2_pc,
-                    dut.cpu.retire2_insn,dut.cpu.retire2_rd,dut.cpu.retire2_next_pc);
+                    dut.cpu.retire2_insn,`TB_PRD(1,dut.cpu.retire2_rd),dut.cpu.retire2_next_pc);
             if (retired3 && profile_fd!=0 && start_cycle>=0 && stop_cycle<0)
                 $fdisplay(profile_fd,"R %016h %08h %02h %016h 0 0 0",dut.cpu.retire3_pc,
-                    dut.cpu.retire3_insn,dut.cpu.retire3_rd,dut.cpu.retire3_next_pc);
+                    dut.cpu.retire3_insn,`TB_PRD(2,dut.cpu.retire3_rd),dut.cpu.retire3_next_pc);
 `ifdef WIDE_TRACE
             for (w=3;w<$bits(dut.cpu.rt_valid);w=w+1) if (dut.cpu.rt_valid[w] && profile_fd!=0 && start_cycle>=0 && stop_cycle<0)
                 $fdisplay(profile_fd,"R %016h %08h %02h %016h 0 0 0",dut.cpu.rt_pc[64*w +: 64],
-                    dut.cpu.rt_insn[32*w +: 32],dut.cpu.rt_rd[5*w +: 5],dut.cpu.rt_next[64*w +: 64]);
+                    dut.cpu.rt_insn[32*w +: 32],`TB_PRD(w,dut.cpu.rt_rd[5*w +: 5]),dut.cpu.rt_next[64*w +: 64]);
 `endif
             in_fetch=0; in_execute=0; in_memory=0;
         end

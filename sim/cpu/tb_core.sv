@@ -133,15 +133,27 @@ module tb_core #(parameter integer MEM_BYTES=16384, parameter integer ICACHE_BEA
             // write is logged just before its own retirement, whatever its slot.
             for (q=0;q<RWT;q=q+1) if (rtv[q]) begin
                 if (q>0 && !rtv[q-1]) $fatal(1,"retirement slots not contiguous");
+`ifdef RV64_OOO_FPU
+                if (rtinsn[32*q +: 7]==7'h23 || rtinsn[32*q +: 7]==7'h27) begin
+`else
                 if (rtinsn[32*q +: 7]==7'h23) begin
+`endif
                     // Paired writes (0.11.0) belong to two stores, in program order.
                     if (pending_write!="") begin $fdisplay(fd,"%s",pending_write); pending_write=""; end
                     else if (pending_write2!="") begin $fdisplay(fd,"%s",pending_write2); pending_write2=""; end
                     else if (pending_write3!="") begin $fdisplay(fd,"%s",pending_write3); pending_write3=""; end
                     else if (pending_write4!="") begin $fdisplay(fd,"%s",pending_write4); pending_write4=""; end
                 end
+`ifdef RV64_OOO_FPU
+                // F/D (FP-CONTRACT.md 7): flags raised, a written fcsr, then R with rd 0x20+n for f registers.
+                if (dut.rt_ff[5*q +: 5] != 0) $fdisplay(fd,"F %02h",{3'b0,dut.rt_ff[5*q +: 5]});
+                if (dut.rt_csrw[q]) $fdisplay(fd,"C 003 %016h",{56'b0,dut.rt_csrv[8*q +: 8]});
+                $fdisplay(fd,"R %016h %08h %02h %016h %016h",rtpc[64*q +: 64],rtinsn[32*q +: 32],
+                          {2'b0,dut.rt_rdfp[q],rtrd[5*q +: 5]},rtdata[64*q +: 64],rtnext[64*q +: 64]);
+`else
                 $fdisplay(fd,"R %016h %08h %02h %016h %016h",rtpc[64*q +: 64],rtinsn[32*q +: 32],
                           rtrd[5*q +: 5],rtdata[64*q +: 64],rtnext[64*q +: 64]);
+`endif
                 retire_count=retire_count+1;
                 if (q==1) slot2_count=slot2_count+1;
                 if (q==2) slot3_count=slot3_count+1;

@@ -1,5 +1,8 @@
 """Independent sequential RV64I laboratory interpreter, not a certified ISA oracle.
 
+execute(..., fp=True) adds RV64F and RV64D with exact IEEE semantics from fp_ref_core.py, per
+cpu/architecture.md (RV64F and RV64D); fp=False (the default) is the integer model, unchanged.
+
 Uses byte-addressed memory and semantic integer operations. No cycle/RTL state.
 SPDX-License-Identifier: MIT
 """
@@ -74,15 +77,25 @@ def bitmanip_op(ins, a, b):
     return None
 
 
-def execute(image, fault_kind=0, fault_addr=MASK, max_steps=20000, bitmanip=True):
+def execute(image, fault_kind=0, fault_addr=MASK, max_steps=20000, bitmanip=True, fp=False, state=None):
+    """Run from PC 0 with zeroed state; returns (trace, coverage).
+
+    fp: enable RV64FD (FP-CONTRACT.md). state: optional dict that receives the final
+    'x', 'f', 'fcsr', 'pc' and 'memory' when the run stops (used by the cross-checks)."""
     memory = bytearray(image)
     regs = [0] * 32
+    if fp:
+        from fp_ref_core import fp_compute, BOX
+    fregs = [0] * 32
+    fcsr = 0
     pc = 0
     trace = []
     coverage = set()
 
     def trap(cause, tval):
         trace.append(f'T {pc:016x} {cause:016x} {tval & MASK:016x}')
+        if state is not None:
+            state.update(x=list(regs), f=list(fregs), fcsr=fcsr, pc=pc, memory=bytes(memory))
         return trace, coverage
 
     def denied(address, kind):
@@ -217,6 +230,54 @@ def execute(image, fault_kind=0, fault_addr=MASK, max_steps=20000, bitmanip=True
                     lane = address & 7
                     trace.append(f'W {address & ~7:016x} {(b << (8 * lane)) & MASK:016x} {((1 << size) - 1) << lane:02x}')
                     name = ('sb', 'sh', 'sw', 'sd')[f3]
+        elif fp and op in (0x07, 0x27) and f3 in (2, 3):
+            # FLW/FLD/FSW/FSD: alignment and faults as the integer word/doubleword forms.
+            load = op == 0x07
+            size = 4 if f3 == 2 else 8
+            offset = imm if load else signed(((ins >> 25) << 5) | ((ins >> 7) & 31), 12)
+            address = (a + offset) & MASK
+            if address % size:
+                return trap(4 if load else 6, address)
+            if denied(address, 2 if load else 3):
+                return trap(5 if load else 7, address)
+            if load:
+                value = int.from_bytes(memory[address:address + size], 'little')
+                if size == 4:
+                    value |= BOX
+                destination = 32 + rd
+                name = 'flw' if size == 4 else 'fld'
+            else:
+                data = fregs[rs2] & ((1 << (8 * size)) - 1)
+                memory[address:address + size] = data.to_bytes(size, 'little')
+                lane = address & 7
+                trace.append(f'W {address & ~7:016x} {(data << (8 * lane)) & MASK:016x} {((1 << size) - 1) << lane:02x}')
+                name = 'fsw' if size == 4 else 'fsd'
+        elif fp and (op in (0x43, 0x47, 0x4b, 0x4f) or op == 0x53):
+            result = fp_compute(ins, a, fregs[rs1], fregs[rs2], fregs[ins >> 27], fcsr >> 5)
+            if result is not None:
+                name, to_float, value, flags = result
+                destination = 32 + rd if to_float else rd
+                if flags:
+                    fcsr |= flags
+                    trace.append(f'F {flags:02x}')
+        elif fp and op == 0x73 and f3 in (1, 2, 3, 5, 6, 7) and (ins >> 20) in (1, 2, 3):
+            # Zicsr on the FP CSRs only (fflags 0x001, frm 0x002, fcsr 0x003).
+            csr = ins >> 20
+            old = fcsr & 0x1f if csr == 1 else fcsr >> 5 if csr == 2 else fcsr
+            source = rs1 if f3 >= 5 else a
+            kind = f3 & 3
+            writes = kind == 1 or rs1 != 0
+            new = source if kind == 1 else old | source if kind == 2 else old & ~source
+            if writes:
+                if csr == 1:
+                    fcsr = (fcsr & 0xe0) | (new & 0x1f)
+                elif csr == 2:
+                    fcsr = (fcsr & 0x1f) | (new & 7) << 5
+                else:
+                    fcsr = new & 0xff
+                trace.append(f'C 003 {fcsr:016x}')
+            value, destination = old, rd
+            name = ('', 'csrrw', 'csrrs', 'csrrc', '', 'csrrwi', 'csrrsi', 'csrrci')[f3]
         elif op == 0x0f and f3 in (0, 1):
             name = 'fence' if f3 == 0 else 'fence.i'
         elif ins == 0x73:
@@ -230,7 +291,9 @@ def execute(image, fault_kind=0, fault_addr=MASK, max_steps=20000, bitmanip=True
         if nxt & 3:
             return trap(0, nxt)
         value &= MASK
-        if destination:
+        if destination >= 32:
+            fregs[destination - 32] = value
+        elif destination:
             regs[destination] = value
         else:
             value = 0

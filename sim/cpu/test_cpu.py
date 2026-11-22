@@ -1066,6 +1066,8 @@ def main():
     parser.add_argument('--icache-beats', type=int, help='Override the core instruction-cache size (power of two >= 2)')
     parser.add_argument('--dcache-beats', type=int, help='Override the core data-cache size (power of two >= 2)')
     parser.add_argument('--core', choices=sorted(CORES), default='multicycle', help='Core implementation to test')
+    parser.add_argument('--fpu', action='store_true',
+                        help='ooo core: build with RV64F/D (define RV64_OOO_FPU) and add the F/D cases (golden model fp=True)')
     parser.add_argument('--n-miss', type=int, default=1,
                         help='Out-of-order core: data misses in flight (N_MISS; above 1, split reads in tb_core)')
     parser.add_argument('--core-source', type=Path,
@@ -1100,7 +1102,8 @@ def main():
     if args.l0:
         if args.core != 'ooo' or args.ld_lat is None or args.ld_lat < 3: parser.error('--l0 needs the ooo core and --ld-lat >= 3')
         lat += [f'RV64_OOO_L0_N={args.l0}', f'RV64_OOO_L0_LAT={args.l0_lat}']
-    wide += lat
+    if args.fpu and args.core != 'ooo': parser.error('--fpu applies to the ooo core')
+    wide += lat + (['RV64_OOO_FPU'] if args.fpu else [])
     executable = sim.build('tb_core', [core_src, ROOT / 'sim/cpu/tb_core.sv'], OUT / 'cpu.vvp',
                            params=cache, defines=wide, timeout=limit)
     sim.elaborate('rv64_bram_soc', [core_src, ROOT/'rtl/cpu/rv64_bram_soc.sv'], OUT/'soc.vvp',
@@ -1114,6 +1117,12 @@ def main():
     smoke_hex.write_text(''.join(f'{int.from_bytes(smoke[i:i+8],"little"):016x}\n' for i in range(0,len(smoke),8)),encoding='ascii')
     soc_results=[command([*soc_sim,f'+image={smoke_hex}','+expected=c']).strip()]
     workloads = [(name,image_for(words),kind,addr) for name,words,kind,addr in cases()]
+    if args.fpu:
+        # F/D cases: the FP ISA engineer's (own image layout), middle's and backend's (test_cpu layout).
+        import fp_cases, fp_ooo_cases, fp_timing_cases
+        workloads += [(name,fp_cases.image_for(words),kind,addr) for name,words,kind,addr in fp_cases.fp_cases()]
+        workloads += [(name,image_for(words),kind,addr) for name,words,kind,addr in fp_ooo_cases.cases()]
+        workloads += [(name,image_for(words),kind,addr) for name,words,kind,addr in fp_timing_cases.cases(globals())]
     if args.image:
         data = args.image.read_bytes()
         if len(data)>16384: raise ValueError('Firmware exceeds laboratory RAM')
@@ -1123,7 +1132,7 @@ def main():
         soc_results.append(command([*soc_sim,f'+image={bram}','+expected=24','+second']).strip())
     records,coverage = [],set()
     for name, image, kind, address in workloads:
-        expected, covered = execute(image, 3 if kind == 4 else kind, address)  # kind 4: store faults once
+        expected, covered = execute(image, 3 if kind == 4 else kind, address, fp=args.fpu)  # kind 4: store faults once
         if name == 'compiled_firmware':
             if 'W 0000000000003000 0000000000000024 ff' not in expected:
                 raise AssertionError('Compiled firmware did not produce the known sum 36')
@@ -1181,13 +1190,16 @@ def main():
         extra = clk['ld_off_chain40'] - clk['ld_off_chain8']
         if not 32 * (hit + 2) <= extra <= 32 * (hit + 2) + 8:
             raise AssertionError(f'LD_LAT {args.ld_lat}: 32 load-offset-add steps took {extra} clocks, expected {32 * (hit + 2)}')
+    if args.fpu:
+        fp_timing_cases.check(records, args)   # backend: FP latency/throughput (default caches, stall 0 only)
+        required |= fp_cases.FP_REQUIRED
     missing=required-coverage
     if missing: raise AssertionError('Missing instruction coverage: '+str(sorted(missing)))
     for branch_name in ('beq','bne','blt','bge','bltu','bgeu'):
         for outcome in ('taken','not_taken'):
             if branch_name+':'+outcome not in coverage: raise AssertionError('Missing branch outcome')
     report={'status':'PASS','cases':len(workloads),'runs':len(records),'instruction_names_covered':len(required),
-            'core':args.core,'ld_lat':args.ld_lat or 1,'l0_n':args.l0 or 0,'l0_lat':args.l0_lat if args.l0 else None,'core_source':str(args.core_source) if args.core_source else CORES[args.core],
+            'core':args.core,'fpu':args.fpu,'ld_lat':args.ld_lat or 1,'l0_n':args.l0 or 0,'l0_lat':args.l0_lat if args.l0 else None,'core_source':str(args.core_source) if args.core_source else CORES[args.core],
             'icache_beats':args.icache_beats or 'tb_core default (512)','dcache_beats':args.dcache_beats or 'tb_core default (512)',
             'reset_test':reset_result,'bram_soc_tests':soc_results,
             'coverage':sorted(coverage),'validation_scope':'local directed/random differential simulation; no official ISA certification or synthesis',
