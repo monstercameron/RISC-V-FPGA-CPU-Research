@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Original CPU foundation, wide out-of-order implementation (architecture 0.16.1).
+// Original CPU foundation, wide out-of-order implementation (architecture 0.16.2).
 // RV64IM + B execution, serialized FENCE.I, terminal EEI. Same module name and
 // contract as rv64_core.sv and rv64_pipe.sv, plus a wider retirement trace (rt_*);
 // build with one of the three files. Architecture version: cpu/VERSION,
@@ -847,6 +847,18 @@ module rv64_core #(
     reg pm_dup;
     integer pm_k, pm_free, pm_j;
     reg [3:0] hold_tag, bk_tag;
+    // Wake-on-fill (middle): a sleeping load waits for the response to its beat (iq_wb) or,
+    // with iq_wany, for any response.
+    reg [IQ_N-1:0] iq_slp, iq_wany;
+    reg [60:0] iq_wb [0:IQ_N-1];
+    reg [IQ_B-1:0] ms_iq [0:N_LD-1];
+    reg [60:0] ms_beat [0:N_LD-1];
+    integer ms_n, ms_k, wk_k;
+    reg ms_infl, ms_free;
+    task automatic wake_beat(input [60:0] wb);
+        for (wk_k = 0; wk_k < IQ_N; wk_k = wk_k + 1)
+            if (iq_slp[wk_k] && (iq_wany[wk_k] || iq_wb[wk_k] == wb)) begin iq_slp[wk_k] = 0; iq_wany[wk_k] = 0; end
+    endtask
     reg sf_wait;                // a store write faulted while split reads were outstanding: no new
                                 // requests; the trap is taken, with the latched store, once they return
     reg [63:0] sf_pc, sf_addr;
@@ -1104,7 +1116,7 @@ module rv64_core #(
             halted = 0; started = 0; f_pc = RESET_PC; fe_clk = 0; f_err = 0; f_hold = 0; f_stale = 0;
             bus_hold = 0; hold_addr = 0; hold_pair = 0; hold_nx = 0; mu_valid = 0; mu_beat = 0; mu_errv = 0; mu_err_beat = 0;
             fb_valid = 0; fb_beat = 0; fb_data = 0; mu_owner = 0; fb_owner = 0; fb_lock = 0; mu_owner_v = 0;
-            mu_sent = 0; mu_stale = 0; pm_valid = 0; pm_sent = 0; pm_stale = 0; hold_tag = 0; sf_wait = 0;
+            mu_sent = 0; mu_stale = 0; pm_valid = 0; pm_sent = 0; pm_stale = 0; hold_tag = 0; sf_wait = 0; iq_slp = 0; iq_wany = 0;
             for (i = 0; i < PRF_N; i = i + 1) prf[i] = 0;
             prf_ready = {PRF_N{1'b1}}; prf_written = {PRF_N{1'b1}}; prf_late = 0;
             free_mask = {PRF_N{1'b1}}; for (i = 0; i < 32; i = i + 1) free_mask[i] = 0;
@@ -1141,7 +1153,7 @@ module rv64_core #(
                     end else if (bus_kind == 2 && SPLIT) begin
                         if (bk_tag == 0) mu_sent = 1; else pm_sent[bk_tag] = 1;
                     end else if (bus_kind == 2) begin
-                        mu_valid = 0;
+                        mu_valid = 0; wake_beat(mu_beat[63:3]);
                         if (mem_error) begin mu_errv = mu_owner_v; mu_err_beat = mu_beat; mu_err_owner = mu_owner; end
                         else begin
                             dc_l = dc_line(mu_beat);
@@ -1163,6 +1175,7 @@ module rv64_core #(
             if (SPLIT && rsp_valid) begin
                 if (rsp_tag == 0) begin
                     if (mu_valid && mu_sent) begin
+                        wake_beat(mu_beat[63:3]);
                         mu_valid = 0; mu_sent = 0;
                         if (mu_stale) mu_stale = 0;   // dropped: the owner misses again
                         else if (rsp_error) begin mu_errv = mu_owner_v; mu_err_beat = mu_beat; mu_err_owner = mu_owner; end
@@ -1178,6 +1191,7 @@ module rv64_core #(
                         end
                     end
                 end else if (rsp_tag < PM_N && pm_valid[rsp_tag] && pm_sent[rsp_tag]) begin
+                    wake_beat(pm_beat[rsp_tag][63:3]);
                     // A younger miss fills only the cache, and only a line not already there
                     // (a cached line is kept current by every retiring store).
                     if (!pm_stale[rsp_tag] && !rsp_error && dc_line(pm_beat[rsp_tag]) < 0) begin
@@ -1223,7 +1237,7 @@ module rv64_core #(
                         ok = ok && rdy2(k) &&
                              (iq_cls[k] == C_ALU || (p < N_BR && iq_cls[k] == C_FULL &&
                               !(iq_mdu[k] && iq_insn[k][14] && (dv_busy || dv_pend || divtaken))));
-                    end else if (p < N_ALU + N_LD) ok = ok && iq_cls[k] == C_LD && (!ou_valid || a_age < ou_age || !mdp_wait[mdp_i(iq_pc[k])]) && (!fo_valid || a_age < fo_age);
+                    end else if (p < N_ALU + N_LD) ok = ok && iq_cls[k] == C_LD && (!iq_slp[k] || (ol_valid && a_age == ol_age)) && (!ou_valid || a_age < ou_age || !mdp_wait[mdp_i(iq_pc[k])]) && (!fo_valid || a_age < fo_age);
                     else ok = ok && iq_cls[k] == C_ST;
                     // Branch-capable ports: a full-class instruction (branch, jump, system, M)
                     // before any plain ALU one, oldest first within each.
@@ -1416,7 +1430,7 @@ module rv64_core #(
             end
             if (rflush) mp_any = 0;
             o_age = b_rob - rb_head;
-            miss_v = 0; miss_beat = 0; miss_age = 0; pf_v = 0; pf_beat = 0; pf_age = 0; pc_n = 0;
+            miss_v = 0; miss_beat = 0; miss_age = 0; pf_v = 0; pf_beat = 0; pf_age = 0; pc_n = 0; ms_n = 0;
             // Store-address ports first, then ALU and load ports, so a load sees the
             // addresses of older stores executing in the same clock.
             for (p = N_ALU + N_LD; p < NP; p = p == NP - 1 ? 0 : p == N_ALU + N_LD - 1 ? NP : p + 1)
@@ -1519,6 +1533,9 @@ module rv64_core #(
                                 // entry 0 is allocated, so a duplicate of its beat cannot win)
                                 pc_beat[pc_n] = {ea[63:3],3'b000}; pc_age[pc_n] = a_age; pc_n = pc_n + 1;
                             end
+                            if (!(ol_valid && a_age == ol_age) && ms_n < N_LD) begin
+                                ms_iq[ms_n] = ex_iq[p]; ms_beat[ms_n] = ea[63:3]; ms_n = ms_n + 1;
+                            end
                         end
                         if (fdone && fb_lock && x_rob == fb_owner) fb_lock = 0;
                         // A finished owner gives up entry 0: a later answer fills without a lock.
@@ -1598,6 +1615,17 @@ module rv64_core #(
                 end
                 if (!pm_dup && pm_free != 0) begin
                     pm_valid[pm_free] = 1; pm_sent[pm_free] = 0; pm_stale[pm_free] = 0; pm_beat[pm_free] = pf_beat;
+                end
+            end
+            for (ms_k = 0; ms_k < N_LD; ms_k = ms_k + 1) if (ms_k < ms_n) begin
+                ms_infl = mu_valid && mu_beat[63:3] == ms_beat[ms_k];
+                ms_free = !SPLIT;
+                for (pm_k = 1; pm_k < PM_N; pm_k = pm_k + 1) begin
+                    if (SPLIT && pm_valid[pm_k] && pm_beat[pm_k][63:3] == ms_beat[ms_k]) ms_infl = 1;
+                    if (SPLIT && !pm_valid[pm_k]) ms_free = 1;
+                end
+                if (ms_infl || !ms_free) begin
+                    iq_slp[ms_iq[ms_k]] = 1; iq_wany[ms_iq[ms_k]] = !ms_infl; iq_wb[ms_iq[ms_k]] = ms_beat[ms_k];
                 end
             end
             // ---- load wakeups (LD_LAT >= 2)
@@ -1799,7 +1827,7 @@ module rv64_core #(
                             end
                             if (op == 7'h63 || op == 7'h67) for (i = 0; i < 32; i = i + 1) begin snap[e][i] = rat[i]; snap_off[e][i] = rat_off[i]; end
                             if (!isfault && !done_) begin
-                                iq_valid[slot] = 1; iq_issued[slot] = 0; iq_cls[slot] = cls_; iq_rob[slot] = e;
+                                iq_valid[slot] = 1; iq_issued[slot] = 0; iq_slp[slot] = 0; iq_wany[slot] = 0; iq_cls[slot] = cls_; iq_rob[slot] = e;
                                 iq_pc[slot] = wpc; iq_insn[slot] = wi; iq_ps1[slot] = ps1_; iq_ps2[slot] = ps2_;
                                 iq_pdst[slot] = writes_ ? fp : 0; iq_writes[slot] = writes_;
                                 iq_mdu[slot] = (op == 7'h33 || op == 7'h3b) && wi[31:25] == 7'h01;

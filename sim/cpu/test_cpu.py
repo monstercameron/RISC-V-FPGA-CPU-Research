@@ -989,6 +989,19 @@ def cases():
     p += [r_type(0x33, 26, 0, 16, 17), r_type(0x33, 26, 0, 26, 18), r_type(0x33, 26, 0, 26, 19), store(3, 30, 26, 0x3f8),
           i_type(3, 27, 3, 30, 0x300), 0x100073]
     yield 'fusion_across_groups', p, 0, MASK
+    # Wake-on-fill (middle, on memory hand-off 2): many independent loads miss behind an
+    # older miss and sleep until their beats arrive; loads to a beat already being read
+    # share its entry; a store to one of the beats retires while reads may be outstanding;
+    # every value is used, so a load that slept through its fill would hang or differ.
+    body = [i_type(0x13, 20, 0, 30, 0x400)]                                  # x20 = array (cold)
+    for n in range(20):
+        body += [i_type(3, 21, 3, 20, 8 * n), r_type(0x33, 22, 0, 22, 21)]  # ld x21, 8n(x20); x22 += x21
+        if n % 4 == 1:
+            body += [i_type(3, 23, 4, 20, 8 * n + 1), r_type(0x33, 24, 0, 24, 23)]   # same beat, other byte
+        if n == 9:
+            body += [store(3, 20, 22, 8 * 12)]                               # store into a later beat
+    body += [i_type(3, 25, 3, 20, 8 * 12), r_type(0x33, 26, 0, 22, 25), store(3, 30, 26, 0x3f8), 0x100073]
+    yield 'wake_many_misses', prefix() + body, 0, MASK
     # Load-wait table (middle hand-off 13): load L conflicts with store A, whose address
     # arrives late (a fill and two divides), and is marked with A; a different store B, older
     # than the next L and later still (thirty multiplies), writes that L's word every 4th
@@ -1138,6 +1151,14 @@ def main():
                 if not used or int(used[1]) == 0:
                     raise AssertionError(f'{name}: expected {field} > 0, simulator said {output.strip()}')
             records.append({'case':name,'max_wait_cycles':stalls,'events':len(actual),'result':'PASS','simulator_summary':output.strip()})
+    # Wake-on-fill (middle hand-off 10): with N_MISS 4 the 20 independent misses of
+    # wake_many_misses overlap instead of replaying; a core without the wakeup takes 103
+    # clocks at stall 0 (default caches), with it 76.
+    if args.n_miss == 4 and args.icache_beats is None and args.dcache_beats is None:
+        clk = [int(re.search(r'cycles=(\d+)', r['simulator_summary'])[1]) for r in records
+               if r['max_wait_cycles'] == 0 and r['case'] == 'wake_many_misses']
+        if clk and clk[0] > 85:
+            raise AssertionError(f'wake_many_misses took {clk[0]} clocks at N_MISS 4, stall 0; expected <= 85 (wake-on-fill)')
     required=set('lui auipc jal jalr beq bne blt bge bltu bgeu lb lh lw ld lbu lhu lwu sb sh sw sd addi slti sltiu xori ori andi slli srli srai add sub sll slt sltu xor srl sra or and addiw slliw srliw sraiw addw subw sllw srlw sraw fence fence.i ecall ebreak mul mulh mulhsu mulhu div divu rem remu mulw divw divuw remw remuw sh1add sh2add sh3add add.uw sh1add.uw sh2add.uw sh3add.uw slli.uw andn orn xnor clz ctz cpop clzw ctzw cpopw max maxu min minu sext.b sext.h zext.h rol ror rolw rorw rori roriw orc.b rev8 bclr bclri bext bexti binv binvi bset bseti'.split())
     # LD_LAT N >= 2: the 32 extra chained loads cost N clocks each (stall 0, default caches).
     if args.ld_lat is not None and args.ld_lat >= 2 and args.icache_beats is None and args.dcache_beats is None:
