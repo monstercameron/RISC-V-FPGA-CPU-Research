@@ -1,0 +1,100 @@
+// Device tree of the lab-virt platform (cpu/PRIV-CONTRACT.md, draft): one RV64GC hart, Spike's memory map,
+// 64 MiB of DRAM. The same blob is placed in rv_iss's boot ROM and given to Spike with --dtb, where it also
+// sets Spike's ISA string, PMP count (0, no riscv,pmpregions) and MMU type.
+// Our own text. SPDX-License-Identifier: MIT
+/dts-v1/;
+
+/ {
+	#address-cells = <2>;
+	#size-cells = <2>;
+	compatible = "lab,lab-virt";
+	model = "lab-virt";
+
+	chosen {
+		stdout-path = &uart0;
+		bootargs = "console=ttyS0 earlycon";
+	};
+
+	cpus {
+		#address-cells = <1>;
+		#size-cells = <0>;
+		timebase-frequency = <10000000>;
+
+		CPU0: cpu@0 {
+			device_type = "cpu";
+			reg = <0>;
+			status = "okay";
+			compatible = "riscv";
+			riscv,isa = "rv64imafdc_zicsr_zifencei_zicntr";
+			riscv,isa-base = "rv64i";
+			riscv,isa-extensions = "i", "m", "a", "f", "d", "c", "zicsr", "zifencei", "zicntr";
+			mmu-type = "riscv,sv39";
+			clock-frequency = <1000000000>;
+
+			CPU0_intc: interrupt-controller {
+				#address-cells = <2>;
+				#interrupt-cells = <1>;
+				interrupt-controller;
+				compatible = "riscv,cpu-intc";
+			};
+		};
+	};
+
+	poweroff {
+		compatible = "syscon-poweroff";
+		regmap = <&test>;
+		offset = <0x0>;
+		value = <0x5555>;
+	};
+
+	reboot {
+		compatible = "syscon-reboot";
+		regmap = <&test>;
+		offset = <0x0>;
+		value = <0x7777>;
+	};
+
+	memory@80000000 {
+		device_type = "memory";
+		reg = <0x0 0x80000000 0x0 0x4000000>;
+	};
+
+	soc {
+		#address-cells = <2>;
+		#size-cells = <2>;
+		compatible = "simple-bus";
+		ranges;
+
+		test: test@100000 {
+			compatible = "sifive,test1", "sifive,test0", "syscon";
+			reg = <0x0 0x100000 0x0 0x1000>;
+		};
+
+		clint@2000000 {
+			compatible = "riscv,clint0";
+			interrupts-extended = <&CPU0_intc 3 &CPU0_intc 7>;
+			reg = <0x0 0x2000000 0x0 0xc000>;
+		};
+
+		PLIC: plic@c000000 {
+			compatible = "riscv,plic0";
+			#address-cells = <2>;
+			#interrupt-cells = <1>;
+			interrupt-controller;
+			interrupts-extended = <&CPU0_intc 11 &CPU0_intc 9>;
+			reg = <0x0 0xc000000 0x0 0x1000000>;
+			riscv,ndev = <31>;
+			riscv,max-priority = <15>;
+		};
+
+		uart0: serial@10000000 {
+			compatible = "ns16550a";
+			reg = <0x0 0x10000000 0x0 0x100>;
+			interrupt-parent = <&PLIC>;
+			interrupts = <1>;
+			reg-shift = <0>;
+			reg-io-width = <1>;
+			clock-frequency = <10000000>;
+		};
+	};
+};

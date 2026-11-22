@@ -39,6 +39,9 @@ SUITES = {
                    'needs sim/cpu/fetch_riscv_tests.sh once',
     'negative': 'Negative control: a mutated copy of the core must FAIL test_cpu with a trace mismatch',
     'repo': 'scripts/check_repo.py and scripts/build_site.py (rewrites docs/)',
+    'sys': 'rv_iss --sys (cpu/PRIV-CONTRACT.md draft): riscv-tests p env incl. rv64mi/si/ua/uc, OpenSBI + Linux + '
+           'busybox boot to the shell with a checkpoint round trip, and the commit-log comparison with Spike; '
+           'needs sim/cpu/sys/build_all.sh outputs in build/third-party/linux-lab/out and build_spike.sh',
 }
 # Presets expand to suites. release-patch is build/cpu/ooo-debug/coord/vcheck.sh;
 # release-minor adds the full Icarus run (full_check.sh).
@@ -273,6 +276,23 @@ def riscv_tests(ctx):
                                                 *cache_args(size), *RVT_INT], 150, core=core, sim='icarus')
 
 
+def sys_mode(ctx):
+    yield Step('sys-riscv-tests', ('sys',), 'sim/cpu/sys/riscv_tests.py', [],
+               r'count:^PASS: (\d+) riscv-tests pass', tags=('python', 'sys'), out_arg=None, est=60, lock='sys-tests',
+               note='rv64ui/um/ua/uf/ud/uc/mi/si p env; ma_data and pmpaddr are expected failures')
+    yield Step('sys-boot', ('sys',), 'sim/cpu/sys/sys_boot.py', [], r'count:^PASS: (\d+) sys-boot instructions',
+               tags=('python', 'sys'), est=30, note='Linux to the busybox shell, poweroff, RVISSST3 round trip')
+    # With Spike built (sim/cpu/sys/build_spike.sh): the riscv-tests and the whole boot in lockstep.
+    yield Step('sys-riscv-tests-spike', ('sys',), 'sim/cpu/sys/riscv_tests.py', ['--spike', 'auto'],
+               r'count:^PASS: (\d+) riscv-tests pass', tags=('python', 'sys', 'spike'), out_arg=None, est=120,
+               lock='sys-tests',
+               note='commit logs against Spike; rv64mi-ma_fetch is a known difference (misa.C writable in Spike)')
+    yield Step('sys-spike-boot', ('sys',), 'sim/cpu/sys/spike_compare.py', ['--instructions', '100000000', '--min',
+               '40000000', '--expect-finisher-end'], r'count:^PASS: (\d+) instructions of the boot equal',
+               tags=('python', 'sys', 'spike'), out_arg=None, est=60,
+               note='OpenSBI + Linux + busybox boot to power-off, rv_iss --time spike vs Spike')
+
+
 def repo(ctx):
     yield Step('repo-check', ('repo',), 'scripts/check_repo.py', [], 'check_repo', tags=('python',),
                side='host', out_arg=None, est=60)
@@ -283,4 +303,4 @@ def repo(ctx):
 
 GENERATORS = {'unit': unit, 'isa': isa, 'fpu': fpu, 'vector': vector, 'bitmanip': bitmanip,
               'bench-smoke': bench_smoke, 'bench': bench, 'icarus-full': icarus_full, 'soc': soc,
-              'riscv-tests': riscv_tests, 'negative': negative, 'repo': repo}
+              'riscv-tests': riscv_tests, 'negative': negative, 'repo': repo, 'sys': sys_mode}

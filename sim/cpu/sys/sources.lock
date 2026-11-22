@@ -1,0 +1,15 @@
+# Third-party sources for the lab-virt system-mode work (milestone M1). Our own list (MIT); none of these
+# files is copied into the repository. They are fetched into the ignored build/third-party/linux-lab/
+# (tarballs, git checkouts) and extracted or built in an untracked work directory. Each line:
+# name | version | licence | source URL | identity (sha256 of the tarball, or git commit) | how it was checked
+# Signature keys were fetched on 2026-11-22 (WKD, keyserver.ubuntu.com) into a throw-away keyring; they are not
+# certified by a web of trust here, so a good signature binds the file to the key fingerprint shown, no more.
+# SPDX-License-Identifier: MIT
+spike | riscv-isa-sim master 2026-11-20 | BSD-3-Clause | https://github.com/riscv-software-src/riscv-isa-sim | git 982f078e65ab52d5d9a91248c2178f5399df7783 | git object identity
+berkeley-softfloat-3 | Spike submodule | BSD-3-Clause | https://github.com/ucb-bar/berkeley-softfloat-3 | git 07ebd29db0cfb55723a79fbbffe99103ef38e305 | git object identity (the commit Spike's tree pins)
+opensbi | v1.9 | BSD-2-Clause | https://github.com/riscv-software-src/opensbi | git cbf9f6734dd85a982c63e3cb5db7ffe09da839ca (tag v1.9) | git object identity
+linux | 6.18.64 (longterm) | GPL-2.0 | https://cdn.kernel.org/pub/linux/kernel/v6.x/linux-6.18.64.tar.xz | sha256 020d45510c539972e6f14c5c71566878d3b7ef56fb082b3e09134f2ebaade562 | equals kernel.org sha256sums.asc; linux-6.18.64.tar.sign: good signature, key 647F28654894E3BD457199BE38DBBDC86092693E (Greg Kroah-Hartman, via kernel.org WKD)
+busybox | 1.37.0 | GPL-2.0 | https://busybox.net/downloads/busybox-1.37.0.tar.bz2 | sha256 3311dff32e746499f4df0d5df04d7eb396382d7e108bb9250e7b519b837043a4 | equals the published .sha256; .sig: good signature, key C9E9416F76E610DBD09D040F47B70C55ACC9965B (Denis Vlasenko)
+musl | 1.2.5 | MIT | https://musl.libc.org/releases/musl-1.2.5.tar.gz | sha256 a9a118bbe84d8764da0ea0d28b3ab3fae8477fc7e4085d90102b8596fc7c75e4 | .asc: good signature, key 836489290BB6B70F99FFDA0556BCDB593020450F (musl libc)
+compiler-rt | 18.1.3 | Apache-2.0 WITH LLVM-exception | https://github.com/llvm/llvm-project/releases/download/llvmorg-18.1.3/compiler-rt-18.1.3.src.tar.xz | sha256 9a7df9300413696b0c4f7ff1e2729cb82aca375f35c05d698c44f26a4edf1c27 | .sig: good signature, key 474E22316ABF4785A88C6E8EA2C794A986419D8A (Tom Stellard; key now expired)
+riscv-tests | 3df703c | BSD-3-Clause | https://github.com/riscv-software-src/riscv-tests | git 3df703c (+ riscv-test-env 6de71ed) | already in build/third-party/riscv-tests-src (LOCK.txt)
