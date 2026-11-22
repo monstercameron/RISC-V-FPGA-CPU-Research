@@ -692,6 +692,30 @@ def cases():
     # branches reach the ports instead of being decided at rename (Codex 1539-2).
     p = prefix() + [i_type(0x13, 20, 0, 1, 0)] + body + [add_(29, 13, 14), add_(29, 29, 18), 0x100073]
     yield 'branch_ports_many', p, 0, MASK
+    # Load-to-use latency knob (backend hand-off 5; run with --ld-lat N on the ooo core).
+    ld = lambda rd, rs, off: i_type(3, rd, 3, rs, off)
+    def ld_chain(n):   # x31 = 0x2700 holds its own address: n dependent loads in a row
+        return prefix() + [i_type(0x13, 31, 0, 30, 0x700), store(3, 30, 31, 0x700), ld(31, 31, 0)] + \
+            [ld(31, 31, 0) for _ in range(n)] + [add_(29, 31, 1), 0x100073]
+    yield 'ld_lat_chain8', ld_chain(8), 0, MASK
+    yield 'ld_lat_chain40', ld_chain(40), 0, MASK
+    # Early full forward to an uncached beat; a load feeding a cold mispredicted branch with
+    # younger loads (one misaligned) squashed; every load size into ALU, mul and store; a
+    # store forwarded to a narrower load; a load into x0; a loop so value prediction engages.
+    p = prefix() + [i_type(0x13, 31, 0, 30, 0x700), store(3, 30, 31, 0x700),
+                    store(3, 30, 7, 0x7f8), ld(8, 30, 0x7f8), add_(9, 8, 2),
+                    i_type(3, 10, 4, 30, 8), branch(1, 10, 0, 16),
+                    ld(17, 30, 16), add_(18, 17, 17), ld(19, 18, 0),
+                    i_type(0x13, 20, 0, 0, 10)]
+    body = [ld(11, 31, 0), add_(12, 12, 11),
+            i_type(3, 13, 2, 30, 8 * 7), r_type(0x33, 14, 0, 13, 11, 1),
+            store(2, 30, 14, 0x710), i_type(3, 15, 1, 30, 0x710), add_(16, 16, 15),
+            i_type(3, 21, 0, 30, 8 * 6 + 3), add_(22, 22, 21),
+            i_type(3, 23, 6, 30, 8 * 5 + 4), add_(24, 24, 23),
+            i_type(3, 0, 3, 30, 8 * 2), i_type(0x13, 20, 0, 20, -1)]
+    body.append(branch(1, 20, 0, -4 * len(body)))
+    p += body + [add_(29, 12, 16), add_(29, 29, 22), add_(29, 29, 24), add_(29, 29, 9), 0x100073]
+    yield 'ld_lat_mix', p, 0, MASK
     # Offset consumers of late-written registers (hand-off 8, Codex 1609-2): a multiply,
     # a divide and a value-predicted load each feed a folded addi, whose result is used by
     # an ALU op, a branch, a store (data and address), a load address and another multiply.
@@ -735,6 +759,8 @@ def main():
                         help="Test this file instead of the core's file in rtl/cpu (a candidate kept elsewhere)")
     parser.add_argument('--out-dir', type=Path,
                         help='Build and report folder (default build/cpu), so candidates can be tested side by side')
+    parser.add_argument('--ld-lat', type=int,
+                        help='ooo core: build with load-to-use latency N (define RV64_OOO_LD_LAT; default 1)')
     simulator.add_argument(parser)
     args = parser.parse_args()
     if args.out_dir: OUT = args.out_dir.resolve()
@@ -749,11 +775,14 @@ def main():
     OUT.mkdir(parents=True, exist_ok=True)
     core_src = args.core_source.resolve() if args.core_source else ROOT / CORES[args.core]
     wide = ['WIDE_TRACE'] if args.core == 'ooo' else []  # 0.10.0: up to 8 retirements per clock
+    if args.ld_lat is not None and args.core != 'ooo': parser.error('--ld-lat applies to the ooo core')
+    lat = [f'RV64_OOO_LD_LAT={args.ld_lat}'] if args.ld_lat is not None else []
+    wide += lat
     executable = sim.build('tb_core', [core_src, ROOT / 'sim/cpu/tb_core.sv'], OUT / 'cpu.vvp',
                            params=cache, defines=wide, timeout=limit)
     sim.elaborate('rv64_bram_soc', [core_src, ROOT/'rtl/cpu/rv64_bram_soc.sv'], OUT/'soc.vvp',
                   defines=wide, timeout=limit)
-    reset_sim = sim.build('tb_reset', [core_src, ROOT/'sim/cpu/tb_reset.sv'], OUT/'reset.vvp', timeout=limit)
+    reset_sim = sim.build('tb_reset', [core_src, ROOT/'sim/cpu/tb_reset.sv'], OUT/'reset.vvp', defines=lat, timeout=limit)
     reset_result=command(reset_sim).strip()
     soc_sim = sim.build('tb_soc', [core_src, ROOT/'rtl/cpu/rv64_bram_soc.sv', ROOT/'sim/cpu/tb_soc.sv'],
                         OUT/'bram-soc.vvp', defines=wide, timeout=limit)
@@ -797,13 +826,20 @@ def main():
                     raise AssertionError(f'{name}: expected {field} > 0, simulator said {output.strip()}')
             records.append({'case':name,'max_wait_cycles':stalls,'events':len(actual),'result':'PASS','simulator_summary':output.strip()})
     required=set('lui auipc jal jalr beq bne blt bge bltu bgeu lb lh lw ld lbu lhu lwu sb sh sw sd addi slti sltiu xori ori andi slli srli srai add sub sll slt sltu xor srl sra or and addiw slliw srliw sraiw addw subw sllw srlw sraw fence fence.i ecall ebreak mul mulh mulhsu mulhu div divu rem remu mulw divw divuw remw remuw sh1add sh2add sh3add add.uw sh1add.uw sh2add.uw sh3add.uw slli.uw andn orn xnor clz ctz cpop clzw ctzw cpopw max maxu min minu sext.b sext.h zext.h rol ror rolw rorw rori roriw orc.b rev8 bclr bclri bext bexti binv binvi bset bseti'.split())
+    # LD_LAT N >= 2: the 32 extra chained loads cost N clocks each (stall 0, default caches).
+    if args.ld_lat is not None and args.ld_lat >= 2 and args.icache_beats is None and args.dcache_beats is None:
+        clk = {r['case']: int(re.search(r'cycles=(\d+)', r['simulator_summary'])[1]) for r in records
+               if r['max_wait_cycles'] == 0 and r['case'] in ('ld_lat_chain8', 'ld_lat_chain40')}
+        extra = clk['ld_lat_chain40'] - clk['ld_lat_chain8']
+        if not 32 * args.ld_lat <= extra <= 32 * args.ld_lat + 8:
+            raise AssertionError(f'LD_LAT {args.ld_lat}: 32 chained loads took {extra} clocks, expected {32 * args.ld_lat}')
     missing=required-coverage
     if missing: raise AssertionError('Missing instruction coverage: '+str(sorted(missing)))
     for branch_name in ('beq','bne','blt','bge','bltu','bgeu'):
         for outcome in ('taken','not_taken'):
             if branch_name+':'+outcome not in coverage: raise AssertionError('Missing branch outcome')
     report={'status':'PASS','cases':len(workloads),'runs':len(records),'instruction_names_covered':len(required),
-            'core':args.core,'core_source':str(args.core_source) if args.core_source else CORES[args.core],
+            'core':args.core,'ld_lat':args.ld_lat or 1,'core_source':str(args.core_source) if args.core_source else CORES[args.core],
             'icache_beats':args.icache_beats or 'tb_core default (512)','dcache_beats':args.dcache_beats or 'tb_core default (512)',
             'reset_test':reset_result,'bram_soc_tests':soc_results,
             'coverage':sorted(coverage),'validation_scope':'local directed/random differential simulation; no official ISA certification or synthesis',

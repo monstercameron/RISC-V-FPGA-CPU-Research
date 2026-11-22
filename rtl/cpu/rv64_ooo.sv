@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Original CPU foundation, wide out-of-order implementation (architecture 0.14.9).
+// Original CPU foundation, wide out-of-order implementation (architecture 0.14.10).
 // RV64IM + B execution, serialized FENCE.I, terminal EEI. Same module name and
 // contract as rv64_core.sv and rv64_pipe.sv, plus a wider retirement trace (rt_*);
 // build with one of the three files. Architecture version: cpu/VERSION,
@@ -457,6 +457,30 @@ module rv64_core #(
     reg [P_B-1:0] ex_pdst [0:NP-1];
     // Multiply pipeline and divide unit.
     reg [MQ_N-1:0] mq_valid, mq_writes;
+    // Load-to-use latency (0.14.x knob): a dependant is selected LD_LAT clocks after the load,
+    // as for MUL_LAT. 1 = the load wakes its consumers when it issues (the default timing).
+    // With LD_LAT >= 2 a load that answered makes its register ready LD_LAT - 2 clocks later.
+`ifdef RV64_OOO_LD_LAT
+    localparam integer LD_LAT = `RV64_OOO_LD_LAT;
+`else
+    localparam integer LD_LAT = 1;
+`endif
+    localparam integer LW_N = 2 * N_LD * LD_LAT;   // pending load wakeups
+    reg [LW_N-1:0] lw_valid, lw_fin;     // lw_fin: the load finishes (rb_done) when it wakes
+    reg [3:0] lw_cnt [0:LW_N-1];
+    reg [ROB_B-1:0] lw_rob [0:LW_N-1];
+    reg [P_B-1:0] lw_pdst [0:LW_N-1];
+    task automatic ld_wake(input [P_B-1:0] pd, input [ROB_B-1:0] rob, input fin);
+        integer q;
+        reg placed;
+        begin
+            placed = 0;
+            for (q = 0; q < LW_N; q = q + 1) if (!lw_valid[q] && !placed) begin
+                placed = 1; lw_valid[q] = 1; lw_cnt[q] = LD_LAT - 2; lw_rob[q] = rob; lw_pdst[q] = pd; lw_fin[q] = fin;
+            end
+            if (!placed) $fatal(1, "load wakeup queue full");
+        end
+    endtask
     reg [3:0] mq_cnt [0:MQ_N-1];
     reg [ROB_B-1:0] mq_rob [0:MQ_N-1];
     reg [P_B-1:0] mq_pdst [0:MQ_N-1];
@@ -636,6 +660,7 @@ module rv64_core #(
     // a wrong value prediction): retirement and the store-write scan both stop after them.
     wire [ROB_N-1:0] rb_ends = rb_fencei | rb_vpbad;
     reg [ROB_N-1:0] rb_ldv;     // the load gave its consumers a value it read or forwarded
+    reg [ROB_N-1:0] rb_ans;     // LD_LAT >= 2: the load answered and waits only for its wakeup
     reg rflush_ld;              // this clock's flush refetches a load that read stale bytes
     reg [ROB_B-1:0] rflush_e;   // that load
     reg [ROB_B-1:0] vc_e;       // memory-dependence check: a store between the two
@@ -776,6 +801,7 @@ module rv64_core #(
     reg [Q_B-1:0] qa;
 
     initial if (RW < 3 || RW > 32) $fatal(1, "rv64_ooo.sv supports RW from 3 to 32, got %0d", RW);
+    initial if (LD_LAT < 1 || LD_LAT > 16) $fatal(1, "rv64_ooo.sv needs LD_LAT from 1 to 16, got %0d", LD_LAT);
     initial if (MUL_LAT < 2) $fatal(1, "rv64_ooo.sv needs MUL_LAT >= 2, got %0d", MUL_LAT);
 
     // Fused producer's value for execute port pp.
@@ -820,6 +846,8 @@ module rv64_core #(
                 if (iq_valid[k] && (iq_rob[k] - rb_head) > keep_age) iq_valid[k] = 0;
             for (k = 0; k < MQ_N; k = k + 1)
                 if (mq_valid[k] && (mq_rob[k] - rb_head) > keep_age) mq_valid[k] = 0;
+            for (k = 0; k < LW_N; k = k + 1)
+                if (lw_valid[k] && (lw_rob[k] - rb_head) > keep_age) lw_valid[k] = 0;
             if (dv_busy && (dv_rob - rb_head) > keep_age) dv_busy = 0;
             if (fb_lock && (fb_owner - rb_head) > keep_age) fb_lock = 0;
             if (mu_owner_v && (mu_owner - rb_head) > keep_age) mu_owner_v = 0;
@@ -838,7 +866,7 @@ module rv64_core #(
             for (i = 0; i < 32; i = i + 1) begin rat[i] = i; rrat[i] = i; rat_off[i] = 0; rrat_off[i] = 0; end
             for (i = 0; i < PRF_N; i = i + 1) refcnt[i] = i < 32 ? 1 : 0;
             rb_viol = 0; mdp_wait = 0; rb_live = 0; rb_done = 0; rb_head = 0; rb_tail = 0; rb_count = 0;
-            iq_valid = 0; iq_issued = 0; ex_valid = 0; mq_valid = 0; dv_busy = 0;
+            iq_valid = 0; iq_issued = 0; ex_valid = 0; mq_valid = 0; dv_busy = 0; lw_valid = 0; rb_ans = 0;
             ic_valid = 0; dc_valid = 0; btb_valid = 0; btb_ret = 0; ras_sp = 0; vp_valid = 0; lp_valid = 0; lp_dir = 0;
             for (i = 0; i < RAS_N; i = i + 1) ras[i] = 0;
             q_head = 0; q_tail = 0; q_count = 0;
@@ -903,7 +931,7 @@ module rv64_core #(
             ol_valid = 0; ol_age = 0;
             for (k = ROB_N-1; k >= 0; k = k - 1) begin
                 e = rb_head + k[ROB_B-1:0];
-                if (k < rb_count && rb_load[e] && !rb_done[e]) begin ol_valid = 1; ol_age = k[ROB_B-1:0]; end
+                if (k < rb_count && rb_load[e] && !rb_done[e] && !rb_ans[e]) begin ol_valid = 1; ol_age = k[ROB_B-1:0]; end
             end
             chosen = 0; pick_v = 0; divtaken = 0;
             for (p = 0; p < NP; p = p + 1) begin
@@ -1123,7 +1151,7 @@ module rv64_core #(
                     // A load woke its consumers when it issued; until it answers below, its
                     // register is not ready, which cancels consumers selected this clock
                     // (a value-predicted load's register stays ready with its prediction).
-                    if (ex_writes[p] && !rb_vp[x_rob]) prf_ready[ex_pdst[p]] = 0;
+                    if (ex_writes[p] && !rb_vp[x_rob] && (LD_LAT < 2 || !prf_written[ex_pdst[p]])) prf_ready[ex_pdst[p]] = 0;
                     // Load: forward from the youngest older store to its beat, else the cache;
                     // if neither can answer now, the load stays queued and replays.
                     f3_ = ex_insn[p][14:12];
@@ -1170,7 +1198,9 @@ module rv64_core #(
                             // goes to consumers now, and the load finishes after the read.
                             if (fwd_mask == bytes_ && ex_writes[p]) begin
                                 prf[ex_pdst[p]] = load_align(fwd_data, ea[2:0], f3_);
-                                prf_written[ex_pdst[p]] = 1; prf_ready[ex_pdst[p]] = 1;
+                                prf_written[ex_pdst[p]] = 1;
+                                if (LD_LAT < 2 || rb_vp[x_rob]) prf_ready[ex_pdst[p]] = 1;
+                                else if (!prf_ready[ex_pdst[p]]) ld_wake(ex_pdst[p], x_rob, 1'b0);
                             end
                             if (ol_valid && a_age == ol_age) begin
                                 miss_v = 1; miss_beat = {ea[63:3],3'b000}; miss_age = a_age; miss_owner = x_rob;
@@ -1180,8 +1210,17 @@ module rv64_core #(
                         // It gave a value read or forwarded (finished, or full early forwarding).
                         if (fdone || (!fwd_wait && fwd_mask == bytes_ && ex_writes[p])) rb_ldv[x_rob] = 1;
                         if (fdone) begin
-                            if (ex_writes[p]) begin prf[ex_pdst[p]] = v; prf_written[ex_pdst[p]] = 1; prf_ready[ex_pdst[p]] = 1; end
-                            rb_value[x_rob] = v; rb_done[x_rob] = 1; rb_exc[x_rob] = 0;
+                            // With LD_LAT >= 2 the load finishes (and may retire) only when it
+                            // wakes its consumers, so its register cannot be freed and reused first.
+                            if (ex_writes[p]) begin prf[ex_pdst[p]] = v; prf_written[ex_pdst[p]] = 1; end
+                            if (LD_LAT < 2 || rb_vp[x_rob]) begin
+                                if (ex_writes[p]) prf_ready[ex_pdst[p]] = 1;
+                                rb_done[x_rob] = 1;
+                            end else begin
+                                ld_wake(ex_writes[p] ? ex_pdst[p] : {P_B{1'b0}}, x_rob, 1'b1);
+                                rb_ans[x_rob] = 1;
+                            end
+                            rb_value[x_rob] = v; rb_exc[x_rob] = 0;
                             if (rb_vp[x_rob] && v != rb_vpv[x_rob]) rb_vpbad[x_rob] = 1;
                             iq_valid[ex_iq[p]] = 0;
                         end else iq_issued[ex_iq[p]] = 0;
@@ -1217,6 +1256,14 @@ module rv64_core #(
             end
             if (miss_v && !mu_valid && !fb_lock) begin
                 mu_valid = 1; mu_beat = miss_beat; mu_errv = 0; mu_owner = miss_owner; mu_owner_v = 1;
+            end
+            // ---- load wakeups (LD_LAT >= 2)
+            if (LD_LAT >= 2) for (k = 0; k < LW_N; k = k + 1) if (lw_valid[k]) begin
+                if (rflush || (mp_any && (lw_rob[k] - rb_head) > o_age)) lw_valid[k] = 0;
+                else if (lw_cnt[k] == 0) begin
+                    lw_valid[k] = 0; prf_ready[lw_pdst[k]] = 1;
+                    if (lw_fin[k]) rb_done[lw_rob[k]] = 1;
+                end else lw_cnt[k] = lw_cnt[k] - 1;
             end
             // ---- multiply pipeline and divide unit
             for (k = 0; k < MQ_N; k = k + 1) if (mq_valid[k]) begin
@@ -1255,7 +1302,7 @@ module rv64_core #(
                     else iq_valid[k] = 0;
                     // A result one clock away wakes its consumers now.
                     // A load assumes it will answer (taken back above if not).
-                    if ((iq_cls[k] == C_ALU || iq_cls[k] == C_LD || (iq_cls[k] == C_FULL && !iq_mdu[k])) && iq_writes[k])
+                    if ((iq_cls[k] == C_ALU || (iq_cls[k] == C_LD && LD_LAT < 2) || (iq_cls[k] == C_FULL && !iq_mdu[k])) && iq_writes[k])
                         prf_ready[iq_pdst[k]] = 1;
                 end
             end
@@ -1372,7 +1419,7 @@ module rv64_core #(
                             rb_cause[e] = q_fmis[j] ? 64'd0 : 64'd1; rb_tval[e] = wpc;
                             rb_pc[e] = wpc; rb_insn[e] = wi; rb_next[e] = d_want; rb_rd[e] = rd_; rb_writes[e] = writes_;
                             rb_store[e] = op == 7'h23 && !isfault; rb_load[e] = op == 7'h03 && !isfault;
-                            rb_fencei[e] = 0; rb_ctl[e] = 0; rb_sta[e] = 0; rb_viol[e] = 0; rb_ldv[e] = 0; rb_wstrb[e] = 0; rb_taken[e] = 0; rb_ret[e] = 0;
+                            rb_fencei[e] = 0; rb_ctl[e] = 0; rb_sta[e] = 0; rb_viol[e] = 0; rb_ldv[e] = 0; rb_ans[e] = 0; rb_wstrb[e] = 0; rb_taken[e] = 0; rb_ret[e] = 0;
                             rb_bhit[e] = q_bhit[j]; rb_bctr[e] = q_bctr[j]; rb_rsp[e] = q_rsp[j]; rb_rtos[e] = q_rtos[j];
                             rb_li[e] = q_li[j]; rb_lp[e] = op == 7'h63 && !isfault; rb_ld[e] = tkp;
                             rb_fence[e] = op == 7'h0f && f3_ == 3'd0 && !isfault;
