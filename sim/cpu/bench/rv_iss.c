@@ -44,6 +44,7 @@
  * fromhost symbols enable HTIF exit), --bin FILE@ADDR (raw, repeatable), --dtb FILE (into the boot ROM after
  * the reset code), --time lab|spike, --commit-log FILE (Spike --log-commits format; --commit-from/--commit-to
  * select an instruction range), --uart-in FILE (scripted RX bytes), --uart-out FILE (TX; default stdout),
+ * --isa rv64...(default rv64imafdc_zicsr_zifencei_zicntr; also b/zba_zbb_zbs) and --priv m|mu|msu (default msu),
  * --marchid N, --dump-on-output STR (write <dump-prefix>marker.state once the console output ends with STR);
  * --state, --dump-at/--dump-prefix and --final-state read and write "RVISSST3" full-system states
  * (layout in PRIV-CONTRACT.md); --trace adds E (exception) and I (interrupt) records. Without --sys nothing
@@ -1165,8 +1166,59 @@ static void counters_iter_end(void) {
     iter_n = 0;
     iter_inh = mcountinhibit;
 }
-static const u64 misa_val = (2ull << 62) | (1u << 0) | (1u << 2) | (1u << 3) | (1u << 5) | (1u << 8) | (1u << 12) |
-                            (1u << 18) | (1u << 20);  /* A C D F I M S U */
+/* --isa and --priv (P0): the implemented subset. Default RV64GC (rv64imafdc_zicsr_zifencei_zicntr), M+S+U.
+ * Without S there are no S CSRs, no delegation, no satp/SFENCE.VMA/SRET; without U, MPP is read-only M;
+ * without C, IALIGN is 32 (a jump to a 2-byte boundary is cause 0 on the jump, mepc bits 1:0 read 0);
+ * without A, F/D or the B extensions their encodings are cause 2. misa follows (B when Zba+Zbb+Zbs, as Spike). */
+static int has_m = 1, has_a = 1, has_fd = 1, has_c = 1, has_b = 0, has_zicntr = 1, has_s = 1, has_u = 1;
+static u64 misa_val = (2ull << 62) | (1u << 0) | (1u << 2) | (1u << 3) | (1u << 5) | (1u << 8) | (1u << 12) |
+                      (1u << 18) | (1u << 20);  /* A C D F I M S U */
+static void set_isa(const char *isa, const char *privs) {
+    if (isa) {
+        if (strncmp(isa, "rv64", 4)) die("--isa must start with rv64");
+        const char *q = isa + 4;
+        int zba = 0, zbb = 0, zbs = 0, f = 0, d = 0;
+        has_m = has_a = has_fd = has_c = has_zicntr = 0;
+        for (; *q && *q != '_'; q++) {
+            switch (*q) {
+            case 'i': break;
+            case 'm': has_m = 1; break;
+            case 'g': has_m = has_a = 1; f = d = 1; break;
+            case 'a': has_a = 1; break;
+            case 'f': f = 1; break;
+            case 'd': d = 1; break;
+            case 'c': has_c = 1; break;
+            case 'b': zba = zbb = zbs = 1; break;
+            default: die("--isa: unsupported single-letter extension");
+            }
+        }
+        while (*q == '_') {
+            const char *e = ++q;
+            while (*q && *q != '_') q++;
+            size_t n = (size_t)(q - e);
+            if (n == 3 && !strncmp(e, "zba", 3)) zba = 1;
+            else if (n == 3 && !strncmp(e, "zbb", 3)) zbb = 1;
+            else if (n == 3 && !strncmp(e, "zbs", 3)) zbs = 1;
+            else if (n == 6 && !strncmp(e, "zicntr", 6)) has_zicntr = 1;
+            else if ((n == 5 && !strncmp(e, "zicsr", 5)) || (n == 8 && !strncmp(e, "zifencei", 8))) {}
+            else die("--isa: unsupported extension");
+        }
+        if (f != d) die("--isa: F and D only together (the model's FP has FLEN 64)");
+        has_fd = f;
+        if (zba + zbb + zbs != 0 && zba + zbb + zbs != 3) die("--isa: Zba, Zbb and Zbs only together");
+        has_b = zba;
+    }
+    if (privs) {
+        if (!strcmp(privs, "m")) has_s = has_u = 0;
+        else if (!strcmp(privs, "mu")) { has_s = 0; has_u = 1; }
+        else if (!strcmp(privs, "msu")) has_s = has_u = 1;
+        else die("--priv m|mu|msu");
+    }
+    misa_val = (2ull << 62) | (1u << 8) | (has_m ? 1u << 12 : 0) | (has_a ? 1u : 0) | (has_c ? 1u << 2 : 0) |
+               (has_fd ? (1u << 3) | (1u << 5) : 0) | (has_b ? 1u << 1 : 0) | (has_s ? 1u << 18 : 0) |
+               (has_u ? 1u << 20 : 0);
+}
+static inline u64 epc_mask(void) { return has_c ? ~(u64)1 : ~(u64)3; }
 static int in_wfi;
 static u64 resv_addr = ~(u64)0;          /* the LR reservation's physical address, or all ones */
 
@@ -1225,6 +1277,7 @@ static inline u64 mip_read(void) { return mip_sw | mip_dev; }
 static void clint_tick(void) { mip_update_dev(IP_MTIP, mtime >= mtimecmp); }
 
 /* ---- PLIC ---- */
+static inline int plic_ctx(void) { return has_s ? 2 : 1; }   /* contexts: M, and S only with S (Spike) */
 static u32 plic_best(int c) {
     u32 best = 0;
     uint8_t bp = 0;
@@ -1238,7 +1291,7 @@ static void plic_update(int c) { mip_update_dev(c ? IP_SEIP : IP_MEIP, plic_best
 static void plic_set_level(u32 id, int lvl) {
     u32 m = 1u << id;
     if (lvl) plic_level |= m; else plic_level &= ~m;
-    for (int c = 0; c < 2; c++) {   /* as Spike: only the first context that enables the source */
+    for (int c = 0; c < plic_ctx(); c++) {   /* as Spike: only the first context that enables the source */
         if (!(plic_enable[c] & m)) continue;
         if (lvl) { plic_pending[c] |= m; plic_pprio[c][id] = plic_prio[id]; }
         else { plic_pending[c] &= ~m; plic_pprio[c][id] = 0; plic_claimed[c] &= ~m; }
@@ -1252,12 +1305,12 @@ static int plic_load32(u64 off, u32 *v) {
     if (off < 0x2000) { if (off == 0x1000) *v = plic_pending[0] | plic_pending[1]; return 1; }
     if (off < 0x200000) {
         u64 c = (off - 0x2000) / 0x80, o = (off - 0x2000) % 0x80;
-        if (c >= 2) return 0;
+        if (c >= (u64)plic_ctx()) return 0;
         if (o == 0) *v = plic_enable[c];
         return 1;
     }
     u64 c = (off - 0x200000) / 0x1000, o = (off - 0x200000) % 0x1000;
-    if (c >= 2) return 0;
+    if (c >= (u64)plic_ctx()) return 0;
     if (o == 0) *v = plic_thresh[c];
     else if (o == 4) {
         u32 best = plic_best((int)c);
@@ -1275,7 +1328,7 @@ static int plic_store32(u64 off, u32 v) {
     }
     if (off < 0x200000) {
         u64 c = (off - 0x2000) / 0x80, o = (off - 0x2000) % 0x80;
-        if (c >= 2) return 0;
+        if (c >= (u64)plic_ctx()) return 0;
         if (o != 0) return 1;
         u32 nv = v & ~1u & (u32)((2ull << PLIC_NDEV) - 1), x = plic_enable[c] ^ nv;
         plic_enable[c] = nv;
@@ -1289,7 +1342,7 @@ static int plic_store32(u64 off, u32 v) {
         return 1;
     }
     u64 c = (off - 0x200000) / 0x1000, o = (off - 0x200000) % 0x1000;
-    if (c >= 2) return 0;
+    if (c >= (u64)plic_ctx()) return 0;
     if (o == 0) { plic_thresh[c] = v & 15; plic_update((int)c); return 1; }
     if (o == 4) {
         if (v <= PLIC_NDEV && (plic_enable[c] >> v & 1)) { plic_claimed[c] &= ~(1u << v); plic_update((int)c); }
@@ -1401,6 +1454,13 @@ static inline uint8_t *dram_ptr(u64 pa, int size) {
     u64 o = pa - DRAM_BASE;
     return o <= ram - (u64)size ? mem + o : NULL;
 }
+/* HTIF, as Spike's host: the run ends when the 64-bit tohost word holds a non-zero value. */
+static void htif_check(void) {
+    uint8_t *t = dram_ptr(tohost_addr, 8);
+    u64 v = 0;
+    if (t) memcpy(&v, t, 8);
+    if (v) { sys_stop = SX_TOHOST; sys_exit_code = v; }
+}
 static int phys_load(u64 pa, int size, u64 *v) {
     uint8_t *p = dram_ptr(pa, size);
     if (p) { *v = 0; memcpy(v, p, (size_t)size); return 1; }
@@ -1422,7 +1482,7 @@ static int phys_store(u64 pa, int size, u64 val) {
     uint8_t *p = dram_ptr(pa, size);
     if (p) {
         memcpy(p, &val, (size_t)size);
-        if (pa == tohost_addr && val) { sys_stop = SX_TOHOST; sys_exit_code = val; }
+        if ((pa & ~(u64)7) == tohost_addr) htif_check();
         return 1;
     }
     if (pa >= CLINT_BASE && pa - CLINT_BASE < CLINT_SIZE) return clint_store(pa - CLINT_BASE, size, val);
@@ -1502,11 +1562,19 @@ static void set_prv(int p) {
     if (!time_spike) irq_check = 1;
 }
 
+static u64 mstatus_wmask(void) {
+    u64 m = MS_MIE | MS_MPIE | MS_MPP;
+    if (has_s) m |= MS_SIE | MS_SPIE | MS_SPP | MS_SUM | MS_MXR | MS_TVM | MS_TSR;
+    if (has_s || has_fd) m |= MS_FS;
+    if (has_u) m |= MS_MPRV | MS_TW;
+    return m;
+}
 static void write_mstatus(u64 v) {
     u64 mpp = (v >> 11) & 3;
-    if (mpp == 2) mpp = 0;
+    if (!has_u) mpp = 3;
+    else if (mpp == 2 || (mpp == 1 && !has_s)) mpp = 0;
     v = (v & ~MS_MPP) | mpp << 11;
-    u64 n = (mstatus & ~MSTATUS_WMASK) | (v & MSTATUS_WMASK);
+    u64 n = (mstatus & ~mstatus_wmask()) | (v & mstatus_wmask());
     if ((n ^ mstatus) & (MS_MPP | MS_MPRV | MS_SUM | MS_MXR)) tlb_flush();
     n = ((n & MS_FS) == MS_FS) ? (n | MS_SD) : (n & ~MS_SD);
     mstatus = n;
@@ -1517,7 +1585,7 @@ static inline void fs_dirty(void) { mstatus |= MS_FS | MS_SD; }
 /* ---- traps ---- */
 static void take_trap(u64 cause, u64 tval, int interrupt) {
     u64 c = cause & 63;
-    int deleg = prv <= 1 && ((interrupt ? mideleg : medeleg) >> c & 1);
+    int deleg = has_s && prv <= 1 && ((interrupt ? mideleg : medeleg) >> c & 1);
     u64 epc = pc;
     if (trace_fd && tracing())
         fprintf(trace_fd, "%c %016" PRIx64 " %016" PRIx64 " %016" PRIx64 "\n", interrupt ? 'I' : 'E', pc, cause, tval);
@@ -1575,13 +1643,17 @@ static int csr_access(u32 csr, int write, u64 wval_in, u64 *old, int kind, u64 s
     u32 need = (csr >> 8) & 3;
     if ((int)need > prv) return 0;
     if (write && (csr >> 10) == 3) return 0;
+    if (!has_s && (((csr >> 8) & 3) == 1 || csr == 0x302 || csr == 0x303)) return 0;   /* S CSRs, delegation */
+    if (!has_u && (csr == 0x306 || csr == 0x30a)) return 0;                        /* mcounteren, menvcfg */
+    if (!has_zicntr && csr >= 0xc00 && csr <= 0xc02) return 0;
+    if (!has_fd && csr >= 0x001 && csr <= 0x003) return 0;
     u64 v = 0;
     int ok = 1;
     /* counters from S/U */
     if ((csr >= 0xc00 && csr <= 0xc02)) {
         u32 bit = csr - 0xc00;
         if (prv < 3 && !(mcounteren >> bit & 1)) return 0;
-        if (prv == 0 && !(scounteren >> bit & 1)) return 0;
+        if (prv == 0 && has_s && !(scounteren >> bit & 1)) return 0;
     }
     switch (csr) {
     case 0x001: case 0x002: case 0x003:
@@ -1596,7 +1668,7 @@ static int csr_access(u32 csr, int write, u64 wval_in, u64 *old, int kind, u64 s
     case 0x106: v = scounteren; break;
     case 0x10a: v = senvcfg; break;
     case 0x140: v = sscratch; break;
-    case 0x141: v = sepc; break;
+    case 0x141: v = sepc & epc_mask(); break;
     case 0x142: v = scause; break;
     case 0x143: v = stval; break;
     case 0x144: v = mip_read() & mideleg; break;
@@ -1614,7 +1686,7 @@ static int csr_access(u32 csr, int write, u64 wval_in, u64 *old, int kind, u64 s
     case 0x30a: v = menvcfg; break;
     case 0x320: v = mcountinhibit; break;
     case 0x340: v = mscratch; break;
-    case 0x341: v = mepc; break;
+    case 0x341: v = mepc & epc_mask(); break;
     case 0x342: v = mcause; break;
     case 0x343: v = mtval; break;
     case 0x344: v = mip_read(); break;
@@ -1645,7 +1717,7 @@ static int csr_access(u32 csr, int write, u64 wval_in, u64 *old, int kind, u64 s
     case 0x100: write_mstatus((mstatus & ~SSTATUS_WMASK) | (nv & SSTATUS_WMASK)); break;
     case 0x104: mie = (mie & ~mideleg) | (nv & mideleg); break;
     case 0x105: stvec = nv & ~(u64)2; break;
-    case 0x106: scounteren = nv & 7; break;
+    case 0x106: scounteren = nv & (has_zicntr ? 7 : 0); break;
     case 0x10a: senvcfg = nv & 1; break;
     case 0x140: sscratch = nv; break;
     case 0x141: sepc = nv & ~(u64)1; break;
@@ -1661,18 +1733,18 @@ static int csr_access(u32 csr, int write, u64 wval_in, u64 *old, int kind, u64 s
         break;
     }
     case 0x300: write_mstatus(nv); break;
-    case 0x302: medeleg = nv & MEDELEG_MASK; break;
+    case 0x302: medeleg = nv & (MEDELEG_MASK | (has_c ? 0 : 1) | (has_zicntr ? 1u << 19 : 0)); break;   /* 19: as Spike */
     case 0x303: mideleg = nv & IP_S_MASK; break;
-    case 0x304: mie = nv & IP_ALL; break;
+    case 0x304: mie = nv & (has_s ? IP_ALL : IP_MSIP | IP_MTIP | IP_MEIP); break;
     case 0x305: mtvec = nv & ~(u64)2; break;
-    case 0x306: mcounteren = nv & 7; break;
-    case 0x30a: menvcfg = nv & 1; break;
-    case 0x320: mcountinhibit = nv & 5; break;
+    case 0x306: mcounteren = nv & (has_zicntr ? 7 : 0); break;
+    case 0x30a: menvcfg = nv & (has_s ? 1 : 0); break;
+    case 0x320: mcountinhibit = nv & (has_zicntr ? 5 : 0); break;
     case 0x340: mscratch = nv; break;
     case 0x341: mepc = nv & ~(u64)1; break;
     case 0x342: mcause = nv; break;
     case 0x343: mtval = nv; break;
-    case 0x344: { u64 m = IP_S_MASK; mip_sw = (mip_sw & ~m) | (nv & m); break; }
+    case 0x344: { u64 m = has_s ? IP_S_MASK : 0; mip_sw = (mip_sw & ~m) | (nv & m); break; }
     case 0xb00: mcycle = nv; mcycle_written = 1; break;
     case 0xb02: minstret = nv; minstret_written = 1; break;
     default: break;                        /* read-only zero fields and WARL constants ignore writes */
@@ -1848,7 +1920,7 @@ static void sys_step(void) {
         ilen = 4;
     } else ilen = 2;
     u32 raw = ilen == 4 ? ins : lo;
-    if (ilen == 2) { ins = rvc_expand(lo); if (!ins) { take_trap(2, lo, 0); return; } }
+    if (ilen == 2) { ins = has_c ? rvc_expand(lo) : 0; if (!ins) { take_trap(2, lo, 0); return; } }
     int priv_at = prv;
     u64 inh = mcountinhibit;
     lg_nld = lg_nst = 0; lg_xrd = 0; lg_frd = -1;
@@ -1910,7 +1982,7 @@ static void sys_step(void) {
         break;
     }
     case 0x07: case 0x27:      /* FLW/FLD/FSW/FSD */
-        if (f3 == 2 || f3 == 3) {
+        if (has_fd && (f3 == 2 || f3 == 3)) {
             if (!(mstatus & MS_FS)) ILLEGAL();
             int load = op == 0x07, size = f3 == 2 ? 4 : 8;
             i64 off = load ? imm : sx(((ins >> 25) << 5) | ((ins >> 7) & 31), 12);
@@ -1924,7 +1996,7 @@ static void sys_step(void) {
         }
         break;
     case 0x43: case 0x47: case 0x4b: case 0x4f: case 0x53: {
-        if (!(mstatus & MS_FS)) ILLEGAL();
+        if (!has_fd || !(mstatus & MS_FS)) ILLEGAL();
         unsigned fl;
         int k = fp_exec(ins, a, fregs[rs1], fregs[rs2], fregs[ins >> 27], fcsr >> 5, &value, &fl);
         if (k < 0) ILLEGAL();
@@ -1936,7 +2008,7 @@ static void sys_step(void) {
         break;
     }
     case 0x2f: {               /* A: LR/SC and AMOs, .W and .D */
-        if (f3 != 2 && f3 != 3) break;
+        if (!has_a || (f3 != 2 && f3 != 3)) break;
         int size = f3 == 2 ? 4 : 8;
         u32 f5 = ins >> 27;
         u64 pa, old;
@@ -1958,7 +2030,7 @@ static void sys_step(void) {
             int success = resv_addr == pa;
             if (success) {
                 memcpy(dram_ptr(pa, size), &b, (size_t)size);
-                if (pa == tohost_addr && b) { sys_stop = SX_TOHOST; sys_exit_code = b; }
+                if ((pa & ~(u64)7) == tohost_addr) htif_check();
                 if (tracing()) note_store(a, b, size);
                 if (clog && lg_nst < 4) { lg_st[lg_nst] = a; lg_stv[lg_nst] = b; lg_sts[lg_nst++] = size; }
                 if (warm) l2_touch(pa);
@@ -1985,7 +2057,7 @@ static void sys_step(void) {
         default: ILLEGAL();
         }
         memcpy(dram_ptr(pa, size), &r, (size_t)size);
-        if (pa == tohost_addr && r) { sys_stop = SX_TOHOST; sys_exit_code = r; }
+        if ((pa & ~(u64)7) == tohost_addr) htif_check();
         if (clog && lg_nld < 4) lg_ld[lg_nld++] = a;
         if (clog && lg_nst < 4) { lg_st[lg_nst] = a; lg_stv[lg_nst] = r; lg_sts[lg_nst++] = size; }
         if (tracing()) note_store(a, r, size);
@@ -1997,6 +2069,7 @@ static void sys_step(void) {
     case 0x73: {
         if (f3 == 0) {
             if (ins == 0x00000073) { take_trap(prv == 3 ? 11 : prv == 1 ? 9 : 8, 0, 0); return; }
+            if (!has_s && (ins == 0x10200073 || ((ins >> 25) == 0x09 && rd == 0))) ILLEGAL();   /* SRET, SFENCE.VMA */
             if (ins == 0x00100073) { take_trap(3, pc, 0); return; }
             if (ins == 0x30200073) {                       /* MRET */
                 if (prv < 3) ILLEGAL();
@@ -2005,9 +2078,9 @@ static void sys_step(void) {
                 if (np != 3) s &= ~MS_MPRV;
                 s = (s & ~MS_MIE) | ((s & MS_MPIE) ? MS_MIE : 0);
                 s |= MS_MPIE;
-                s &= ~MS_MPP;                             /* MPP := U */
+                s &= ~MS_MPP;                             /* MPP := U (M without U) */
                 write_mstatus(s);
-                nxt = mepc;
+                nxt = mepc & epc_mask();
                 set_prv(np);
                 ok = 1; serial = 1;
                 break;
@@ -2021,13 +2094,13 @@ static void sys_step(void) {
                 s &= ~MS_SPP;
                 s &= ~MS_MPRV;
                 write_mstatus(s);
-                nxt = sepc;
+                nxt = sepc & epc_mask();
                 set_prv(np);
                 ok = 1; serial = 1;
                 break;
             }
             if (ins == 0x10500073) {                       /* WFI */
-                if ((mstatus & MS_TW) ? prv < 3 : prv < 1) ILLEGAL();
+                if ((mstatus & MS_TW) ? prv < 3 : (has_s && prv < 1)) ILLEGAL();
                 in_wfi = 1;
                 ok = 1; serial = 2;
                 break;
@@ -2059,6 +2132,7 @@ static void sys_step(void) {
     }
     case 0x13: case 0x1b: case 0x33: case 0x3b: {
         int word = op == 0x1b || op == 0x3b;
+        if ((op == 0x33 || op == 0x3b) && f7 == 1 && !has_m) break;
         if ((op == 0x33 || op == 0x3b) && f7 == 1) {
             if (!word || f3 == 0 || f3 >= 4) {
                 if (f3 < 4) {
@@ -2072,6 +2146,7 @@ static void sys_step(void) {
             }
             break;
         }
+        if (has_b && bitmanip(ins, a, b, &value)) { dest = rd; ok = 1; break; }
         int immediate = op == 0x13 || op == 0x1b;
         int width = word ? 32 : 64;
         u64 rhs = immediate ? (u64)imm : b;
@@ -2109,6 +2184,7 @@ static void sys_step(void) {
 #undef CHK
     if (!ok) ILLEGAL();
 #undef ILLEGAL
+    if (!has_c && (nxt & 2)) { take_trap(0, nxt, 0); return; }
     if (dest >= 32) { fregs[dest - 32] = value; fs_dirty(); lg_frd = (int)dest - 32; lg_fv = value; }
     else if (dest) { regs[dest] = value; lg_xrd = (int)dest; lg_xv = value; }
     else value = 0;
@@ -2254,7 +2330,11 @@ static void kv_pack(int out) {
         u_rxn = (int)kv_rx[0]; u_rxh = (int)kv_rx[1]; u_in_pos = kv_rx[2];
     }
 }
-static u64 kv_time_spike, kv_irq_check;
+static u64 kv_time_spike, kv_irq_check, kv_isa;
+static u64 isa_config(void) {
+    return (u64)has_m | (u64)has_a << 1 | (u64)has_fd << 2 | (u64)has_c << 3 | (u64)has_b << 4 |
+           (u64)has_zicntr << 5 | (u64)has_s << 6 | (u64)has_u << 7;
+}
 /* The named words of an RVISSST3 file, in file order (documented in cpu/PRIV-CONTRACT.md). */
 static kv_t sys_kv[] = {
     {"prv", &kv_prv}, {"fcsr", &kv_fcsr}, KV(mstatus), KV(medeleg), KV(mideleg), KV(mie), {"mip_sw", &mip_sw},
@@ -2263,7 +2343,7 @@ static kv_t sys_kv[] = {
     KV(scounteren), KV(senvcfg), KV(mcycle), KV(minstret), {"wfi", &kv_wfi}, KV(mtime), KV(mtimecmp),
     KV(tick_accum), KV(chunk_steps), {"time_spike", &kv_time_spike}, KV(idle_ticks), KV(tohost_addr),
     KV(fromhost_addr), KV(marchid_val), {"plic_level", &kv_plic_level}, KV(resv_addr), {"irq_check", &kv_irq_check},
-    KV(mcycle_written), KV(minstret_written), KV(iter_n), KV(iter_inh), KV(csr_serialized),
+    KV(mcycle_written), KV(minstret_written), KV(iter_n), KV(iter_inh), KV(csr_serialized), {"isa_config", &kv_isa},
 };
 static void write_sys_state(const char *path) {
     FILE *f = fopen(path, "wb");
@@ -2271,6 +2351,7 @@ static void write_sys_state(const char *path) {
     kv_pack(1);
     kv_time_spike = (u64)time_spike;
     kv_irq_check = (u64)irq_check;
+    kv_isa = isa_config();
     u64 head[4] = {0, 1, count, pc};
     memcpy(&head[0], "RVISSST3", 8);
     fwrite(head, 8, 4, f);
@@ -2304,6 +2385,7 @@ static void read_sys_state(const char *path) {
     FILE *f = fopen(path, "rb");
     if (!f) die("cannot read state");
     u64 head[4], nkv = 0;
+    kv_isa = isa_config();   /* states written before the configuration was recorded are the default machine */
     if (fread(head, 8, 4, f) != 4 || memcmp(&head[0], "RVISSST3", 8) || head[1] != 1) die("not an RVISSST3 state file");
     count = head[2]; pc = head[3];
     if (fread(regs, 8, 64, f) != 64 || fread(&nkv, 8, 1, f) != 1) die("short state file");
@@ -2342,12 +2424,14 @@ static void read_sys_state(const char *path) {
     if (kv_rx[0] > 64 || kv_rx[1] >= 64 || kv_rx[2] > u_in_len) die("bad UART state in the state file");
     kv_pack(0);
     if ((int)kv_time_spike != time_spike) die("state was written with the other --time model");
+    if (kv_isa != isa_config()) die("state was written with another --isa/--priv configuration");
     regs[0] = 0;
     tlb_flush();
     irq_check = (int)kv_irq_check;
 }
 
 /* ---- the system-mode run ---- */
+static const char *sys_isa, *sys_priv;
 static const char *sys_elf, *sys_dtb, *sys_bins[8], *uart_in_path, *uart_out_path;
 static int sys_nbins;
 
@@ -2359,8 +2443,9 @@ static int sys_main(const char *state, const char *trace, const char *final_stat
     if (uart_out_path && !(uart_out = fopen(uart_out_path, "w"))) die("cannot write --uart-out");
     if (uart_in_path) { u_in = read_file(uart_in_path, &u_in_len); if (!u_in) die("cannot read --uart-in"); }
     tlb_flush();
-    mstatus = MS_UXL & (2ull << 32);
-    mstatus |= MS_SXL & (2ull << 34);
+    mstatus = has_u ? (2ull << 32) : 0;                 /* UXL with U, SXL with S, MPP = least mode */
+    mstatus |= has_s ? (2ull << 34) : 0;
+    mstatus |= has_u ? 0 : MS_MPP;
     if (state) read_sys_state(state);
     else {
         u64 entry = DRAM_BASE;
@@ -2504,14 +2589,17 @@ int main(int argc, char **argv) {
         else if (!strcmp(k, "--uart-in")) uart_in_path = v;
         else if (!strcmp(k, "--uart-out")) uart_out_path = v;
         else if (!strcmp(k, "--marchid")) marchid_val = strtoull(v, NULL, 0);
+        else if (!strcmp(k, "--isa")) sys_isa = v;
+        else if (!strcmp(k, "--priv")) sys_priv = v;
         else if (!strcmp(k, "--dump-on-output")) out_marker = v;
         else die("unknown option");
     }
     if (!sys_on && (sys_elf || sys_dtb || sys_nbins || time_spike || clog_path || uart_in_path || uart_out_path ||
-                    marchid_val || out_marker || clog_from || clog_to != ~(u64)0))
+                    marchid_val || out_marker || sys_isa || sys_priv || clog_from || clog_to != ~(u64)0))
         die("system-mode options need --sys 1");
     if (sys_on) {
         if (!ram || (ram & 7) || image) die("--sys needs --ram and takes --elf/--bin/--state, not --image");
+        set_isa(sys_isa, sys_priv);
         if (!fp_on) fp_on = 1;
         return sys_main(state, trace, final_state, max, clog_path);
     }

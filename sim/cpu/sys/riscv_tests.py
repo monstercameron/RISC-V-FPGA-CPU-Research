@@ -38,8 +38,11 @@ SUITES = ['rv64ui', 'rv64um', 'rv64ua', 'rv64uf', 'rv64ud', 'rv64uc', 'rv64mi', 
 SPIKE_ISA = 'rv64imafdc_zicsr_zifencei_zicntr'
 # Tests that need what the lab-virt contract leaves out (cpu/PRIV-CONTRACT.md): misaligned data in hardware
 # (ma_data; the p environment has no M-mode emulation) and PMP entries (pmpaddr; the platform has 0).
-# Each with its exact HTIF exit value: ma_data fails its test 668 ((668 << 1) | 1 = 1337), pmpaddr its test 1.
+# Each with its exact HTIF exit value: ma_data's handler ORs 1337 into TESTNUM at its first misaligned trap,
+# pmpaddr fails its test 1 ((1 << 1) | 1 = 3).
 EXPECTED_FAIL = {'rv64ui-ma_data': 1337, 'rv64mi-pmpaddr': 3}
+# The same for the subset machines (--isa/--priv): a listed test passing, or another test failing, is a failure.
+SUBSET_EXPECTED_FAIL = dict(EXPECTED_FAIL)
 # Known commit-log differences from Spike, by contract choice (cpu/PRIV-CONTRACT.md section 9): the exact
 # first differing record (index, Spike's x-register write, rv_iss's) that is excused, and nothing else.
 KNOWN_SPIKE_DIFF = {'rv64mi-ma_fetch': (113, (('x7', 0x8000000000141129),), (('x7', 0x800000000014112d),),
@@ -73,13 +76,17 @@ def build_iss():
     return exe
 
 
-def build_test(suite, name):
-    elf = OUT / f'{suite}-p-{name}.elf'
+def build_test(suite, name, isa=None):
+    """isa: a subset ISA string (P0): the test is assembled for it, so it cannot contain other encodings."""
+    tag = '' if not isa else '-' + isa
+    elf = OUT / f'{suite}-p-{name}{tag}.elf'
     source = SRC / 'riscv-tests/isa' / suite / f'{name}.S'
     if elf.is_file() and elf.stat().st_mtime > source.stat().st_mtime:
         return elf
     OUT.mkdir(parents=True, exist_ok=True)
     march = 'rv64gc' if suite == 'rv64uc' else 'rv64g'
+    if isa:
+        march = isa.replace('_zicntr', '')
     env = SRC / 'riscv-test-env'
     base = ['clang', '--target=riscv64-unknown-elf', f'-march={march}', '-mabi=lp64', '-mcmodel=medany']
     pre = subprocess.run(base + ['-E', '-P', f'-I{env}/p', f'-I{env}', f'-I{SRC}/riscv-tests/isa/macros/scalar',
@@ -90,16 +97,16 @@ def build_test(suite, name):
     for handler in re.findall(r'\.glob(?:a)?l\s+(\w+_handler)', pre):
         pre = re.sub(r'\.weak\s+' + handler + r'\b', '', pre)
     pre = re.sub(r"(?<![A-Za-z0-9_])tcontrol(?![A-Za-z0-9_])", "0x7a5", pre)   # a CSR name LLVM 18 does not know
-    asm = OUT / f'{suite}-p-{name}.s'
+    asm = OUT / f'{suite}-p-{name}{tag}.s'
     asm.write_text(pre)
     cmd = base + ['-static', '-nostdlib', '-fuse-ld=lld', '-mno-relax', f'-T{env}/p/link.ld', str(asm), '-o', str(elf)]
     subprocess.run(cmd, check=True, timeout=300, capture_output=True, text=True)
     return elf
 
 
-def run_iss(exe, elf, clog=None, max_insns=2_000_000):
+def run_iss(exe, elf, clog=None, max_insns=2_000_000, isa=None, priv=None):
     cmd = [str(exe), '--sys', '1', '--ram', str(16 << 20), '--elf', str(elf), '--max', str(max_insns),
-           '--marchid', '5', '--time', 'spike']
+           '--marchid', '5', '--time', 'spike', *(['--isa', isa] if isa else []), *(['--priv', priv] if priv else [])]
     if clog:
         cmd += ['--commit-log', str(clog)]
     r = subprocess.run(cmd, capture_output=True, text=True, timeout=300)
@@ -108,8 +115,8 @@ def run_iss(exe, elf, clog=None, max_insns=2_000_000):
     return json.loads(r.stdout.strip().splitlines()[-1])
 
 
-def run_spike(spike, elf, clog, max_insns=2_000_000):
-    cmd = [spike, f'--isa={SPIKE_ISA}', '--priv=msu', '--pmpregions=0', '--triggers=0', '-m16',
+def run_spike(spike, elf, clog, max_insns=2_000_000, isa=None, priv=None):
+    cmd = [spike, f'--isa={isa or SPIKE_ISA}', f'--priv={priv or "msu"}', '--pmpregions=0', '--triggers=0', '-m16',
            f'--instructions={max_insns}', '--log-commits', f'--log={clog}', str(elf)]
     return subprocess.run(cmd, capture_output=True, text=True, timeout=300).returncode
 
@@ -119,6 +126,9 @@ def main():
     ap.add_argument('--suites', default=','.join(SUITES))
     ap.add_argument('--spike', help="Spike binary, or 'auto' for build/third-party/linux-lab/build/spike/spike")
     ap.add_argument('--only')
+    ap.add_argument('--isa', help='P0: a subset ISA for rv_iss and Spike (for example '
+                    'rv64im_zba_zbb_zbs_zicsr_zifencei_zicntr); tests are assembled for it')
+    ap.add_argument('--priv', choices=('m', 'mu', 'msu'), help='P0: the privilege modes of rv_iss and Spike')
     args = ap.parse_args()
     exe = build_iss()
     if args.spike == 'auto':
@@ -132,23 +142,24 @@ def main():
                 continue
             total += 1
             try:
-                elf = build_test(suite, name)
+                elf = build_test(suite, name, args.isa)
             except subprocess.CalledProcessError as e:
                 results[key] = {'build_error': e.stderr[-400:]}
                 fails += 1
                 print(f'BUILD-FAIL {key}: {e.stderr[-300:]}')
                 continue
             clog = OUT / f'{suite}-p-{name}.iss.log' if args.spike else None
-            res = run_iss(exe, elf, clog)
+            res = run_iss(exe, elf, clog, isa=args.isa, priv=args.priv)
             ok = res['stop'] == 'tohost' and res['exit_code'] == 1
             entry = {'iss': 'pass' if ok else f"fail {res['stop']} code {res['exit_code']} pc {res['pc']:#x}",
                      'instructions': res['instructions']}
             if args.spike:
                 slog = OUT / f'{suite}-p-{name}.spike.log'
-                entry['spike_rc'] = run_spike(args.spike, elf, slog)
+                entry['spike_rc'] = run_spike(args.spike, elf, slog, isa=args.isa, priv=args.priv)
                 cmp = commit_compare.compare(slog, clog, iss_prefix=True)
                 entry['compare'] = cmp['summary']
-                known = KNOWN_SPIKE_DIFF.get(key)
+                # the misa.C difference needs C (Spike can only clear a bit that is there)
+                known = KNOWN_SPIKE_DIFF.get(key) if 'c' in (args.isa or 'rv64imafdc').split('_')[0][4:] else None
                 d = cmp.get('records')
                 if not cmp['match']:
                     entry['first_difference'] = cmp['first_difference']
@@ -164,10 +175,22 @@ def main():
                 elif known:
                     entry['compare'] += '; the known difference did not occur'
                     mism += 1
-            if not ok and res['stop'] == 'tohost' and res['exit_code'] == EXPECTED_FAIL.get(key):
+            subset = bool(args.isa or args.priv)
+            if not ok and res['stop'] == 'tohost' and res['exit_code'] == EXPECTED_FAIL.get(key) and not subset:
                 entry['expected_failure'] = True
-            else:
+            elif subset and not ok and args.spike and res['stop'] == 'tohost' and \
+                    res['exit_code'] == SUBSET_EXPECTED_FAIL.get(key) and \
+                    entry.get('spike_rc') == (res['exit_code'] >> 1) & 0xff and 'first_difference' not in entry:
+                # Listed tests only, with their exact tohost value, and only when Spike, configured the same, exits
+                # with the same status after an identical commit log.
+                entry['expected_failure'] = True
+                entry['note'] = f'fails with tohost {res["exit_code"]:#x} on this subset, as Spike does'
+            elif subset and not ok and not args.spike:
+                fails += 1
+            elif not subset:
                 fails += not ok or key in EXPECTED_FAIL
+            elif not ok or key in SUBSET_EXPECTED_FAIL:
+                fails += 1
             results[key] = entry
             print(f"{'PASS' if ok else 'FAIL'} {key} {json.dumps(entry)}", flush=True)
     print(json.dumps({'tests': total, 'iss_failures': fails, 'spike_mismatches': mism,
@@ -176,7 +199,8 @@ def main():
         print(f'PASS: {total - len([e for e in results.values() if e.get("expected_failure")])} riscv-tests pass on '
               f'rv_iss --sys' + (' and match Spike' if args.spike else ''))
     OUT.mkdir(parents=True, exist_ok=True)
-    (OUT / ('summary-spike.json' if args.spike else 'summary.json')).write_text(json.dumps(results, indent=1))
+    name = 'summary' + ('-spike' if args.spike else '') + (f'-{args.isa}-{args.priv}' if args.isa or args.priv else '')
+    (OUT / f'{name}.json').write_text(json.dumps(results, indent=1))
     return 1 if fails or mism else 0
 
 

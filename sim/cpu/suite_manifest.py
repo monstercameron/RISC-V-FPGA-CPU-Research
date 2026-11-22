@@ -341,6 +341,19 @@ def sys_mode(ctx):
                r'count:^PASS: (\d+) riscv-tests pass', tags=('python', 'sys', 'spike'), out_arg=None, est=120,
                lock='sys-tests',
                note='commit logs against Spike; rv64mi-ma_fetch is a known difference (misa.C writable in Spike)')
+    # P0: rv_iss restricted to the lab cores' ISA (rv64im + B) and to M or M+U, against Spike configured the same,
+    # on the riscv-tests p environment; and the same tests through spike_lockstep.py's p-environment path.
+    sub = 'rv64im_zba_zbb_zbs_zicsr_zifencei_zicntr'
+    for pr in ('m', 'mu'):
+        yield Step(f'sys-subset-{pr}', ('sys',), 'sim/cpu/sys/riscv_tests.py',
+                   ['--suites', 'rv64ui,rv64um,rv64uzba,rv64uzbb,rv64uzbs,rv64mi', '--isa', sub, '--priv', pr,
+                    '--spike', 'auto'], r'count:^PASS: (\d+) riscv-tests pass', tags=('python', 'sys', 'spike'),
+                   out_arg=None, lock='sys-tests', est=120,
+                   note=f'rv_iss --isa {sub} --priv {pr} vs Spike; pmpaddr and ma_data fail identically on both')
+    yield Step('sys-penv-iss', ('sys',), 'sim/cpu/spike_lockstep.py',
+               ['penv', 'rv64mi', 'rv64ui', 'rv64um', 'rv64uzba', 'rv64uzbb', 'rv64uzbs', '--model', 'iss', '--priv', 'm'],
+               r'count:^PASS: (\d+) records of \d+ runs', tags=('python', 'sys', 'spike'), out_arg=None, est=90,
+               note='the p-environment lockstep path (for the RTL with privilege, docket item 15) on rv_iss')
     yield Step('sys-spike-boot', ('sys',), 'sim/cpu/sys/spike_compare.py', ['--instructions', '100000000', '--min',
                '40000000', '--expect-finisher-end'], r'count:^PASS: (\d+) instructions of the boot equal',
                tags=('python', 'sys', 'spike'), out_arg=None, est=60,

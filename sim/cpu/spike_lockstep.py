@@ -249,6 +249,8 @@ def rtl_records(lines, skip=0, fflags=0, stub=None):
                 stub[rd] = val
             stores = []
             raised = False
+        elif k in ('E', 'I'):
+            expect_pc = None        # a trap taken (not terminal): the next record is at the handler
         elif k == 'T':
             _, pc, cause, tval = line.split()
             pc = int(pc, 16)
@@ -331,12 +333,16 @@ class Core:
         defines = (['WIDE_TRACE'] if a.core == 'ooo' else []) + (['RV64_OOO_FPU'] if fp else [])
         params = {'MEM_BYTES': ram, **{k: v for k, v in (('ICACHE_BEATS', a.icache_beats),
                                                           ('DCACHE_BEATS', a.dcache_beats)) if v}}
+        if getattr(a, 'mem_base', 0):
+            params['MEM_BASE'] = f"64'h{a.mem_base:x}"
         self.exe = self.sim.build('tb_core', [src, ROOT / 'sim/cpu/tb_core.sv'], work / f'tb_core-{a.core}-{ram}.vvp',
                                   params=params, defines=defines, timeout=simulator.STEP_TIMEOUT)
 
-    def trace(self, image_path, trace_path, stall, seed, max_retired=0, timeout=LIMIT):
+    def trace(self, image_path, trace_path, stall, seed, max_retired=0, timeout=LIMIT, tohost=None):
         args = [*self.exe, f'+image_bin={image_path}', f'+trace={trace_path}', f'+stall={stall}', f'+seed={seed}',
                 '+fault_kind=0', '+fault_addr=ffffffffffffffff', '+max_cycles=2000000000']
+        if tohost is not None:
+            args.append(f'+tohost={tohost:x}')
         if max_retired:
             args.append(f'+max_retired={max_retired}')
         return run(args, timeout=timeout)
@@ -406,7 +412,7 @@ def job(tag, image, end, spike_image=None, regs=None, pc=0, fp=False, fstate=Non
 
 def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument('mode', choices=('rvt', 'image', 'pieces', 'self-test'))
+    ap.add_argument('mode', choices=('rvt', 'image', 'pieces', 'penv', 'self-test'))
     ap.add_argument('suites', nargs='*')
     ap.add_argument('--core', choices=sorted(CORES), default='ooo')
     ap.add_argument('--core-source')
@@ -425,9 +431,16 @@ def main():
     ap.add_argument('--clang', default='clang')
     ap.add_argument('--objcopy', default='llvm-objcopy')
     ap.add_argument('--deadline', type=float, default=LIMIT, help='seconds for the whole invocation')
+    ap.add_argument('--isa', default='rv64im_zba_zbb_zbs_zicsr_zifencei_zicntr', help='penv: the ISA of Spike, '
+                    'rv_iss and the test build')
+    ap.add_argument('--priv', default='m', choices=('m', 'mu', 'msu'), help='penv: the privilege modes')
+    ap.add_argument('--model', default='rtl', choices=('rtl', 'iss'),
+                    help='penv: compare the RTL core (tb_core, MEM_BASE 0x8000_0000, +tohost) or rv_iss --sys')
     a = ap.parse_args()
     if a.mode == 'self-test':
         return self_test()
+    if a.mode == 'penv':
+        return penv(a)
     t_end = time.time() + a.deadline
     stalls = [int(s) for s in a.stalls.split(',')]
     spike = spike_path(a)
@@ -554,6 +567,146 @@ def self_test():
         return 1
     print(f'PASS: spike-lockstep self-test, {len(checks)} checks')
     return 0
+
+
+PENV_BASE = 0x80000000
+PENV_RAM = 0x10000
+
+
+def spike_penv_records(log):
+    """Spike records of a p-environment program run directly (no shim): its boot ROM (below 0x8000_0000) is
+    skipped; every later record is compared, the privilege field included."""
+    for line in log:
+        r = commit_compare.parse(line)
+        if r is None:
+            if line.startswith('core'):
+                raise ValueError(f'unparsable Spike record {line.rstrip()!r}')
+            continue
+        prv, pc, insn, regs, _loads, stores = r
+        if pc < PENV_BASE:
+            continue
+        m = FFLAGS.search(line)
+        yield ('R', pc, insn, regs, stores, int(m[1], 16) if m and (insn & 0x7f) != 0x73 else None), prv
+
+
+def penv(a):
+    """P0: riscv-tests in the official p environment (M-mode traps, linked at 0x8000_0000, HTIF tohost end) on a
+    subset machine, compared with Spike configured the same (--isa, --priv). --model rtl runs tb_core with
+    MEM_BASE 0x8000_0000 and +tohost (the RTL needs privilege, docket item 15, before these pass); --model iss
+    runs rv_iss --sys with --isa/--priv and its trace instead, which validates this path today."""
+    t_end = time.time() + a.deadline
+    spike = spike_path(a)
+    rt = HERE / 'sys'
+    sys.path.insert(0, str(rt))
+    import riscv_tests as srt
+    work = Path(tempfile.mkdtemp(prefix='spike-penv-', dir=os.environ.get('TMPDIR', '/tmp')))
+    failed, total, n_rec, passed = [], 0, 0, 0
+    try:
+        core = None
+        if a.model == 'rtl':
+            a.mem_base = PENV_BASE
+            core = Core(a, PENV_RAM, 'f' in a.isa.split('_')[0][4:], work)
+        else:
+            iss = srt.build_iss()
+        for suite in a.suites:
+            for name in srt.suite_tests(suite):
+                total += 1
+                tag = f'{suite}-{name}'
+                try:
+                    elf = srt.build_test(suite, name, a.isa)
+                    sym = run(['llvm-nm', elf])
+                    tohost = int(next(l.split()[0] for l in sym.splitlines() if l.split()[-1] == 'tohost'), 16)
+                    trc = work / f'{tag}.trace'
+                    if core:
+                        binf = work / f'{tag}.bin'
+                        run([a.objcopy, '-O', 'binary', elf, binf])
+                        data = binf.read_bytes()
+                        if len(data) > PENV_RAM:
+                            raise RuntimeError(f'{len(data)} bytes exceed {PENV_RAM}')
+                        binf.write_bytes(data.ljust(PENV_RAM, b'\0'))
+                        out = core.trace(binf, trc, 0, 1, timeout=max(10.0, t_end - time.time()), tohost=tohost)
+                        ended = 'TOHOST' in out
+                        m = re.search(r'TOHOST value=([0-9a-f]+)', out)
+                        value = int(m[1], 16) & 0xffffffff if m else None
+                    else:
+                        # the same platform as Spike's: 64 KiB of RAM at 0x8000_0000 and Spike's time model
+                        res = json.loads(run([iss, '--sys', '1', '--ram', str(PENV_RAM), '--elf', elf, '--isa', a.isa,
+                                              '--priv', a.priv, '--trace', trc, '--max', '2000000', '--marchid', '5',
+                                              '--time', 'spike']).strip().splitlines()[-1])
+                        ended = res['stop'] == 'tohost'
+                        value = res['exit_code'] & 0xffffffff
+                    fifo = work / f'{tag}.fifo'
+                    os.mkfifo(fifo)
+                    proc = subprocess.Popen([spike, f'--isa={a.isa}', f'--priv={a.priv}', '--pmpregions=0', '--triggers=0',
+                                             f'-m{PENV_BASE:#x}:{PENV_RAM:#x}', '--instructions=2000000', '--log-commits',
+                                             f'--log={fifo}', str(elf)], stdin=subprocess.DEVNULL,
+                                            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+                    count, msg = 0, None
+                    expired = []
+
+                    def watchdog(proc=proc, fifo=fifo):
+                        expired.append(True)
+                        if proc.poll() is None:
+                            proc.kill()
+                        try:
+                            os.close(os.open(fifo, os.O_WRONLY | os.O_NONBLOCK))
+                        except OSError:
+                            pass
+                    timer = threading.Timer(max(10.0, min(120.0, t_end - time.time())), watchdog)
+                    timer.start()
+                    try:
+                        with open(fifo, errors='replace') as log, open(trc) as tr:
+                            s_it = spike_penv_records(log)
+                            # rv_iss also logs its boot ROM (the RTL starts at MEM_BASE); the test starts at 0x8000_0000
+                            for b in (r for r in rtl_records(tr) if r[0] != 'R' or r[1] >= PENV_BASE):
+                                if b[0] == 'T':
+                                    msg = f'the {a.model} run ended in a terminal trap: {fmt(b)}'
+                                    break
+                                x, prv = next(s_it, (None, None))
+                                # The lab trace has no privilege field: compare the rest, and with --priv m require
+                                # Spike to stay in M (a model or core can only be in M then).
+                                if x != b or (a.priv == 'm' and prv != 3):
+                                    msg = f'differs at record {count}: spike {fmt(x)} (priv {prv}); {a.model} {fmt(b)}'
+                                    break
+                                count += 1
+                            for _ in log:      # let Spike run on to its own tohost exit
+                                pass
+                        rc = proc.wait(timeout=60)
+                        # Spike's own verdict must agree: exit 0 for a pass, else the failing value's status
+                        if msg is None and ended and rc != ((0 if value == 1 else value >> 1) & 0xff):
+                            msg = f'{count} records equal, but Spike exited {rc} where the {a.model} wrote tohost {value:#x}'
+                    finally:
+                        timer.cancel()
+                        if proc.poll() is None:
+                            proc.kill()
+                        proc.wait()
+                    if expired:
+                        msg = f"deadline reached after {count} equal records"
+                    if msg is None and not ended:
+                        msg = f'{count} records equal, but the run did not end at tohost'
+                    if msg is None and count == 0:
+                        msg = 'no records'
+                except (RuntimeError, ValueError, OSError, subprocess.TimeoutExpired, StopIteration) as e:
+                    count, msg, value = 0, f'error: {str(e)[-300:]}', None
+                n_rec += count
+                verdict = '' if msg else ('; the test passes' if value == 1 else f'; the test fails (tohost {value:#x}), as on Spike')
+                passed += msg is None and value == 1
+                print(f'{"ok  " if msg is None else "FAIL"} {tag}: ' + (msg or f'{count} records equal up to tohost{verdict}'),
+                      flush=True)
+                if msg:
+                    failed.append(tag)
+                if time.time() > t_end:
+                    failed.append('deadline')
+                    break
+        if failed:
+            print(f'FAIL: spike-lockstep: {len(failed)} of {total} p-environment tests differ from Spike '
+                  f'({a.model}, {a.isa}, --priv {a.priv}): {", ".join(failed[:8])}')
+            return 1
+        print(f'PASS: {n_rec} records of {total} runs equal in {a.model} and Spike ({a.isa}, --priv {a.priv}, '
+              f'p environment at 0x8000_0000, tohost end; {passed} tests pass, the rest fail identically on Spike)')
+        return 0
+    finally:
+        shutil.rmtree(work, ignore_errors=True)
 
 
 def pieces(a, build, ram, fp, work):

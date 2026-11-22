@@ -34,6 +34,33 @@ The RTL target per core (architecture.md and the plan): the multicycle and pipel
 can claim RV64GC once it has C. The model implements the full RV64GC so that the same Linux build serves
 every stage.
 
+### 1.1 Subset configurations (model option, P0)
+
+`rv_iss --sys --isa <string> --priv m|mu|msu` models a smaller machine, so that cores without C, A, F/D or S/U
+can be compared with the model and with Spike configured the same (`spike --isa=<string> --priv=<p>`). The
+string is `rv64` + letters from i, m, a, f, d, c, g, b, then `_zba`, `_zbb`, `_zbs`, `_zicntr`, `_zicsr`,
+`_zifencei`; F and D only together, Zba/Zbb/Zbs only together. Rules (each checked against Spike `982f078`):
+
+- misa lists exactly the letters present; with Zba+Zbb+Zbs it also reports B (bit 1), as Spike does.
+- Without C: IALIGN is 32. A jump or taken branch to a 2-byte boundary raises cause 0 on that instruction
+  (tval = the target); mepc/sepc read with bits 1:0 clear, so an xRET resumes at the 4-byte-aligned address
+  and never raises cause 0; medeleg bit 0 becomes delegable; a 16-bit parcel is cause 2 with tval = the
+  parcel.
+- Without A, F/D or B, their encodings are cause 2; without F/D the FP CSRs are cause 2.
+- Without S (`m`, `mu`): no S CSRs, no medeleg/mideleg, no delegation, no satp (Bare only), SRET and SFENCE.VMA
+  are cause 2, WFI is legal in every mode unless TW; mie/mip have only MSIP, MTIP, MEIP; mstatus has no SIE,
+  SPIE, SPP, SUM, MXR, TVM, TSR, SXL, and FS is read-only 0 unless F/D is present.
+- Without U (`m`): MPP is read-only 3 (MRET leaves it 3), no MPRV or TW, no UXL; mcounteren and menvcfg are
+  cause 2. With U but no S (`mu`): MPP holds M or U (S is written as U); menvcfg exists with no writable field.
+- Without Zicntr: cycle, time and instret are cause 2 (mcycle and minstret remain), and the counter-enable
+  and mcountinhibit fields read 0 (Spike). With Zicntr, medeleg bit 19 is writable (as Spike; the hardware
+  error cause), and in U-mode without S only mcounteren gates the counters.
+- Without M: the M encodings are cause 2. Without S the PLIC has only the M context. A full-system state
+  records the configuration and is refused under another one.
+
+The lab cores today (multicycle and pipelined: `rv64im_zba_zbb_zbs_zifencei`) correspond to
+`--isa rv64im_zba_zbb_zbs_zicsr_zifencei_zicntr --priv m` once they implement the M-mode CSRs (S1).
+
 ## 2. Privilege modes and traps
 
 - Modes M (3), S (1) and U (0). Reset: M-mode, pc = 0x1000 (the boot ROM), mstatus = UXL 2, SXL 2, everything
@@ -49,7 +76,7 @@ every stage.
 - **Exception causes used:** 1 fetch access, 2 illegal, 3 breakpoint, 4/5 load misaligned/access, 6/7 store-AMO
   misaligned/access, 8/9/11 ECALL from U/S/M, 12/13/15 fetch/load/store-AMO page fault. Cause 0 cannot occur
   (with C every pc is 2-byte aligned and xEPC bit 0 is cleared).
-- **medeleg** writable bits: 1-9, 12, 13, 15 (0xb3fe). Bit 0 is not delegable with C, bit 11 never.
+- **medeleg** writable bits: 1-9, 12, 13, 15 (0xb3fe), and 19 with Zicntr (as Spike). Bit 0 is not delegable with C, bit 11 never.
   **mideleg** writable bits: SSIP, STIP, SEIP (0x222).
 - **MRET:** M only. mstatus.MIE := MPIE, MPIE := 1, MPP := U, MPRV := 0 when the new mode is not M; pc := mepc.
   **SRET:** S or M, and illegal in S when TSR = 1. SIE := SPIE, SPIE := 1, SPP := U, MPRV := 0; pc := sepc.
@@ -79,7 +106,7 @@ with bits 11:10 = 3 are cause 2. CSRRS/CSRRC with rs1 = x0 (and the immediate fo
 | satp 0x180 | MODE 0 (Bare) or 8 (Sv39); ASID 16 bits; PPN 44 bits. A write with any other MODE has no effect on any field (the specification; Spike does the same) |
 | mstatus 0x300 | writable SIE, MIE, SPIE, MPIE, SPP, MPP, FS, MPRV, SUM, MXR, TVM, TW, TSR; MPP = 2 is written as 0; UXL = SXL = 2; SD = (FS == 3); UBE/SBE/MBE 0 |
 | misa 0x301 | 0x800000000014112d, writes ignored |
-| medeleg 0x302, mideleg 0x303 | section 2 |
+| medeleg 0x302, mideleg 0x303 | section 2 (with Zicntr also medeleg bit 19, as Spike) |
 | mie 0x304, mip 0x344 | mie writable SSIE, MSIE, STIE, MTIE, SEIE, MEIE; mip: SSIP, STIP, SEIP writable by software; MSIP (CLINT msip), MTIP (mtime >= mtimecmp), MEIP (PLIC context 0) are read-only; read SEIP = software SEIP OR PLIC context 1 |
 | mtvec 0x305 | bit 1 reads 0; modes 0 and 1 |
 | mcountinhibit 0x320 | CY (bit 0) and IR (bit 2) writable |
@@ -213,13 +240,17 @@ Configured to match as closely as possible: the same DTB (`--dtb`, which sets Sp
 
 - The SiFive test finisher exists only in rv_iss; Spike ends a Linux run through HTIF or by an instruction
   limit.
-- Spike's misa is writable (M, A, F, D, C); rv_iss ignores misa writes. riscv-tests `rv64mi-ma_fetch` clears
+- Spike's misa is writable (M, A, B, F, D, C; clearing a bit disables the extension); rv_iss ignores misa
+  writes. riscv-tests `rv64mi-ma_fetch` clears
   misa.C and so differs from Spike's commit log (both pass the test).
 - The lab time model differs from Spike's scheduling by design; comparisons use `--time spike`.
 - Spike fetches instructions from any MMIO device; rv_iss only from DRAM and the boot ROM.
 - AMOs on MMIO addresses: Spike performs them on the device; rv_iss raises an access fault.
 
-**Measured agreement (model only, 2026-11-22):** riscv-tests p environment, 132 of 134 pass on rv_iss
+**Measured agreement (model only, 2026-11-22):** with `--isa rv64im_zba_zbb_zbs_zicsr_zifencei_zicntr` and
+`--priv m` or `mu`, 124 p-environment tests (rv64ui, um, uzba, uzbb, uzbs, mi) give commit logs equal to
+Spike's, 122 passing and 2 failing the same test case on both (ma_data, pmpaddr). With the default
+configuration: riscv-tests p environment, 132 of 134 pass on rv_iss
 (`rv64ui-ma_data` needs misaligned data, `rv64mi-pmpaddr` needs PMP entries); 133 of 134 commit logs equal
 Spike's (the misa.C case above). The OpenSBI + Linux + busybox boot to power-off: 43,139,225 instructions
 equal in `--time spike`, up to the test-finisher read that only rv_iss models, after which rv_iss powers off

@@ -1,7 +1,12 @@
 // SPDX-License-Identifier: MIT
 `timescale 1ns/1ps
+// MEM_BASE (P0, test infrastructure): the address of memory byte 0 and the core's RESET_PC, for programs
+// linked at 0x8000_0000 (riscv-tests' p environment); 0, the default, is the lab map, unchanged.
+// +tohost=ADDR: a non-zero store to that word ends the run after the store retires (HTIF), with
+// "TOHOST value=..." on the console and no trap record in the trace.
 module tb_core #(parameter integer MEM_BYTES=16384, parameter integer ICACHE_BEATS=512,
-                 parameter integer DCACHE_BEATS=512, parameter integer N_MISS=1);
+                 parameter integer DCACHE_BEATS=512, parameter integer N_MISS=1,
+                 parameter [63:0] MEM_BASE=64'h0);
     reg clk=0,reset=1;
     always #5 clk=~clk;
     reg [7:0] memory [0:MEM_BYTES-1];
@@ -66,7 +71,7 @@ module tb_core #(parameter integer MEM_BYTES=16384, parameter integer ICACHE_BEA
     // Split: a data read, or an instruction read with mem_tag 8-15 (the instruction side's tags).
     wire split_read = N_MISS > 1 && valid && wstrb == 0 && (!instr || mtag[3]);
 `endif
-    rv64_core #(.ICACHE_BEATS(ICACHE_BEATS),.DCACHE_BEATS(DCACHE_BEATS)
+    rv64_core #(.RESET_PC(MEM_BASE),.ICACHE_BEATS(ICACHE_BEATS),.DCACHE_BEATS(DCACHE_BEATS)
 `ifdef WIDE_TRACE
         ,.PAIR_WRITES(1),.EXTRA_WRITES(2),.RW(RWT),.N_MISS(N_MISS)
 `endif
@@ -99,6 +104,8 @@ module tb_core #(parameter integer MEM_BYTES=16384, parameter integer ICACHE_BEA
     // +max_retired=N (benchmark checkpoint pieces): stop once N instructions have
     // retired, closing the trace without a trap line. Off by default.
     integer max_retired=0,image_bin=0;
+    reg [63:0] tohost_addr=0, tohost_val=0;
+    reg tohost_on=0, tohost_hit=0;
 `ifdef RV64_OOO_V
     reg [63:0] vqa [0:4095]; reg [63:0] vqd [0:4095]; reg [7:0] vqs [0:4095];   // W records of the vector store in flight
     integer vqn=0, vk;
@@ -135,6 +142,7 @@ module tb_core #(parameter integer MEM_BYTES=16384, parameter integer ICACHE_BEA
         if ($value$plusargs("fault_addr=%h",fault_addr)) begin end
         if ($value$plusargs("max_cycles=%d",max_cycles)) begin end
         if ($value$plusargs("max_retired=%d",max_retired)) begin end
+        if ($value$plusargs("tohost=%h",tohost_addr)) tohost_on=1;
         rng=seed_arg==0 ? 1 : seed_arg;
         for (i=0;i<MEM_BYTES;i=i+1) memory[i]=0;
         if (image_bin) begin
@@ -225,6 +233,11 @@ module tb_core #(parameter integer MEM_BYTES=16384, parameter integer ICACHE_BEA
                 if (rinsn3[6:0]==7'h63) slot3_branches=slot3_branches+1;
             end
 `endif
+            if (tohost_hit && pending_write=="" && !trapped) begin
+                $fclose(fd);
+                $display("TOHOST value=%016h retirements=%0d cycles=%0d",tohost_val,retire_count,cycles);
+                $finish;
+            end
             if (max_retired>0 && retire_count>=max_retired && !trapped) begin
                 // A write still pending belongs to a store beyond the limit; it is not logged.
                 $fclose(fd);
@@ -294,17 +307,17 @@ module tb_core #(parameter integer MEM_BYTES=16384, parameter integer ICACHE_BEA
                 end
                 ready=delay_left==0;
                 if (delay_left>0) delay_left=delay_left-1;
-                error=addr>=MEM_BYTES || (addr==fault_addr &&
+                error=addr-MEM_BASE>=MEM_BYTES || (addr==fault_addr &&
                     ((fault_kind==1 && instr) || (fault_kind==2 && !instr && wstrb==0) ||
                      (fault_kind==3 && !instr && wstrb!=0) || (fault_kind==4 && !fault_once && !instr && wstrb!=0)));
 `ifdef WIDE_TRACE
-                error2=wstrb2!=0 && (addr2>=MEM_BYTES || (addr2==fault_addr && (fault_kind==3 || (fault_kind==4 && !fault_once))));
-                xerror[0]=xwstrb[7:0]!=0 && (xaddr[63:0]>=MEM_BYTES || (xaddr[63:0]==fault_addr && (fault_kind==3 || (fault_kind==4 && !fault_once))));
-                xerror[1]=xwstrb[15:8]!=0 && (xaddr[127:64]>=MEM_BYTES || (xaddr[127:64]==fault_addr && (fault_kind==3 || (fault_kind==4 && !fault_once))));
+                error2=wstrb2!=0 && (addr2-MEM_BASE>=MEM_BYTES || (addr2==fault_addr && (fault_kind==3 || (fault_kind==4 && !fault_once))));
+                xerror[0]=xwstrb[7:0]!=0 && (xaddr[63:0]-MEM_BASE>=MEM_BYTES || (xaddr[63:0]==fault_addr && (fault_kind==3 || (fault_kind==4 && !fault_once))));
+                xerror[1]=xwstrb[15:8]!=0 && (xaddr[127:64]-MEM_BASE>=MEM_BYTES || (xaddr[127:64]==fault_addr && (fault_kind==3 || (fault_kind==4 && !fault_once))));
 `endif
                 rdata=0;
                 if (!error)
-                    for (lane=0;lane<8;lane=lane+1) rdata[8*lane+:8]=memory[addr+lane];
+                    for (lane=0;lane<8;lane=lane+1) rdata[8*lane+:8]=memory[addr-MEM_BASE+lane];
             end
         end
     end
@@ -321,7 +334,7 @@ module tb_core #(parameter integer MEM_BYTES=16384, parameter integer ICACHE_BEA
             held_request=request;
 `ifdef WIDE_TRACE
             for (sp_k=0;sp_k<64;sp_k=sp_k+1) if (sp_v[sp_k] && !sp_err[sp_k])
-                for (lane=0;lane<8;lane=lane+1) sp_data[sp_k][8*lane+:8]=memory[{sp_beat[sp_k],3'b000}+lane];
+                for (lane=0;lane<8;lane=lane+1) sp_data[sp_k][8*lane+:8]=memory[{sp_beat[sp_k],3'b000}-MEM_BASE+lane];
             if (valid && ready && split_read) begin
                 sp_pick=-1;
                 for (sp_k=63;sp_k>=0;sp_k=sp_k-1) if (!sp_v[sp_k]) sp_pick=sp_k;
@@ -340,7 +353,7 @@ module tb_core #(parameter integer MEM_BYTES=16384, parameter integer ICACHE_BEA
                 if (fault_kind==5 && fault5_fired==0 && !instr && addr==fault_addr) begin sp_err[sp_pick]=1; fault5_fired=1; fault5_slot=sp_pick; end
                 if (fault_kind==5 && !instr && addr[63:3]==fault_addr[63:3]) fault5_reads=fault5_reads+1;
 `endif
-                if (!error) for (lane=0;lane<8;lane=lane+1) sp_data[sp_pick][8*lane+:8]=memory[addr+lane];
+                if (!error) for (lane=0;lane<8;lane=lane+1) sp_data[sp_pick][8*lane+:8]=memory[addr-MEM_BASE+lane];
                 // A line read (mem_len > 0): the following beats of the line, wrapping, each queued with its
                 // own delay, answered after the beats before it (sp_first), with its own error.
                 for (sp_b=1;sp_b<=mlen;sp_b=sp_b+1) begin
@@ -350,13 +363,13 @@ module tb_core #(parameter integer MEM_BYTES=16384, parameter integer ICACHE_BEA
                     sp_ba={addr[63:3] & ~{58'b0,mlen},3'b000} | {58'b0,(addr[5:3]+sp_b[2:0]) & mlen,3'b000};
                     rng=rng^(rng<<13); rng=rng^(rng>>17); rng=rng^(rng<<5);
                     sp_v[sp_pick]=1; sp_tag[sp_pick]=mtag; sp_seq[sp_pick]=sp_next; sp_next=sp_next+1; sp_ord[sp_pick]=sp_b;
-                    sp_err[sp_pick]=sp_ba>=MEM_BYTES || (sp_ba==fault_addr && fault_kind==2);
+                    sp_err[sp_pick]=sp_ba-MEM_BASE>=MEM_BYTES || (sp_ba==fault_addr && fault_kind==2);
                     sp_due[sp_pick]=split_lat>0 ? cycles+split_lat+sp_b : cycles+1+(rng % (3*max_stall+3));
                     sp_data[sp_pick]=0; sp_beat[sp_pick]=sp_ba[63:3]; sp_lmk[sp_pick]=mlen; if (sp_err[sp_pick]) line_errors=line_errors+1;
 `ifdef RV64_OOO_DLINE
                     if (fault_kind==5 && fault5_fired==0 && sp_ba==fault_addr) begin sp_err[sp_pick]=1; fault5_fired=1; fault5_slot=sp_pick; end
 `endif
-                    if (!sp_err[sp_pick]) for (lane=0;lane<8;lane=lane+1) sp_data[sp_pick][8*lane+:8]=memory[sp_ba+lane];
+                    if (!sp_err[sp_pick]) for (lane=0;lane<8;lane=lane+1) sp_data[sp_pick][8*lane+:8]=memory[sp_ba-MEM_BASE+lane];
                 end
                 split_reads=split_reads+1;
             end
@@ -385,7 +398,7 @@ module tb_core #(parameter integer MEM_BYTES=16384, parameter integer ICACHE_BEA
 `endif
                     $sformat(pending_write,"W %016h %016h %02h",addr,wdata,wstrb);
                     for (lane=0;lane<8;lane=lane+1)
-                        if (wstrb[lane]) memory[addr+lane]=wdata[8*lane+:8];
+                        if (wstrb[lane]) memory[addr-MEM_BASE+lane]=wdata[8*lane+:8];
 `ifdef WIDE_TRACE
                     if (wstrb2!=0) lane2=lane2+1;
                     if (xwstrb[7:0]!=0) lane3=lane3+1;
@@ -396,20 +409,25 @@ module tb_core #(parameter integer MEM_BYTES=16384, parameter integer ICACHE_BEA
                     if (wstrb2!=0 && !error2) begin
                         $sformat(pending_write2,"W %016h %016h %02h",addr2,wdata2,wstrb2);
                         for (lane=0;lane<8;lane=lane+1)
-                            if (wstrb2[lane]) memory[addr2+lane]=wdata2[8*lane+:8];
+                            if (wstrb2[lane]) memory[addr2-MEM_BASE+lane]=wdata2[8*lane+:8];
                         if (xwstrb[7:0]!=0 && !xerror[0]) begin
                             $sformat(pending_write3,"W %016h %016h %02h",xaddr[63:0],xwdata[63:0],xwstrb[7:0]);
                             for (lane=0;lane<8;lane=lane+1)
-                                if (xwstrb[lane]) memory[xaddr[63:0]+lane]=xwdata[8*lane+:8];
+                                if (xwstrb[lane]) memory[xaddr[63:0]-MEM_BASE+lane]=xwdata[8*lane+:8];
                             if (xwstrb[15:8]!=0 && !xerror[1]) begin
                                 $sformat(pending_write4,"W %016h %016h %02h",xaddr[127:64],xwdata[127:64],xwstrb[15:8]);
                                 for (lane=0;lane<8;lane=lane+1)
-                                    if (xwstrb[8+lane]) memory[xaddr[127:64]+lane]=xwdata[64+8*lane+:8];
+                                    if (xwstrb[8+lane]) memory[xaddr[127:64]-MEM_BASE+lane]=xwdata[64+8*lane+:8];
                             end
                         end
                     end
 `endif
                 end
+            end
+            // +tohost: after any store (on any write lane), the run ends once the 64-bit tohost word is non-zero.
+            if (tohost_on && !tohost_hit && valid && ready && wstrb!=0 && tohost_addr-MEM_BASE<=MEM_BYTES-8) begin
+                for (lane=0;lane<8;lane=lane+1) tohost_val[8*lane+:8]=memory[tohost_addr-MEM_BASE+lane];
+                if (tohost_val!=0) tohost_hit=1;
             end
         end else begin
             held=0;

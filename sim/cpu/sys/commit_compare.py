@@ -65,11 +65,13 @@ def fmt(r):
             ''.join(f' ld {a:#x}' for a in loads) + ''.join(f' st{w} {a:#x}={v:#x}' for a, v, w in stores))
 
 
-def compare(spike_log, iss_log, limit=None, iss_prefix=False):
+def compare(spike_log, iss_log, limit=None, iss_prefix=False, ignore_loads=False):
     """First difference between the logs (over the first `limit` instructions, if given). With iss_prefix,
     rv_iss's log may end first: it stops at the HTIF tohost store, while Spike runs on to its next poll."""
     n = 0
-    for x, y in itertools.zip_longest(records(spike_log), records(iss_log)):
+    def strip(it):    # a log written from a lab trace (sim/cpu/trace_to_commitlog.py) has no load addresses
+        return (r if r is None or not ignore_loads else (*r[:4], (), r[5]) for r in it)
+    for x, y in itertools.zip_longest(strip(records(spike_log)), strip(records(iss_log))):
         if limit is not None and n >= limit:
             break
         if x is None or y is None:
@@ -89,8 +91,10 @@ def main():
     ap.add_argument('spike_log')
     ap.add_argument('iss_log')
     ap.add_argument('--limit', type=int)
+    ap.add_argument('--ignore-loads', action='store_true', help='for logs written from lab traces (no load addresses)')
+    ap.add_argument('--iss-prefix', action='store_true', help='the second log may end first')
     args = ap.parse_args()
-    r = compare(args.spike_log, args.iss_log, args.limit)
+    r = compare(args.spike_log, args.iss_log, args.limit, args.iss_prefix, args.ignore_loads)
     print(json.dumps(r, indent=1))
     return 0 if r['match'] else 1
 
