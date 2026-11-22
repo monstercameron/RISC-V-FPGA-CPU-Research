@@ -262,6 +262,7 @@ DEFAULTS = dict(
     marks=[], fuse=False, bias=False, btb_n=256, lp_n=256,
     mul_lat=0, ld_knob=False, l2=False, vp_conf=False, tage=False,
     tg_n=4, btb_guard=False, btb_rel=False, l0=False, ldwait=False, n_miss=False, fuse_x=False,
+    wake_fill=False, fpu=False,
 )
 
 # (version, era, French title, caption, medium, overrides)
@@ -476,6 +477,19 @@ WORKS = [
      "A simple operation and the one that reads it are welded even when they arrive a clock apart: the waiting producer is held over, in a single register, into the next rename. "
      "The scaled kernel reaches 9.41 / 3.29 MIPS per MHz, and a larger waiting room is no longer slower.",
      dict(fuse_x=True, marks=["fusion across rename groups"])),
+    ("0.16.2", "Le Réveil",
+     "A load that missed no longer knocks again and again: each younger missed load sleeps until the answer for its own beat comes back, and wakes. "
+     "At the default of one read in flight the counts barely move; with a 1 MiB second level, a memory a hundred clocks away and four reads in flight, "
+     "a 4 KiB data cache compresses in 4.3% fewer clocks, in simulation.",
+     dict(wake_fill=True, marks=["wake on fill"])),
+    # Salle X: numbers that float. Figures from the 0.17.0 history row; the port split
+    # (two FMA, two misc) from the DEVLOG.md rows of 2026-11-21 23:38 and 00:53.
+    ("0.17.0", "La Virgule Flottante",
+     "Numbers that float: single and double precision join the out-of-order core behind a build switch, off by default. "
+     "Four floating-point ports, a divide and square root that accept new work before the last is done, one rename map of sixty-four names, "
+     "and the exception flags settled at retirement. Hard-float ray tracing finds 3.57 primary rays per thousand clocks where soft float found 0.327, "
+     "and 315 paths per million clocks where it found 15.4, in simulation; built in, the unit leaves Dhrystone and 7-Zip clocks unchanged.",
+     dict(fpu=True, marks=["F and D, off by default", "fflags at retirement"])),
 ]
 
 ERAS = [
@@ -487,7 +501,8 @@ ERAS = [
     ("VI", "Salle VI", "Le Grand Format", "Sixteen wide, and then a council of engineers.", "0.12.0", "0.13.0"),
     ("VII", "Salle VII", "Le Conseil", "The council widens everything at once: doors, room and breath, then a mending, a deeper memory for returns, and a fourth hand for branches.", "0.13.1", "0.14.6"),
     ("VIII", "Salle VIII", "L'Archive", "The council turns to a second measure, the LZMA kernel of 7-Zip: a quicker multiply, honest offsets, a mended way home, floors of memory below, and a predictor with a long memory.", "0.14.7", "0.15.2"),
-    ("IX", "Salle IX", "Les Lettres en Vol", "Mendings for the branch buffer, a near memory and a ledger of waiting loads, six tables of long memory, then several reads in flight at once and a weld that spans two clocks.", "0.15.3", "0.16.1"),
+    ("IX", "Salle IX", "Les Lettres en Vol", "Mendings for the branch buffer, a near memory and a ledger of waiting loads, six tables of long memory, then several reads in flight at once, a weld that spans two clocks, and loads that sleep until their answer comes.", "0.15.3", "0.16.2"),
+    ("X", "Salle X", "La Virgule Flottante", "Numbers that float: single and double precision arrive in the out-of-order core, built in only on request.", "0.17.0", "0.17.0"),
 ]
 
 
@@ -591,7 +606,11 @@ def unit_lines(s: dict) -> list[tuple[str, str]]:
         if s["ldwait"]:
             u.append(("Load-wait table", "4,096 entries, cleared every 65,536 clocks"))
         if s["n_miss"]:
-            u.append(("Data misses in flight", "N_MISS 1 to 8 (default 1); split reads with tags on mem_tag, rsp_valid, rsp_tag, rsp_data, rsp_error"))
+            u.append(("Data misses in flight", "N_MISS 1 to 8 (default 1); split reads with tags on mem_tag, rsp_valid, rsp_tag, rsp_data, rsp_error"
+                      + ("; younger missed loads sleep until their beat's answer (wake on fill)" if s["wake_fill"] else "")))
+        if s["fpu"]:
+            u.append(("Floating point", "RV64F and RV64D behind the define RV64_OOO_FPU, default off: four FP ports (two FMA, two misc), "
+                      "pipelined divide and square root, a 64-entry rename map (x and f) on one physical register file, fflags at retirement"))
     return u
 
 
@@ -945,7 +964,8 @@ class Art:
         py = 290
         for k in range(s["prf"]):
             i, j = k % pcols, k // pcols
-            self.a(f'<circle cx="{px + i * 10 + 5:.0f}" cy="{py + j * 10 + 5:.0f}" r="3.4" fill="{SAGE if k >= 32 else INK}" stroke="{INK}" stroke-width="0.6"/>')
+            fill = INK if k < 32 else (GOLD if s["fpu"] and k < 64 else SAGE)
+            self.a(f'<circle cx="{px + i * 10 + 5:.0f}" cy="{py + j * 10 + 5:.0f}" r="3.4" fill="{fill}" stroke="{INK}" stroke-width="0.6"/>')
         self.text(px + pcols * 5, py + prow * 10 + 24, f"{s['prf']} names", 17, op=0.8)
         icell = 14 if s["iq"] <= 64 else 10
         icols = 8 if s["iq"] <= 64 else 16
@@ -1040,6 +1060,28 @@ class Art:
             self.a(f'<path d="M730 768 l7 -4 l0 8z" fill="{OXBLOOD}" stroke="{INK}" stroke-width="0.8"/>')
             for k in range(4):
                 self.line(744, 800 + k * 32, 752, 800 + k * 32, sw=1.2)
+            if s["wake_fill"]:
+                # wake on fill: the answer runs back along the slots and touches each sleeper
+                self.path("M736 757 L578 757", sw=1.3, col=GOLD, dash="2 3")
+                for k in range(1, 8):
+                    self.disc(560 + k * 21 + 8, 757, 2.6, GOLD, sw=0.8, off=0)
+        if s["fpu"]:
+            # four floating-point ports, dashed because the define is off by default: two FMA
+            # (oxblood centres) and two misc, the last notched for the pipelined divider;
+            # the f registers are the gold row of the register file, and a gold flag on the
+            # retire column is fflags settling at retirement
+            fy = 668
+            for i in range(4):
+                fx = 452 + i * 34
+                self.line(ix + icols * icell / 2, iy + irows * icell + 36, fx, fy - 15, sw=0.7, op=0.45, dash="3 3")
+                self.disc(fx, fy, 13, SAGE, op=0.85, dash="3 2", sw=1.4, off=1.5)
+                if i < 2:
+                    self.disc(fx, fy, 6, OXBLOOD, sw=0.8, off=0)
+            for k in range(6):
+                a = math.radians(k * 60)
+                self.line(554 + 9 * math.cos(a), fy + 9 * math.sin(a), 554 + 13 * math.cos(a), fy + 13 * math.sin(a), sw=1)
+            self.line(725, 500, 725, 528, sw=1.2)
+            self.path("M725 506 L745 511 L725 517 Z", sw=1, fill=GOLD)
         self.caches(796)
         if s["l2"]:
             self.memory_floors(796)
@@ -1240,6 +1282,8 @@ PROBE_DHRYSTONE = {
     "0.15.7": ("15,703 / 10,127", ""),
     "0.16.0": ("15,703 / 10,127", "defaults keep timing exactly"),
     "0.16.1": ("15,703 / 10,127", ""),
+    "0.16.2": ("15,706 / 10,127", "default N_MISS 1 neutral"),
+    "0.17.0": ("15,706 / 10,127", "unchanged with the FPU built in"),
 }
 
 # The second measure: the LZMA benchmark kernel of 7-Zip, scaled down to fit the
@@ -1248,12 +1292,13 @@ PROBE_DHRYSTONE = {
 # kernel, except the native row; none of these is a 7-Zip benchmark score.
 # The 0.16.1 row is from its history row; the full-size (d22) goal from the DEVLOG.md
 # row of 2026-11-21 20:34 (cpu/7zip-benchmark-targets.md), and the d22 goal run in the
-# deciding configuration on 0.15.4 from the DEVLOG.md row of 2026-11-21 21:24 to 21:53.
+# deciding configuration on 0.15.4 from the DEVLOG.md row of 2026-11-21 21:24 to 21:53,
+# and on 0.16.0 with four misses in flight from the row of 2026-11-21 23:03 to 00:21.
 SEVENZIP = [
     # (label, note, compress, decompress, style)
     ("Goal, scaled kernel", "about; derived from 10,000 MIPS in 7-Zip at 4 GHz", 10.9, 3.35, "goal"),
     ("Cortex-X925, native", "laptop core running the same scaled kernel natively; not a simulation", 8.34, 2.59, "native"),
-    ("0.16.1 out of order, 64 KiB caches", "simulated, scaled kernel; the newest version", 9.41, 3.29, "sim"),
+    ("0.16.1 out of order, 64 KiB caches", "simulated, scaled kernel; 0.16.2 and 0.17.0 count within 0.02% of its clocks", 9.41, 3.29, "sim"),
     ("0.14.6 out of order, 64 KiB caches", "simulated, scaled kernel; where the council's 7-Zip phase began", 7.46, 2.89, "sim"),
     ("0.14.6 out of order, 4 KiB caches", "simulated, scaled kernel; the FPGA-class configuration", 3.39, 2.56, "sim"),
     ("Multicycle core", "simulated, scaled kernel; 0.14.6 tree", 1.61, 1.69, "sim"),
@@ -1262,6 +1307,9 @@ SEVENZIP = [
     ("0.15.4 out of order, full-size (d22) kernel, deciding configuration",
      "simulated, sampled (30 pieces per phase, 95% CI ±10.9% / ±22.9%); loads at four clocks, a 16-beat recent-beat buffer, 4 MiB L2 at 20 clocks, "
      "memory 350 clocks away, one miss at a time; goal not met, 75% / 91%", 1.53, 1.98, "sim"),
+    ("0.16.0 out of order, full-size (d22) kernel, deciding configuration, four misses in flight",
+     "simulated, sampled (60 pieces per phase, 95% CI ±6.8% / ±10.2%, low ends 2.04 / 2.09); as above but N_MISS 4 and MEM_GAP 8; "
+     "goal met in point estimate, 108% / 107%; the decompress interval reaches below the goal", 2.19, 2.32, "sim"),
 ]
 
 # Per version: (compress, decompress MIPS/MHz at 64 KiB caches, or None, and the rest
@@ -1288,6 +1336,11 @@ SEVENZIP_BY_VERSION = {
                            "with a 1 MiB L2 at 12 clocks, MEM_LAT 100 and N_MISS 4, compression 7.56 to 8.30 MIPS/MHz (-9.0% clocks) "
                            "and decompression -2.4% clocks, under the stated optimistic assumptions"),
     "0.16.1": (9.41, 3.29, "at 64 KiB caches (973,966 / 152,756 clocks at 4 KiB)"),
+    "0.16.2": (None, None, "384,788 / 133,243 clocks at 64 KiB caches with the default single miss; "
+                           "with a 1 MiB L2 at 12 clocks, MEM_LAT 100 and N_MISS 4, -1.0% clocks at a 64 KiB data cache "
+                           "and -4.3% / -0.5% compress / decompress at 4 KiB"),
+    "0.17.0": (None, None, "384,788 / 133,243 clocks at 64 KiB caches, unchanged with the FPU built in; "
+                           "604,503 / 229,974 at the deciding knobs, also unchanged"),
 }
 
 
@@ -1341,8 +1394,9 @@ def sevenzip_plate() -> str:
   <p class="small">A second measure beside Dhrystone: the LZMA benchmark kernel of 7-Zip, scaled down to run in the simulator, in instructions per clock
   (MIPS per MHz) for compression and decompression. Every row is a simulation of that scaled kernel except the Cortex-X925 row, a native run of the same kernel on a laptop core.
   None of these is a 7-Zip benchmark score or a hardware result for this processor. The goal is about 10.9 / 3.35 on the scaled kernel, derived from a 10,000 MIPS single-thread 7-Zip rating at 4 GHz;
-  the same goal on the full-size (d22) kernel is about 2.03 / 2.18. The last two rows are that full-size kernel, a different, larger workload whose bars do not compare with the rows above;
-  in the deciding configuration (slow loads, a large and distant memory, one miss at a time) version 0.15.4 reaches 1.53 / 1.98 in simulation, so the goal is not met there (75% / 91%).</p>
+  the same goal on the full-size (d22) kernel is about 2.03 / 2.18. The last three rows are that full-size kernel, a different, larger workload whose bars do not compare with the rows above;
+  in the deciding configuration (slow loads, a large and distant memory) version 0.15.4 with one miss at a time reaches 1.53 / 1.98 in simulation (75% / 91%), and version 0.16.0 with four misses in flight
+  reaches 2.19 / 2.32 (108% / 107%): the goal is met in point estimate, though the decompress interval reaches below it.</p>
   <p class="legend small"><span class="sw z-c"></span>compress <span class="sw z-d"></span>decompress <span class="sw z-goal"></span>goal (outlined)</p>
   <ol class="zchart">{"".join(rows)}</ol>
   <p class="small">Scale: 0 to {top:g} MIPS/MHz, linear. Out-of-order rows under Verilator, whole program; multicycle and pipelined under Icarus.</p>
@@ -1377,6 +1431,11 @@ def alt_text(v: dict, s: dict) -> str:
             parts.append("Eight small slots above the data cache, one solid and seven dashed, are the reads that may be in flight, and a dashed line climbing from the bus is the split answer channel.")
         if s["fuse_x"]:
             parts.append("A gold register under the last rename slot hooks back to the first slot: fusion carried into the next rename clock.")
+        if s["wake_fill"]:
+            parts.append("A gold dotted line runs back along the waiting read slots and touches each one: loads woken when their answer arrives.")
+        if s["fpu"]:
+            parts.append("Four small dashed sage discs below the execution row are the floating-point ports, two with oxblood centres for the multiply-add units and one notched for the pipelined divider; "
+                         "a gold row in the register file stands for the f registers, and a gold flag on the retire column for the exception flags settled at retirement.")
     elif s["kind"] == "pipe":
         parts.append(f"{len(s['stages'])} pipeline stages as coloured slabs, a branch target buffer drawn as rings, and two caches above a bus.")
     else:
@@ -1596,7 +1655,8 @@ def index_page(versions) -> str:
     z7 = SEVENZIP_BY_VERSION[z7v]
     x925 = next(r for r in SEVENZIP if r[4] == "native")
     d22 = next(r for r in SEVENZIP if r[4] == "goal" and "d22" in r[0])
-    d22run = next(r for r in SEVENZIP if r[4] == "sim" and "d22" in r[0])
+    d22run = next(r for r in SEVENZIP if r[4] == "sim" and "d22" in r[0] and r[0].startswith("0.15.4"))
+    d22met = next(r for r in SEVENZIP if r[4] == "sim" and "d22" in r[0] and r[0].startswith("0.16.0"))
     body = f"""
 <section class="hero">
   <div class="hero-text">
@@ -1631,12 +1691,13 @@ def index_page(versions) -> str:
     <p>The development log as a catalogue: findings, timelines and commits by day, and a chart of simulated Dhrystone performance from {fmt_dm(first['dmips_ref'])} to {fmt_dm(best['dmips_ref'])} DMIPS/MHz.
     Beside it, a second measure: a scaled 7-Zip LZMA kernel, simulated at {z7[0]:.2f} / {z7[1]:.2f} MIPS/MHz compress / decompress on version {z7v} (64 KiB caches), against a goal of about {SEVENZIP[0][2]:g} / {SEVENZIP[0][3]:g};
     a laptop's Cortex-X925 runs the same scaled kernel natively at {x925[2]:.2f} / {x925[3]:.2f}. On the full-size (d22) kernel the goal is about {d22[2]:.2f} / {d22[3]:.2f};
-    in the deciding configuration version 0.15.4 reaches {d22run[2]:.2f} / {d22run[3]:.2f} in simulation, not met (75% / 91%).</p>
+    in the deciding configuration version 0.15.4 reaches {d22run[2]:.2f} / {d22run[3]:.2f} in simulation with one miss at a time (75% / 91%),
+    and version 0.16.0 with four misses in flight {d22met[2]:.2f} / {d22met[3]:.2f}, the goal met in point estimate (108% / 107%).</p>
     <p><a href="journal.html">Open the notebook &rarr;</a></p>
   </article>
   <article>
     <p class="eyebrow">III.</p><h2>The method</h2>
-    <p>The target is RVA23U64, in stages. The current design implements RV64I with M, Zba, Zbb and Zbs, in three implementations of one contract. Results are simulated, labelled as such, and never presented as hardware.</p>
+    <p>The target is RVA23U64, in stages. The current design implements RV64I with M, Zba, Zbb and Zbs, in three implementations of one contract; since 0.17.0 the out-of-order core can also be built with F and D (off by default). Results are simulated, labelled as such, and never presented as hardware.</p>
     <p><a href="{REPO_URL}" rel="noopener">The repository &rarr;</a></p>
   </article>
 </section>
