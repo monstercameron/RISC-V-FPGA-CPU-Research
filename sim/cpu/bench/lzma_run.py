@@ -346,7 +346,7 @@ def run(args, root, out, build, snap, rtl, core_file, command, sha, sim, caches)
             'core': args.core,
             'core_source': args.core_source or core_file,
             'cache_beats': {'icache': caches['ICACHE_BEATS'], 'dcache': caches['DCACHE_BEATS']},
-            'memory_model': {k.lower(): caches.get(k, d) for k, d in (('L2_KIB', 0), ('L2_WAYS', 8), ('L2_LINE', 64), ('L2_LAT', 12), ('MEM_LAT', 1), ('N_MISS', 1))} |
+            'memory_model': {k.lower(): caches.get(k, d) for k, d in (('L2_KIB', 0), ('L2_WAYS', 8), ('L2_LINE', 64), ('L2_LAT', 12), ('MEM_LAT', 1), ('N_MISS', 1), ('MEM_GAP', 0), ('WRITE_FILL', 0))} |
                             {'ld_lat': getattr(args, 'ld_lat', None), 'l0_n': getattr(args, 'l0', None),
                              'l0_lat': getattr(args, 'l0_lat', None)},
             'rtl_sha256': {p.relative_to(snap).as_posix(): sha(p) for p in rtl},
@@ -799,7 +799,7 @@ def run_iss(args, root, out, build, snap, rtl, core_file, command, sha, sim, cac
             'class': {'multicycle': 'multicycle', 'pipe': 'pipelined', 'ooo': 'out-of-order'}[args.core],
             'core': args.core, 'core_source': args.core_source or core_file,
             'cache_beats': {'icache': caches['ICACHE_BEATS'], 'dcache': caches['DCACHE_BEATS']},
-            'memory_model': {k.lower(): caches.get(k, d) for k, d in (('L2_KIB', 0), ('L2_WAYS', 8), ('L2_LINE', 64), ('L2_LAT', 12), ('MEM_LAT', 1), ('N_MISS', 1))} |
+            'memory_model': {k.lower(): caches.get(k, d) for k, d in (('L2_KIB', 0), ('L2_WAYS', 8), ('L2_LINE', 64), ('L2_LAT', 12), ('MEM_LAT', 1), ('N_MISS', 1), ('MEM_GAP', 0), ('WRITE_FILL', 0))} |
                             {'ld_lat': getattr(args, 'ld_lat', None), 'l0_n': getattr(args, 'l0', None),
                              'l0_lat': getattr(args, 'l0_lat', None)},
             'rtl_sha256': {p.relative_to(snap).as_posix(): sha(p) for p in rtl},

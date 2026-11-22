@@ -104,6 +104,9 @@ def main():
     memory.add_argument('--l2-line', type=int, default=64, help='L2 line in bytes')
     memory.add_argument('--l2-lat', type=int, default=12, help='Clocks for a read that hits the L2')
     memory.add_argument('--mem-lat', type=int, default=1, help='Clocks for a read from memory (an L2 miss, or every read without an L2)')
+    memory.add_argument('--mem-gap', type=int, default=0, help='Clocks between DRAM line starts (SoC MEM_GAP, 0.16.0; 0 = unlimited bandwidth)')
+    memory.add_argument('--write-fill', type=int, choices=(0, 1), default=0,
+                        help='1: a write that misses the L2 starts a fill of its line (SoC WRITE_FILL, 0.16.0)')
     knobs = parser.add_argument_group('out-of-order core knobs (compile-time defines; defaults keep the released core)')
     knobs.add_argument('--ld-lat', type=int, help='Load-to-use latency in clocks: define RV64_OOO_LD_LAT (0.14.10)')
     knobs.add_argument('--l0', type=int, help='L0 recent-beat buffer entries: define RV64_OOO_L0_N (0.15.4)')
@@ -143,7 +146,7 @@ def main():
         parser.error('--ld-lat, --l0 and --l0-lat apply to --core ooo only')
     if args.n_miss != 1 and (args.core != 'ooo' or not 1 <= args.n_miss <= 8):
         parser.error('--n-miss above 1 needs --core ooo, and must be 1 to 8')
-    if args.devlog and (args.core_source or args.icache_beats or args.dcache_beats or args.l2_kib or args.mem_lat != 1
+    if args.devlog and (args.core_source or args.icache_beats or args.dcache_beats or args.l2_kib or args.mem_lat != 1 or args.mem_gap or args.write_fill
                         or args.ooo_defines or args.n_miss != 1):
         parser.error('--devlog records the released core in its standard configuration only')
     if args.benchmark == 'lzma' and args.devlog:
@@ -187,9 +190,11 @@ def main():
     caches = {'ICACHE_BEATS': args.icache_beats, 'DCACHE_BEATS': args.dcache_beats}
     # SoC memory-model parameters are passed only when they differ from the SoC defaults, so a
     # default run builds exactly the same simulator as before they existed.
-    memory_defaults = {'L2_KIB': 0, 'L2_WAYS': 8, 'L2_LINE': 64, 'L2_LAT': 12, 'MEM_LAT': 1, 'N_MISS': 1}
+    memory_defaults = {'L2_KIB': 0, 'L2_WAYS': 8, 'L2_LINE': 64, 'L2_LAT': 12, 'MEM_LAT': 1, 'N_MISS': 1,
+                       'MEM_GAP': 0, 'WRITE_FILL': 0}
     memory_model = {'L2_KIB': args.l2_kib, 'L2_WAYS': args.l2_ways, 'L2_LINE': args.l2_line,
-                    'L2_LAT': args.l2_lat, 'MEM_LAT': args.mem_lat, 'N_MISS': args.n_miss}
+                    'L2_LAT': args.l2_lat, 'MEM_LAT': args.mem_lat, 'N_MISS': args.n_miss,
+                    'MEM_GAP': args.mem_gap, 'WRITE_FILL': args.write_fill}
     caches.update({k: v for k, v in memory_model.items() if v != memory_defaults[k]})
     rtl = [snap / core_file, snap / 'rtl/cpu/rv64_bram_soc.sv']
     if args.benchmark == 'lzma':
