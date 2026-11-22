@@ -1,0 +1,72 @@
+/* Polish layer: motion, navigation helpers, focus and phone layout. Loaded after style.css and landing.css. */
+
+/* Anchors land below the sticky navigation. */
+html { scroll-padding-top: 4.5rem; }
+
+/* Focus: a clear ring on every control, not only the outline. */
+a:focus-visible, button:focus-visible, summary:focus-visible {
+  outline: 2px solid var(--gold);
+  outline-offset: 3px;
+  box-shadow: 0 0 0 6px var(--wall);
+  border-radius: 2px;
+}
+
+/* Hover motion on cards and buttons. */
+.atl-card, .btn, .tag, .masthead nav a {
+  transition: transform .35s ease, box-shadow .35s ease, background-color .35s ease, color .35s ease, border-color .35s ease;
+}
+.atl-card:hover { transform: translateY(-3px); box-shadow: 0 16px 26px -18px rgba(30, 20, 10, .55); }
+.btn:hover { transform: translateY(-1px); }
+
+/* Scroll reveal (JS adds pl-hide before the element is seen, then pl-in). */
+.pl-hide { opacity: 0; transform: translateY(14px); }
+.pl-in { opacity: 1; transform: none; transition: opacity 1s ease, transform 1s cubic-bezier(.2, .7, .2, 1); }
+
+/* Sticky jump menus: rooms in the gallery, dates in the journal. */
+.rooms-nav, .day-nav {
+  position: sticky; top: 0; z-index: 20;
+  background: var(--wall);
+  padding: .8rem 0 .8rem;
+  margin: 0;
+  border-bottom: 1px solid var(--line);
+}
+
+/* Reading progress on the journal. */
+.pl-progress {
+  position: fixed; left: 0; top: 0; height: 3px; width: 100%;
+  background: var(--gold); transform-origin: 0 50%; transform: scaleX(0);
+  z-index: 30; pointer-events: none;
+}
+
+/* Back to top. */
+.pl-top {
+  position: fixed; right: 18px; bottom: 18px; z-index: 25;
+  width: 2.8rem; height: 2.8rem; border-radius: 50%;
+  border: 1px solid var(--text); background: var(--card); color: var(--text);
+  font: 400 1.2rem/1 var(--sans); cursor: pointer;
+  box-shadow: 0 8px 18px -10px rgba(30, 20, 10, .6);
+  opacity: 0; transform: translateY(8px); pointer-events: none;
+  transition: opacity .4s ease, transform .4s ease, background-color .3s ease, color .3s ease;
+}
+.pl-top.show { opacity: 1; transform: none; pointer-events: auto; }
+.pl-top:hover { background: var(--oxblood); color: #fff; border-color: var(--oxblood); }
+
+/* Phone width: jump menus scroll sideways instead of wrapping into a tall block. */
+@media (max-width: 560px) {
+  .rooms-nav, .day-nav {
+    flex-wrap: nowrap; overflow-x: auto; white-space: nowrap;
+    gap: 1rem; scrollbar-width: none; font-size: .68rem;
+    margin-left: -16px; margin-right: -16px; padding-left: 16px; padding-right: 16px;
+  }
+  .rooms-nav::-webkit-scrollbar, .day-nav::-webkit-scrollbar { display: none; }
+  .pl-top { right: 12px; bottom: 12px; }
+  html { scroll-padding-top: 6rem; }
+}
+
+/* Reduced motion: no motion at all. Content is shown at once. */
+@media (prefers-reduced-motion: reduce) {
+  html { scroll-behavior: auto; }
+  *, *::before, *::after { animation: none !important; transition: none !important; }
+  .pl-hide { opacity: 1 !important; transform: none !important; }
+  .pl-top { transform: none; }
+}
