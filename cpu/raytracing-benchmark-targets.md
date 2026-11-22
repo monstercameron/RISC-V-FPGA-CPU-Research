@@ -55,7 +55,7 @@ builds tried (with it on, P drops to 6.22 rays/kclk). TinyBVH has no SVE path an
 AVX2; smallpt has no SIMD path, so its SIMD binary is byte-identical to the scalar one. Under WSL
 `taskset` pins a virtual CPU: vCPU 6 reports a Cortex-A725 but measured the same per clock within 1%.
 
-### Faster laptop kernels raise the SIMD goal (2026-11-22 00:14)
+### Faster laptop kernels raise the SIMD goal (2026-11-22 00:14; S corrected 00:20)
 
 The SIMD engineer wrote packet and ray-stream kernels for the same BVH4 tree and rays and ran them on
 the laptop (vCPU 19, clang 18.1.3 -O2, auto-vectorizer off, 5 runs x 5 passes, every ray checked
@@ -66,10 +66,12 @@ same-algorithm: a gain from a better algorithm counts only if the laptop can't r
 | Ray set | Laptop's best kernel | Laptop per clock | **SIMD goal (1.5x)** | Was (TinyBVH kernel) |
 |---|---|---:|---:|---:|
 | P, primary | 16-ray packets, NEON (32-ray: 13.1) | 12.1 rays/kclk | **18.2 rays/kclk** | 10.73 |
-| S, secondary | ray streams with gather and compaction, SVE2 | 5.18 rays/kclk | **7.8 rays/kclk** | 3.98 |
+| S, secondary | ray streams with gather and compaction, SVE2, 16,384-ray streams (SWITCH 4) | 6.00 rays/kclk [5.85-6.08] | **9.0 rays/kclk** | 3.98 |
 
 The scalar goals (6.17 / 2.24 / 2.70 rays/kclk) and the path-tracing goal (563 paths/Mclk) are
-unchanged. TinyBVH NEON measured 7.27 / 2.65 in the same session, reproducing the table above.
+unchanged. TinyBVH NEON measured 7.27 / 2.65 in the same session, reproducing the table above. The
+S row was first set at 5.18 / 7.8 from 4,096-ray streams; larger streams on the laptop give 6.00
+(6.24 in a 3x3 run), so the S goal is 9.0.
 
 ## Baseline on our cores (2026-11-22, soft float)
 
