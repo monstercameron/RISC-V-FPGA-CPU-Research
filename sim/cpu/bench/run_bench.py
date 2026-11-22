@@ -98,6 +98,12 @@ def main():
                         help='Instruction-cache size in 8-byte beats (default 512 = 4 KiB for dhrystone, '
                              '8192 = 64 KiB for lzma)')
     parser.add_argument('--dcache-beats', type=int, help='Data-cache size in 8-byte beats (defaults as --icache-beats)')
+    memory = parser.add_argument_group('SoC memory model (architecture 0.15.0; defaults keep the flat 1-clock memory)')
+    memory.add_argument('--l2-kib', type=int, default=0, help='Shared L2 size in KiB (0 = no L2)')
+    memory.add_argument('--l2-ways', type=int, default=8)
+    memory.add_argument('--l2-line', type=int, default=64, help='L2 line in bytes')
+    memory.add_argument('--l2-lat', type=int, default=12, help='Clocks for a read that hits the L2')
+    memory.add_argument('--mem-lat', type=int, default=1, help='Clocks for a read from memory (an L2 miss, or every read without an L2)')
     simulator.add_argument(parser)
     lzma_options = parser.add_argument_group('lzma only')
     lzma_options.add_argument('--lzma-mode', choices=('full', 'sampled'),
@@ -122,7 +128,7 @@ def main():
     lzma_options.add_argument('--differential-every', type=int, default=1,
                               help='Trace-check every K-th piece of each phase (always the first)')
     args = parser.parse_args()
-    if args.devlog and (args.core_source or args.icache_beats or args.dcache_beats):
+    if args.devlog and (args.core_source or args.icache_beats or args.dcache_beats or args.l2_kib or args.mem_lat != 1):
         parser.error('--devlog records the released core in its standard configuration only')
     if args.benchmark == 'lzma' and args.devlog:
         parser.error('--devlog records Dhrystone runs only; log LZMA runs in DEVLOG.md by hand')
@@ -163,6 +169,12 @@ def main():
     args.icache_beats = args.icache_beats or default_beats
     args.dcache_beats = args.dcache_beats or default_beats
     caches = {'ICACHE_BEATS': args.icache_beats, 'DCACHE_BEATS': args.dcache_beats}
+    # SoC memory-model parameters are passed only when they differ from the SoC defaults, so a
+    # default run builds exactly the same simulator as before they existed.
+    memory_defaults = {'L2_KIB': 0, 'L2_WAYS': 8, 'L2_LINE': 64, 'L2_LAT': 12, 'MEM_LAT': 1}
+    memory_model = {'L2_KIB': args.l2_kib, 'L2_WAYS': args.l2_ways, 'L2_LINE': args.l2_line,
+                    'L2_LAT': args.l2_lat, 'MEM_LAT': args.mem_lat}
+    caches.update({k: v for k, v in memory_model.items() if v != memory_defaults[k]})
     rtl = [snap / core_file, snap / 'rtl/cpu/rv64_bram_soc.sv']
     if args.benchmark == 'lzma':
         import lzma_run
@@ -257,6 +269,7 @@ def main():
             'class': {'multicycle': 'multicycle', 'pipe': 'pipelined', 'ooo': 'out-of-order'}[args.core], 'core': args.core,
             'core_source': args.core_source or core_file,
             'cache_beats': {'icache': args.icache_beats, 'dcache': args.dcache_beats},
+            'memory_model': {k.lower(): v for k, v in memory_model.items()},
             'rtl_sha256': {p.relative_to(snap).as_posix(): sha(p) for p in rtl},
             'platform': f'rv64_bram_soc, {ram_bytes // 1024} KiB synchronous RAM, no added wait cycles in the timing run',
             'hardware': f'none ({sim.label} simulation)',

@@ -6,7 +6,22 @@ module rv64_bram_soc #(
     parameter INIT_HEX = "",
     parameter [63:0] RESET_PC = 0,
     parameter integer ICACHE_BEATS = 512, // core instruction cache, 8-byte beats
-    parameter integer DCACHE_BEATS = 512  // core data cache, 8-byte beats
+    parameter integer DCACHE_BEATS = 512, // core data cache, 8-byte beats
+    // Memory model (memory hand-off 1). A read completes MEM_LAT clocks after it is first
+    // presented (1, the default, is the synchronous RAM: ready the next clock). With
+    // L2_KIB != 0 a tags-only shared L2 (instruction and data) sits in front: a read that
+    // hits it completes after L2_LAT clocks, one that misses after MEM_LAT and fills the
+    // line. Writes still complete in the clock they are presented (posted) and allocate
+    // their line with no fill traffic (optimistic). Data always lives in the RAM array, which
+    // every write reaches at once. Out-of-range reads fault after the same latency as a read
+    // that misses (MEM_LAT). One request at a time, as before: a pending instruction miss
+    // delays a data read behind it. Latencies are 1 to 1,048,576 clocks; with an L2, MEM_LAT
+    // must exceed L2_LAT.
+    parameter integer L2_KIB = 0,        // 0: no L2
+    parameter integer L2_WAYS = 8,
+    parameter integer L2_LINE = 64,      // bytes, power of two, >= 8
+    parameter integer L2_LAT = 12,       // read latency of an L2 hit, clocks (only with L2_KIB != 0)
+    parameter integer MEM_LAT = 1        // read latency of an L2 miss (or of every read without L2)
 ) (
     input wire clk,
     input wire reset, // already synchronized to clk; resets core AND adapter
@@ -20,6 +35,49 @@ module rv64_bram_soc #(
     output wire retire3_valid  // third retirement slot, same clock (0.7.0)
 );
     localparam integer INDEX_BITS = $clog2(RAM_WORDS);
+    localparam integer L2_LINES = L2_KIB != 0 && L2_LINE > 0 ? L2_KIB * 1024 / L2_LINE : 0;
+    localparam integer L2_SETS = L2_KIB != 0 && L2_WAYS > 0 ? L2_LINES / L2_WAYS : 1;
+    localparam integer L2_N = L2_KIB == 0 || L2_LINES < 1 ? 1 : L2_LINES;
+    localparam integer L2_OFF = L2_LINE > 1 ? $clog2(L2_LINE) : 3;
+    localparam integer LAT_MAX = 1048576;
+    // The set index is the line address modulo L2_SETS, so the set count need not be a power of two.
+    generate if (MEM_LAT < 1 || MEM_LAT > LAT_MAX || (L2_KIB != 0 && (L2_KIB < 0 || L2_LAT < 1 || L2_LAT >= MEM_LAT ||
+                 L2_LINE < 8 || (L2_LINE & (L2_LINE - 1)) != 0 || L2_WAYS < 1 ||
+                 L2_LINES * L2_LINE != L2_KIB * 1024 || L2_SETS < 1 || L2_SETS * L2_WAYS != L2_LINES))) begin : bad_memory_model
+        initial $fatal(1, "memory model: 1 <= MEM_LAT <= 1048576; with an L2: 1 <= L2_LAT < MEM_LAT, line a power of two >= 8, L2_KIB*1024 an exact multiple of L2_LINE*L2_WAYS");
+    end endgenerate
+    // Tags-only L2: line address and last use per line, least recently used replaced (64-bit use
+    // stamps: they would wrap only after 2^64 accesses).
+    reg [63:0] l2_tag [0:L2_N-1];
+    reg [63:0] l2_use [0:L2_N-1];
+    reg [L2_N-1:0] l2_valid;
+    reg [63:0] l2_clock;
+    integer l2_rd_hit = 0, l2_rd_miss = 0, l2_wr_hit = 0, l2_wr_miss = 0;   // statistics for probes
+    reg rd_busy;                // a read is waiting for its latency
+    reg [31:0] rd_cnt;
+    integer l2_w, l2_v;
+    reg l2_h;
+    // Look up (and on a miss allocate) the line of byte address a; returns 1 on a hit.
+    task automatic l2_touch(input [63:0] a, output reg hit);
+        integer base, w, v;
+        reg [63:0] line;
+        begin
+            line = a >> L2_OFF;
+            base = (line % L2_SETS) * L2_WAYS;
+            hit = 0; v = -1;
+            l2_clock = l2_clock + 1;
+            for (w = 0; w < L2_WAYS; w = w + 1)
+                if (l2_valid[base + w] && l2_tag[base + w] == line) begin hit = 1; l2_use[base + w] = l2_clock; end
+            if (!hit) begin
+                for (w = 0; w < L2_WAYS; w = w + 1) if (v < 0 && !l2_valid[base + w]) v = w;
+                if (v < 0) begin
+                    v = 0;
+                    for (w = 1; w < L2_WAYS; w = w + 1) if (l2_use[base + w] < l2_use[base + v]) v = w;
+                end
+                l2_valid[base + v] = 1; l2_tag[base + v] = line; l2_use[base + v] = l2_clock;
+            end
+        end
+    endtask
     reg [63:0] ram [0:RAM_WORDS-1];
     initial begin
         if (INIT_HEX != "") $readmemh(INIT_HEX,ram);
@@ -56,13 +114,41 @@ module rv64_bram_soc #(
 `endif
     integer lane;
     always @(posedge clk) begin
-        if (reset) begin read_ready<=0; read_error<=0; rdata<=0; end
-        else begin
+        if (reset) begin
+            read_ready<=0; read_error<=0; rdata<=0; rd_busy=0; rd_cnt=0; l2_valid=0; l2_clock=0;
+            l2_rd_hit=0; l2_rd_miss=0; l2_wr_hit=0; l2_wr_miss=0;
+        end else begin
             read_ready<=0;
-            if (valid && !write_request && !read_ready) begin
-                read_ready<=1;
-                read_error<=outside_ram;
-                rdata<=outside_ram ? 64'b0 : ram[index];
+            // A read answers lat clocks after it is first presented; the request is held
+            // stable meanwhile (section 3). An out-of-range read faults after MEM_LAT clocks.
+            if (valid && !write_request && !read_ready && !rd_busy) begin
+                l2_h = 0;
+                if (L2_KIB != 0 && !outside_ram) begin
+                    l2_touch(addr, l2_h);
+                    if (l2_h) l2_rd_hit = l2_rd_hit + 1; else l2_rd_miss = l2_rd_miss + 1;
+                end
+                l2_v = l2_h ? L2_LAT : MEM_LAT;
+                if (l2_v <= 1) begin
+                    read_ready<=1;
+                    read_error<=outside_ram;
+                    rdata<=outside_ram ? 64'b0 : ram[index];
+                end else begin rd_busy = 1; rd_cnt = l2_v - 1; end
+            end else if (rd_busy) begin
+                if (rd_cnt == 1) begin
+                    rd_busy = 0;
+                    read_ready<=1;
+                    read_error<=outside_ram;
+                    rdata<=outside_ram ? 64'b0 : ram[index];
+                end
+                rd_cnt = rd_cnt - 1;
+            end
+            if (L2_KIB != 0 && write_request && !outside_ram) begin
+                l2_touch(addr, l2_h); if (l2_h) l2_wr_hit = l2_wr_hit + 1; else l2_wr_miss = l2_wr_miss + 1;
+`ifdef WIDE_TRACE
+                if (wstrb2!=0 && !outside2) begin l2_touch(addr2, l2_h); if (l2_h) l2_wr_hit = l2_wr_hit + 1; else l2_wr_miss = l2_wr_miss + 1; end
+                if (xok0) begin l2_touch(xaddr[63:0], l2_h); if (l2_h) l2_wr_hit = l2_wr_hit + 1; else l2_wr_miss = l2_wr_miss + 1; end
+                if (xok1) begin l2_touch(xaddr[127:64], l2_h); if (l2_h) l2_wr_hit = l2_wr_hit + 1; else l2_wr_miss = l2_wr_miss + 1; end
+`endif
             end
             if (write_request && !outside_ram)
                 for (lane=0;lane<8;lane=lane+1)
