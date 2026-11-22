@@ -59,12 +59,36 @@ hardware measurement.
 
 ## 3. Work in flight when paused
 
-- **RSPW (wider split-read answers, bus-contract MINOR):** bandwidth engineer (Sonnet).
-  - Package and status are in `build/cpu/ooo-debug/council/bw/` (`HANDOFF-SONNET.md`, `architecture-rspw.md`,
-    `rspw-devlog.md`, rspw diffs). At the pause it was finishing the test and benchmark runs.
-  - Rev 2 had passed: L2-resident reads 14.3 B/clk at RSPW 4, DRAM 8.85 B/clk.
-  - Check the hand-off for what is still missing: the Codex review, release-minor, the rt numbers, and the two
-    open tests (a fault in lane > 0; a store into a non-zero lane at sampling).
+- **RSPW (wider split-read answers, bus-contract MINOR): rev 3 is ready to release.** Nothing is running.
+  - **Files:** package `build/cpu/ooo-debug/council/bw/rspw-on-main.diff` (7 files, sha256 ddec974094895a7a,
+    base dc55aff), built by `bw/rspw-rev3.py`. Text and history row (version blank) are in
+    `bw/architecture-rspw.md`, DEVLOG rows in `bw/rspw-devlog.md`, the tree is `bw/wtr`, and the status is in
+    `bw/HANDOFF-SONNET.md`.
+  - **New tests:**
+    - `line_fault_lane1/2/3` put a fault in answer lanes above 0.
+    - `line_store_lane_sweep` sweeps stores into lanes above 0.
+    - Two broken-core negative controls fail them at RSPW 2/4/8. They were not re-run after the last edits.
+  - **Evidence:**
+    - test_cpu DLINE 64, N_MISS 4, RSPW 1/2/4/8 at both cache sizes: 884 runs each, PASS.
+    - N_MISS 8 with RSPW 8, and DLINE 16 with RSPW 2: PASS.
+    - `release-minor fpu vector soc --expect 0.21.0-release-patch.json`: 70/70, the same as the baseline.
+    - Codex: no counterexample. Its fixes are in, and what was declined is reasoned in the DEVLOG rows.
+  - **Bounds:**
+    - L2-resident reads at RSPW 1 / 4 / 8: 7.62 / 13.68 / 14.23 B/clk.
+    - With DRAM as the limit, RSPW does not help: D1 + DLINE 64 + N_MISS 8 reads 6.52 B/clk at RSPW 1 and
+      6.48 at RSPW 4.
+  - **Ray tracing at the deciding config,** sampled mode (cold L2): RSPW 4 alone gains 1.3% on primary rays and
+    0.0-0.2% elsewhere. **Ray tracing is not bandwidth-bound there.** The prefetcher combination (D1 + DLINE 64
+    + N_MISS 8) halves primary clocks against the default, 682,755 -> 337,993, but cold-L2 sampling overstates
+    that.
+  - **Not done:**
+    - Full-mode rt does not fit in 300 s; it needs splitting into pieces.
+    - A bus-level SoC test (Codex finding 2).
+    - Scratch to clean: bw/negA, bw/negB, bw/negP, and the wtr worktree.
+  - **To release:** apply the diff on main, run the coordinator check, assign the next MINOR (0.22.0) and
+    publish as usual.
+  - **Implication for the ray-tracing goal:** after RSPW, the next lever is the out-of-order vector work and
+    latency, not bandwidth.
 
 ## 4. Docket, in order (each step its own version)
 
