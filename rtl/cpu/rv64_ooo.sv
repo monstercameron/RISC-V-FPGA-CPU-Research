@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Original CPU foundation, wide out-of-order implementation (architecture 0.14.10).
+// Original CPU foundation, wide out-of-order implementation (architecture 0.14.11).
 // RV64IM + B execution, serialized FENCE.I, terminal EEI. Same module name and
 // contract as rv64_core.sv and rv64_pipe.sv, plus a wider retirement trace (rt_*);
 // build with one of the three files. Architecture version: cpu/VERSION,
@@ -1505,7 +1505,8 @@ module rv64_core #(
                         bi = npc[2 +: BTB_BITS];
                         fdone = btb_valid[bi] && btb_tag[bi] == npc[2+BTB_BITS +: BTB_TAG];
                         tkp = fdone && (btb_ret[bi] || btb_ctr[bi][1]);
-                        tgt = btb_ret[bi] ? gras[cur_sp] : {npc[63:32], btb_target[bi], 2'b00};
+                        tgt = btb_ret[bi] ? ((gras[cur_sp] + (op == 7'h67 ? {{52{wi[31]}},wi[31:20]} : 64'd0)) & ~64'd1)
+                                          : {npc[63:32], btb_target[bi], 2'b00};
                         g_ras_pop_sp = cur_sp;
                         g_lpu = 0; g_li[s] = 0;
                         if (op == 7'h63) begin
@@ -1548,7 +1549,7 @@ module rv64_core #(
                         if (op == 7'h6f) begin
                             tkp = 1; tgt = npc + {{43{wi[31]}},wi[31],wi[19:12],wi[20],wi[30:21],1'b0};
                         end else if (hit) begin
-                            tkp = 1; tgt = gras[g_ras_pop_sp];
+                            tkp = 1; tgt = (gras[g_ras_pop_sp] + {{52{wi[31]}},wi[31:20]}) & ~64'd1;   // ra + imm
                         end else if (op == 7'h63 && !g_lpu && !fdone) begin
                             tkp = wi[31]; tgt = npc + {{51{wi[31]}},wi[31],wi[7],wi[30:25],wi[11:8],1'b0};
                         end

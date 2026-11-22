@@ -109,6 +109,21 @@ def ras_wrong_path_call_program():
     return p
 
 
+def ret_displacement_program():
+    """Frontend hand-off 9 (Codex 1624-3): returns with a non-zero displacement."""
+    def sd(rs2, base, off): return ((off >> 5) << 25) | rs2 << 20 | base << 15 | 3 << 12 | (off & 31) << 7 | 0x23
+    p = [i_type(0x13, 10, 0, 0, 30),                                   # 0: x10 = 30 iterations
+         (3 << 12) | (2 << 7) | 0x37,                                  # 4: x2 = 0x3000
+         jal(1, 24),                                                   # 8: call f (32)
+         0x00000000,                                                   # 12: data word skipped by the return
+         i_type(0x13, 10, 0, 10, -1), branch(1, 10, 0, -12),           # 16: x10 -= 1; 20: bne -> 8
+         0x100073, jal(0, 0)]                                          # 24: ebreak; 28: j 28 (fetch past
+                                                                       # the ebreak must not fall into f)
+    p += [sd(1, 2, 0), i_type(0x13, 20, 0, 20, 1),                     # 32: f: sd ra,0(x2); x20 += 1
+          i_type(3, 1, 3, 2, 0), i_type(0x67, 0, 0, 1, 4)]             # 40: ld ra,0(x2); 44: jalr x0, 4(ra)
+    return p
+
+
 def cases():
     p = prefix()
     for op in (0x33, 0x3b):
@@ -740,6 +755,7 @@ def cases():
     # its direction comes from an xorshift sequence, so it keeps mispredicting.
     p = ras_wrong_path_call_program()
     yield 'ras_wrong_path_call', p, 0, MASK
+    yield 'ret_displacement', ret_displacement_program(), 0, MASK
 
 def command(args, timeout=60):
     result = subprocess.run([str(x) for x in args], capture_output=True, text=True, timeout=timeout)
