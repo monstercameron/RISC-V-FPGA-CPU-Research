@@ -84,7 +84,7 @@ def command(args, timeout=300):
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    parser.add_argument('--benchmark', choices=['dhrystone', 'lzma', 'rt', 'js'], default='dhrystone')
+    parser.add_argument('--benchmark', choices=['dhrystone', 'lzma', 'rt', 'js', 'mm'], default='dhrystone')
     parser.add_argument('--out-dir', help='Default: build/cpu/bench/<benchmark>')
     parser.add_argument('--stalls', type=int, nargs='+', default=[0, 7],
                         help='Maximum random memory wait cycles for each differential run')
@@ -153,6 +153,9 @@ def main():
     js_options.add_argument('--js-mode', choices=('full', 'sampled'),
                             help='full: whole program on the timing bench (small builds only); sampled (default): '
                                  '--sample-pieces pieces per kernel (default 4) from rv_iss checkpoints')
+    mm_options = parser.add_argument_group('mm only (mm_run.py)')
+    mm_options.add_argument('--mm-mode', choices=('full', 'sampled'), help='full: whole program (default when it retires at most 15 M instructions); sampled: pieces per phase')
+    mm_options.add_argument('--mm-kernels', help='sampled mode: time only these kernels, for example G1,V1b')
     args = parser.parse_args()
     # Core knobs as Verilog defines for the out-of-order builds (timing and trace benches alike).
     args.ooo_knobs = {'RV64_OOO_LD_LAT': args.ld_lat, 'RV64_OOO_L0_N': args.l0, 'RV64_OOO_L0_LAT': args.l0_lat}
@@ -164,13 +167,15 @@ def main():
     if args.devlog and (args.core_source or args.icache_beats or args.dcache_beats or args.l2_kib or args.mem_lat != 1 or args.mem_gap or args.write_fill
                         or args.ooo_defines or args.n_miss != 1):
         parser.error('--devlog records the released core in its standard configuration only')
+    if (args.mm_mode or args.mm_kernels) and args.benchmark != 'mm':
+        parser.error('--mm-mode and --mm-kernels apply to --benchmark mm only')
     if args.rt_mode and args.benchmark != 'rt':
         parser.error('--rt-mode applies to --benchmark rt only')
     if args.js_mode and args.benchmark != 'js':
         parser.error('--js-mode applies to --benchmark js only')
     if (args.pieces or args.warm_l2) and args.benchmark not in ('lzma', 'js'):
         parser.error('--pieces and --warm-l2 apply to --benchmark lzma and js only')
-    if args.benchmark in ('lzma', 'rt', 'js') and args.devlog:
+    if args.benchmark in ('lzma', 'rt', 'js', 'mm') and args.devlog:
         parser.error('--devlog records Dhrystone runs only; log LZMA runs in DEVLOG.md by hand')
     try:
         sim = simulator.get(args.sim)
@@ -185,11 +190,13 @@ def main():
         default_dir = 'build/cpu/bench/rt-g16s2i32-pt16x12x4-rv64imb'  # build_bench.py --benchmark rt
     if args.benchmark == 'js':  # build_bench.py --benchmark js [--isa rv64imfd_zba_zbb_zbs_zifencei]
         default_dir = 'build/cpu/bench/js-s1-' + ('rv64imfdb' if args.fpu else 'rv64imb')
+    if args.benchmark == 'mm':
+        default_dir = 'build/cpu/bench/mm-small-rv64imb'  # build_bench.py --benchmark mm
     out = (ROOT / (args.out_dir or default_dir)).resolve()
     build = json.loads((out / 'build.json').read_bytes())
     if args.lzma_dict_log is not None and build.get('lzma', {}).get('dict_log') != args.lzma_dict_log:
         parser.error(f'{out} is not a 2^{args.lzma_dict_log}-dictionary lzma build')
-    if args.benchmark not in ('lzma', 'rt', 'js') and args.max_cycles is None:
+    if args.benchmark not in ('lzma', 'rt', 'js', 'mm') and args.max_cycles is None:
         args.max_cycles = 50_000_000
     for name, digest in build['input_sha256'].items():
         if sha(ROOT / name) != digest:
@@ -209,7 +216,7 @@ def main():
         shutil.copyfile(source, snap / name)
     # Cache sizes of the measured configuration (8-byte beats). 7-Zip runs default to 64 KiB each,
     # the L1 sizes of the Cortex-X925 they are compared with; Dhrystone keeps the SoC's 4 KiB.
-    default_beats = 8192 if args.benchmark in ('lzma', 'rt', 'js') else 512
+    default_beats = 8192 if args.benchmark in ('lzma', 'rt', 'js', 'mm') else 512
     args.icache_beats = args.icache_beats or default_beats
     args.dcache_beats = args.dcache_beats or default_beats
     caches = {'ICACHE_BEATS': args.icache_beats, 'DCACHE_BEATS': args.dcache_beats}
@@ -225,6 +232,10 @@ def main():
     if args.benchmark == 'lzma':
         import lzma_run
         lzma_run.run(args, ROOT, out, build, snap, rtl, core_file, command, sha, sim, caches)
+        return
+    if args.benchmark == 'mm':
+        import mm_run
+        mm_run.run(args, ROOT, out, build, snap, rtl, core_file, command, sha, sim, caches)
         return
     if args.benchmark == 'rt':
         import rt_run

@@ -24,7 +24,7 @@ MAINTAINED_DOCS = (
     'llm-rva23-mapping.md', 'isa/README.md',
     'cpu/README.md', 'cpu/architecture.md', 'cpu/c-demo.md', 'cpu/visualizer.md', 'cpu/addition.md', 'cpu/programs.md', 'cpu/inputs.md',
     'cpu/review-rubric.md', 'TODO.md', 'cpu/dhrystone.md', 'DEVLOG.md', 'cpu/lzma-benchmark.md', 'cpu/raytracing-benchmark-targets.md',
-    'cpu/js-benchmark-targets.md',
+    'cpu/js-benchmark-targets.md', 'cpu/mm-benchmark-targets.md',
 )
 REQUIRED = MAINTAINED_DOCS + (
     'LICENSE', '.gitignore', '.gitattributes', '.editorconfig',
@@ -63,6 +63,10 @@ REQUIRED = MAINTAINED_DOCS + (
     'sim/cpu/bench/js_run.py', 'sim/cpu/bench/js/kernels.js', 'sim/cpu/bench/js/js_bench.c',
     'sim/cpu/bench/js/libc.c', 'sim/cpu/bench/js/gen_src.py', 'sim/cpu/bench/js/js_native.sh',
     'sim/cpu/bench/js/js_laptop.py', 'sim/cpu/bench/js/fetch_quickjs.sh', 'licenses/QUICKJS-NG-LICENSE.txt',
+    'sim/cpu/bench/mm_run.py', 'sim/cpu/bench/mm_build.py', 'sim/cpu/bench/mm/mm_bench.h', 'sim/cpu/bench/mm/mm_bench.c',
+    'sim/cpu/bench/mm/mm_kernels.c', 'sim/cpu/bench/mm/mm_runtime.c', 'sim/cpu/bench/mm/mm_native.c',
+    'sim/cpu/bench/mm/mm_gen.c', 'sim/cpu/bench/mm/mm_export.sh', 'sim/cpu/bench/mm/mm_laptop.c',
+    'sim/cpu/bench/mm/mm_laptop.sh', 'sim/cpu/bench/mm/mm_laptop_summary.py',
 )
 PLANNING_INPUTS = (
     'memory_model.py', 'plan_audit_checks.py', 'refinement_checks.py', 'abi_v1.py',

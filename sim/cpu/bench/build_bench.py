@@ -303,7 +303,7 @@ def run(command, log=None):
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('--benchmark', choices=sorted(BENCHMARKS), default='dhrystone')
+    parser.add_argument('--benchmark', choices=sorted([*BENCHMARKS, 'mm']), default='dhrystone')
     parser.add_argument('--ram-kib', type=int, help='RAM size in KiB, a power of two from 32 to 65536 '
                         '(default 64; for lzma the smallest that holds the estimated arena)')
     parser.add_argument('--opt', choices=['O1', 'O2', 'O3', 'Os'], default='O2')
@@ -313,6 +313,8 @@ def main():
                              '(7z b -md22)')
     parser.add_argument('--rt-data', help=f'rt only: rt_export.sh output directory (default {RT_DATA_DEFAULT})')
     parser.add_argument('--js-ref', help=f'js only: js_native.sh output directory (default {JS_REF_DEFAULT})')
+    parser.add_argument('--mm-data', help='mm only: mm/mm_export.sh output directory (default build/cpu/bench/mm-data/small)')
+    parser.add_argument('--mm-variant', choices=('scalar',), default='scalar', help='mm only: kernel source (scalar; RVV later)')
     parser.add_argument('--runtime', choices=('reference', 'fast'), default='reference',
                         help='reference: byte-at-a-time strcpy/strcmp (compared across cores); '
                              'fast: word-at-a-time (a labelled, separate configuration)')
@@ -320,6 +322,11 @@ def main():
         parser.add_argument('--' + name, default=tool('clang' if name == 'clang' else 'llvm-' + name))
     parser.add_argument('--out-dir', help='Default: build/cpu/bench/<benchmark>, plus -rv64im for that ISA')
     args = parser.parse_args()
+    if args.benchmark == 'mm':
+        import mm_build
+        return mm_build.build(args, parser)
+    if args.mm_data:
+        parser.error('--mm-data applies to --benchmark mm only')
     lzma = args.benchmark == 'lzma'
     rt = args.benchmark == 'rt'
     js = args.benchmark == 'js'
