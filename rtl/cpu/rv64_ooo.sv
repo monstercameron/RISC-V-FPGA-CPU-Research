@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Original CPU foundation, wide out-of-order implementation (architecture 0.15.7).
+// Original CPU foundation, wide out-of-order implementation (architecture 0.16.0).
 // RV64IM + B execution, serialized FENCE.I, terminal EEI. Same module name and
 // contract as rv64_core.sv and rv64_pipe.sv, plus a wider retirement trace (rt_*);
 // build with one of the three files. Architecture version: cpu/VERSION,
@@ -15,7 +15,10 @@ module rv64_core #(
     // Paired store writes (0.11.0): 1 when the memory implements mem_*2.
     parameter integer PAIR_WRITES = 0,
     // Extra store writes: 1 or 2 more stores per write on mem_x*, with PAIR_WRITES.
-    parameter integer EXTRA_WRITES = 0
+    parameter integer EXTRA_WRITES = 0,
+    // Data misses in flight (memory hand-off 2). 1: one blocking data read at a time. Above 1
+    // data reads are split transactions (mem_tag, rsp_*); the memory must support them.
+    parameter integer N_MISS = 1
 ) (
     input  wire        clk,
     input  wire        reset,
@@ -77,7 +80,17 @@ module rv64_core #(
     output wire [127:0]    mem_xaddr,
     output wire [127:0]    mem_xwdata,
     output wire [15:0]     mem_xwstrb,
-    input  wire [1:0]      mem_xerror
+    input  wire [1:0]      mem_xerror,
+    // Split data reads (N_MISS > 1): a data read (mem_instr 0, mem_wstrb 0) carries mem_tag and
+    // completes at mem_ready when the memory accepts it (mem_error is then ignored); its beat comes
+    // back later with rsp_valid for one clock, with that tag, rsp_data and rsp_error. The core
+    // never has more than N_MISS reads outstanding, with distinct tags 0..N_MISS-1, and always
+    // accepts a response. With N_MISS 1 mem_tag is 0 and rsp_* are ignored.
+    output wire [3:0]      mem_tag,
+    input  wire            rsp_valid,
+    input  wire [3:0]      rsp_tag,
+    input  wire [63:0]     rsp_data,
+    input  wire            rsp_error
 );
     // Wide out-of-order core (0.10.0), first configured after measurements of the Apple M5
     // performance core (useless-husband/m5-uarch); since 0.12.0 16 instructions per clock
@@ -105,6 +118,9 @@ module rv64_core #(
     end endgenerate
     generate if (EXTRA_WRITES < 0 || EXTRA_WRITES > 2 || (EXTRA_WRITES != 0 && PAIR_WRITES == 0)) begin : bad_extra_writes
         initial $fatal(1, "EXTRA_WRITES must be 0, 1 or 2, and needs PAIR_WRITES");
+    end endgenerate
+    generate if (N_MISS < 1 || N_MISS > 8) begin : bad_n_miss
+        initial $fatal(1, "N_MISS must be 1 to 8 (tags 8-15 are kept for instruction-side requests)");
     end endgenerate
     localparam integer FW = 32;          // fetch and rename width (RW until 0.13.0)
     localparam integer ROB_N = 512;       // 256 until 0.13.0
@@ -814,6 +830,26 @@ module rv64_core #(
     reg mu_owner_v;             // the load that asked for the miss is still in flight
     reg [63:0] mu_err_beat;
     reg [ROB_B-1:0] mu_err_owner;   // the load the failed fill belongs to (0.11.0)
+    // Several misses in flight (memory hand-off 2, N_MISS > 1): split data reads. Entry 0 is the
+    // miss unit above (the oldest load's); entries 1..N_MISS-1 fill the cache for younger loads.
+    localparam integer SPLIT = N_MISS > 1;
+    localparam integer PM_N = N_MISS > 1 ? N_MISS : 2;
+    reg mu_sent;                // entry 0's request was accepted; its beat comes on rsp_*
+    reg mu_stale;               // a store wrote its beat after the request was accepted
+    reg [PM_N-1:0] pm_valid, pm_sent, pm_stale;   // younger-miss entries (index 0 unused)
+    reg [63:0] pm_beat [0:PM_N-1];
+    reg pf_v;                   // this clock's oldest younger miss (to allocate)
+    reg [63:0] pc_beat [0:N_LD-1];   // this clock's younger-miss candidates
+    reg [ROB_B-1:0] pc_age [0:N_LD-1];
+    integer pc_n, pc_i;
+    reg [63:0] pf_beat;
+    reg [ROB_B-1:0] pf_age;
+    reg pm_dup;
+    integer pm_k, pm_free, pm_j;
+    reg [3:0] hold_tag, bk_tag;
+    reg sf_wait;                // a store write faulted while split reads were outstanding: no new
+                                // requests; the trap is taken, with the latched store, once they return
+    reg [63:0] sf_pc, sf_addr;
 
     // ---------------- bus request (combinational) -------------------------------
     // The retiring store: the first store in the retirement window, when everything
@@ -884,15 +920,43 @@ module rv64_core #(
     // Extra stores carried by this write (held unchanged while the bus waits).
     wire [1:0] nx_now = bus_hold == 3 ? hold_nx : st2_cand ? sx_n : 2'd0;
     wire f_beat_hit = ic_valid[f_pc[3 +: IC_INDEX]] && ic_tag[f_pc[3 +: IC_INDEX]] == f_pc[63 -: IC_TAG];
-    wire want_store = st_cand;
-    wire want_miss = mu_valid && !h_exc;
-    wire want_fetch = started && !halted && f_pc[1:0] == 0 && !f_beat_hit && !f_err && !f_hold && !h_exc;
+    wire want_store = st_cand && !sf_wait;   // no write after a latched store fault
+    wire want_miss = mu_valid && !mu_sent && !h_exc && !sf_wait;
+    // The lowest-numbered younger entry waiting to be sent (a function, not always @*, so a
+    // constant input with N_MISS 1 still gives a defined value in every simulator).
+    function [4:0] pm_first(input [PM_N-1:0] m);
+        integer q;
+        begin
+            pm_first = 0;
+            for (q = PM_N - 1; q >= 1; q = q - 1) if (m[q]) pm_first = {1'b1, q[3:0]};
+        end
+    endfunction
+    wire [4:0] pm_sel = pm_first(SPLIT ? pm_valid & ~pm_sent : {PM_N{1'b0}});
+    wire pm_pick_v = pm_sel[4];
+    wire [3:0] pm_pick = pm_sel[3:0];
+    wire want_pm = pm_pick_v && !h_exc && !sf_wait;
+    // A split read is outstanding (accepted, not yet answered): no trap is taken meanwhile.
+    // (a function, so the clock block sees this clock's updates, not the value at the clock start)
+    function split_out(input dummy);
+        split_out = SPLIT && ((mu_valid && mu_sent) || (pm_valid & pm_sent) != {PM_N{1'b0}});
+    endfunction
+    // A beat some entry is reading (or will read).
+    function in_flight(input [63:0] a);
+        integer q;
+        begin
+            in_flight = mu_valid && mu_beat[63:3] == a[63:3];
+            for (q = 1; q < PM_N; q = q + 1) if (pm_valid[q] && pm_beat[q][63:3] == a[63:3]) in_flight = 1;
+        end
+    endfunction
+    wire want_fetch = started && !halted && f_pc[1:0] == 0 && !f_beat_hit && !f_err && !f_hold && !h_exc && !sf_wait;
+    // Priority: store write, the oldest load's miss, younger misses, fetch.
     wire [1:0] bus_kind = halted ? 2'd0 : bus_hold != 0 ? bus_hold : want_store ? 2'd3 : want_miss ? 2'd2 :
-                          want_fetch ? 2'd1 : 2'd0;
+                          want_pm ? 2'd2 : want_fetch ? 2'd1 : 2'd0;
+    assign mem_tag = bus_kind != 2 ? 4'd0 : bus_hold == 2 ? hold_tag : want_miss ? 4'd0 : pm_pick;
     assign mem_valid = !reset && bus_kind != 0;
     assign mem_instr = bus_kind == 1;
     assign mem_addr = bus_kind == 1 ? (bus_hold == 1 ? hold_addr : {f_pc[63:3],3'b000})
-                    : bus_kind == 2 ? mu_beat : {st_addr[63:3],3'b000};
+                    : bus_kind == 2 ? (bus_hold == 2 ? hold_addr : want_miss ? mu_beat : pm_beat[pm_pick]) : {st_addr[63:3],3'b000};
     assign mem_wdata = bus_kind == 3 ? st_wdata : 64'b0;
     assign mem_wstrb = bus_kind == 3 ? rb_wstrb[st_idx] : 8'b0;
     assign mem_addr2 = bus_kind == 3 && pair_now ? {st2_addr[63:3],3'b000} : 64'b0;
@@ -1040,6 +1104,7 @@ module rv64_core #(
             halted = 0; started = 0; f_pc = RESET_PC; fe_clk = 0; f_err = 0; f_hold = 0; f_stale = 0;
             bus_hold = 0; hold_addr = 0; hold_pair = 0; hold_nx = 0; mu_valid = 0; mu_beat = 0; mu_errv = 0; mu_err_beat = 0;
             fb_valid = 0; fb_beat = 0; fb_data = 0; mu_owner = 0; fb_owner = 0; fb_lock = 0; mu_owner_v = 0;
+            mu_sent = 0; mu_stale = 0; pm_valid = 0; pm_sent = 0; pm_stale = 0; hold_tag = 0; sf_wait = 0;
             for (i = 0; i < PRF_N; i = i + 1) prf[i] = 0;
             prf_ready = {PRF_N{1'b1}}; prf_written = {PRF_N{1'b1}}; prf_late = 0;
             free_mask = {PRF_N{1'b1}}; for (i = 0; i < 32; i = i + 1) free_mask[i] = 0;
@@ -1060,6 +1125,7 @@ module rv64_core #(
             if (!started) started = 1;
             fe_clk = fe_clk + 1;
             // ================= bus completion =================
+            bk_tag = mem_tag;
             if (bus_kind != 0) begin
                 if (mem_ready) begin
                     bus_hold = 0;
@@ -1072,6 +1138,8 @@ module rv64_core #(
                             ic_valid[fi] = 1; ic_tag[fi] = mem_addr[63 -: IC_TAG]; ic_data[fi] = mem_rdata;
                         end
                         f_stale = 0;
+                    end else if (bus_kind == 2 && SPLIT) begin
+                        if (bk_tag == 0) mu_sent = 1; else pm_sent[bk_tag] = 1;
                     end else if (bus_kind == 2) begin
                         mu_valid = 0;
                         if (mem_error) begin mu_errv = mu_owner_v; mu_err_beat = mu_beat; mu_err_owner = mu_owner; end
@@ -1088,6 +1156,37 @@ module rv64_core #(
                     end
                 end else begin
                     bus_hold = bus_kind; hold_addr = mem_addr; hold_pair = bus_kind == 3 && pair_now; hold_nx = bus_kind == 3 ? nx_now : 2'd0;
+                    hold_tag = bk_tag;
+                end
+            end
+            // Split read responses (N_MISS > 1), at most one per clock.
+            if (SPLIT && rsp_valid) begin
+                if (rsp_tag == 0) begin
+                    if (mu_valid && mu_sent) begin
+                        mu_valid = 0; mu_sent = 0;
+                        if (mu_stale) mu_stale = 0;   // dropped: the owner misses again
+                        else if (rsp_error) begin mu_errv = mu_owner_v; mu_err_beat = mu_beat; mu_err_owner = mu_owner; end
+                        else begin
+                            dc_l = dc_line(mu_beat);
+                            if (dc_l < 0) begin
+                                dc_l = dc_set(mu_beat);
+                                if (dc_valid[dc_l] && (!dc_valid[DC_SETS + dc_l] || !dc_last[dc_l])) dc_l = DC_SETS + dc_l;
+                            end
+                            dc_valid[dc_l] = 1; dc_tag[dc_l] = mu_beat[63 -: DC_TAG]; dc_data[dc_l] = rsp_data;
+                            dc_last[dc_set(mu_beat)] = dc_l >= DC_SETS;
+                            fb_valid = 1; fb_beat = mu_beat; fb_data = rsp_data; fb_owner = mu_owner; fb_lock = mu_owner_v;
+                        end
+                    end
+                end else if (rsp_tag < PM_N && pm_valid[rsp_tag] && pm_sent[rsp_tag]) begin
+                    // A younger miss fills only the cache, and only a line not already there
+                    // (a cached line is kept current by every retiring store).
+                    if (!pm_stale[rsp_tag] && !rsp_error && dc_line(pm_beat[rsp_tag]) < 0) begin
+                        dc_l = dc_set(pm_beat[rsp_tag]);
+                        if (dc_valid[dc_l] && (!dc_valid[DC_SETS + dc_l] || !dc_last[dc_l])) dc_l = DC_SETS + dc_l;
+                        dc_valid[dc_l] = 1; dc_tag[dc_l] = pm_beat[rsp_tag][63 -: DC_TAG]; dc_data[dc_l] = rsp_data;
+                        dc_last[dc_set(pm_beat[rsp_tag])] = dc_l >= DC_SETS;
+                    end
+                    pm_valid[rsp_tag] = 0; pm_sent[rsp_tag] = 0; pm_stale[rsp_tag] = 0;
                 end
             end
             // ================= phase 1: decisions from the state at the clock start =====
@@ -1147,12 +1246,20 @@ module rv64_core #(
             end
             // ---- retirement window
             n_ret = 0; n_tq = 0; rflush = 0; trap_now = 0; stop = 0; rflush_pc = 0; rflush_ld = 0; rflush_e = 0; st1_seen = 0; smc = 0; st_last = 0; wb2v = 0; wb1 = 0; wb2 = 0; st_n = 0; wb3 = 0; wb4 = 0;
+            // A store write faulted while split reads were outstanding: nothing retires; once they
+            // have returned and no request is on the bus, that store traps (cause 7).
+            if (sf_wait) begin
+                stop = 1;
+                if (!split_out(1'b0) && bus_kind == 0) begin
+                    trap_now = 1; trap_pc <= sf_pc; trap_cause <= 7; trap_tval <= sf_addr;
+                end
+            end
             for (s = 0; s < RW; s = s + 1) begin
                 e = rb_head + s[ROB_B-1:0];
                 if (!stop) begin
                     if (s >= rb_count || !rb_done[e]) stop = 1;
                     else if (rb_exc[e]) begin
-                        if (s == 0 && bus_kind == 0) begin
+                        if (s == 0 && bus_kind == 0 && !split_out(1'b0)) begin
                             trap_now = 1;
                             trap_pc <= rb_pc[e]; trap_cause <= rb_cause[e]; trap_tval <= rb_tval[e];
                         end
@@ -1164,7 +1271,9 @@ module rv64_core #(
                         // for next clock's write.
                         if (st_n == 0 && !(bus_kind == 3 && mem_ready)) stop = 1;
                         else if (st_n == 3'd1 + {2'b0, pair_now} + (pair_now ? {1'b0, nx_now} : 3'd0)) stop = 1;
-                        else if (st_n == 0 ? mem_error : st_n == 1 ? mem_error2 : mem_xerror[st_n[0]]) begin
+                        else if ((st_n == 0 ? mem_error : st_n == 1 ? mem_error2 : mem_xerror[st_n[0]]) && split_out(1'b0)) begin
+                            sf_wait = 1; sf_pc = rb_pc[e]; sf_addr = rb_addr[e]; stop = 1;   // trap after the drain
+                        end else if (st_n == 0 ? mem_error : st_n == 1 ? mem_error2 : mem_xerror[st_n[0]]) begin
                             trap_now = 1; trap_pc <= rb_pc[e]; trap_cause <= 7; trap_tval <= rb_addr[e]; stop = 1;
                         end else begin
                             n_ret = s + 1;
@@ -1272,6 +1381,9 @@ module rv64_core #(
                     if (ic_valid[fi] && ic_tag[fi] == rb_addr[e][63 -: IC_TAG]) ic_valid[fi] = 0;
                     if (fb_valid && fb_beat[63:3] == rb_addr[e][63:3])
                         for (k = 0; k < 8; k = k + 1) if (rb_wstrb[e][k]) fb_data[8*k +: 8] = r_wd[8*k +: 8];
+                    if (SPLIT && mu_valid && mu_sent && mu_beat[63:3] == rb_addr[e][63:3]) mu_stale = 1;
+                    for (k = 1; k < PM_N; k = k + 1)
+                        if (SPLIT && pm_valid[k] && pm_sent[k] && pm_beat[k][63:3] == rb_addr[e][63:3]) pm_stale[k] = 1;
                     // Younger instructions already fetched from this beat are refetched.
                     hit = 0;
                     for (k = 0; k < ROB_N; k = k + 1)
@@ -1304,7 +1416,7 @@ module rv64_core #(
             end
             if (rflush) mp_any = 0;
             o_age = b_rob - rb_head;
-            miss_v = 0; miss_beat = 0; miss_age = 0;
+            miss_v = 0; miss_beat = 0; miss_age = 0; pf_v = 0; pf_beat = 0; pf_age = 0; pc_n = 0;
             // Store-address ports first, then ALU and load ports, so a load sees the
             // addresses of older stores executing in the same clock.
             for (p = N_ALU + N_LD; p < NP; p = p == NP - 1 ? 0 : p == N_ALU + N_LD - 1 ? NP : p + 1)
@@ -1402,9 +1514,15 @@ module rv64_core #(
                             end
                             if (ol_valid && a_age == ol_age) begin
                                 miss_v = 1; miss_beat = {ea[63:3],3'b000}; miss_age = a_age; miss_owner = x_rob;
+                            end else if (SPLIT && pc_n < N_LD && !in_flight(ea)) begin
+                                // a younger miss whose beat no entry is reading yet (chosen after
+                                // entry 0 is allocated, so a duplicate of its beat cannot win)
+                                pc_beat[pc_n] = {ea[63:3],3'b000}; pc_age[pc_n] = a_age; pc_n = pc_n + 1;
                             end
                         end
                         if (fdone && fb_lock && x_rob == fb_owner) fb_lock = 0;
+                        // A finished owner gives up entry 0: a later answer fills without a lock.
+                        if (fdone && mu_owner_v && x_rob == mu_owner) mu_owner_v = 0;
                         // It gave a value read or forwarded (finished, or full early forwarding).
                         if (fdone || (!fwd_wait && fwd_mask == bytes_ && ex_writes[p])) rb_ldv[x_rob] = 1;
                         if (fdone) begin
@@ -1461,8 +1579,26 @@ module rv64_core #(
                     end
                 end
             end
+            // The oldest load always takes entry 0, even when a younger entry reads the same
+            // beat (that entry has no owner; a fault it gets is dropped, so the oldest load must
+            // read the beat itself to fault precisely: Codex review of hand-off 2, item 1).
             if (miss_v && !mu_valid && !fb_lock) begin
-                mu_valid = 1; mu_beat = miss_beat; mu_errv = 0; mu_owner = miss_owner; mu_owner_v = 1;
+                mu_valid = 1; mu_beat = miss_beat; mu_errv = 0; mu_owner = miss_owner; mu_owner_v = 1; mu_sent = 0; mu_stale = 0;
+            end
+            // The oldest of this clock's younger misses whose beat no entry reads takes a free entry.
+            for (pc_i = 0; pc_i < N_LD; pc_i = pc_i + 1)
+                if (SPLIT && pc_i < pc_n && !in_flight(pc_beat[pc_i]) && (!pf_v || pc_age[pc_i] < pf_age)) begin
+                    pf_v = 1; pf_beat = pc_beat[pc_i]; pf_age = pc_age[pc_i];
+                end
+            if (SPLIT && pf_v && !(mu_valid && mu_beat[63:3] == pf_beat[63:3])) begin
+                pm_dup = 0; pm_free = 0;
+                for (pm_k = PM_N - 1; pm_k >= 1; pm_k = pm_k - 1) begin
+                    if (pm_valid[pm_k] && pm_beat[pm_k][63:3] == pf_beat[63:3]) pm_dup = 1;
+                    if (!pm_valid[pm_k]) pm_free = pm_k;
+                end
+                if (!pm_dup && pm_free != 0) begin
+                    pm_valid[pm_free] = 1; pm_sent[pm_free] = 0; pm_stale[pm_free] = 0; pm_beat[pm_free] = pf_beat;
+                end
             end
             // ---- load wakeups (LD_LAT >= 2)
             if (LD_LAT >= 2) for (k = 0; k < LW_N; k = k + 1) if (lw_valid[k]) begin

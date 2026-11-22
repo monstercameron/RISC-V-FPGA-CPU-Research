@@ -234,6 +234,90 @@ DONE_ARGS_NEW = 'fault_lane2,fault_lane3,fault_lane4,s_mp);'
 
 
 def cases():
+    # Memory hand-off 2 (several misses in flight, split data reads). These run with any N_MISS;
+    # they matter with N_MISS > 1 and tb_core's split reads (beats sampled at acceptance, answers
+    # out of order). x29 = 0x3000 holds cold lines; loads from 0x0-0x7f read program words.
+    lui29 = (3 << 12) | (29 << 7) | 0x37
+    add_ = lambda rd, a, b: r_type(0x33, rd, 0, a, b)
+    # The deadlock found with "any load may start a miss" (Codex 1739-1): the oldest load A misses;
+    # a store S between A and a younger load B writes B's beat with A's value; B misses too and then
+    # waits for S's data. If B could hold the fill buffer, A could never start its miss.
+    yield 'miss_store_dep_deadlock', prefix() + [lui29,
+        i_type(3, 21, 3, 0, 0x10),            # A: ld x21, 0x10(x0)   cold beat (program words)
+        store(3, 29, 21, 0x100),              # S: sd x21, 0x100(x29) address known, data from A
+        i_type(3, 22, 3, 29, 0x100),          # B: ld x22, 0x100(x29) cold, forwarded from S
+        i_type(3, 23, 3, 0, 0x20),            # C: ld x23, 0x20(x0)   another cold younger miss
+        add_(24, 22, 23), store(3, 29, 24, 0x108), 0x100073], 0, MASK
+    # The timing that deadlocked: B misses while S's address is still unknown, S resolves while B's
+    # fill is in flight or just arrived (B then waits for S's data with the fill buffer), and A's
+    # address comes late. S's address delay sweeps 0..15 multiplies, so some variant hits the window
+    # at every wait pattern; each variant uses its own cold beats.
+    p = prefix() + [lui29, i_type(0x13, 27, 0, 0, 1)]
+    for j in range(16):
+        p += [i_type(3, 26, 3, 30, 0),                        # x26 = 0 (cached constant)
+              add_(20, 29, 26)] + [r_type(0x33, 20, 4, 20, 27, 1)] * 6 + [   # x20 = 0x3000 after 6 divides
+              add_(21, 30, 26)] + [r_type(0x33, 21, 0, 21, 27, 1)] * j + [    # x21 = 0x2000 after j multiplies
+              i_type(3, 22, 3, 20, 0x40 * j),                 # A: ld x22, 0x3000+64j   late address, cold
+              store(3, 21, 22, 0x800 + 0x40 * j),             # S: sd x22 -> 0x2800+64j  data from A
+              i_type(3, 23, 3, 30, 0x800 + 0x40 * j),         # B: ld 0x2800+64j  address at once, cold
+              add_(24, 23, 22), add_(25, 25, 24)]
+    yield 'miss_store_dep_window', p + [store(3, 29, 25, 0x3f8), 0x100073], 0, MASK
+    # Same, with B only partly covered by S (sw), so B needs the beat itself.
+    yield 'miss_store_dep_partial', prefix() + [lui29,
+        i_type(3, 21, 3, 0, 0x18),
+        store(2, 29, 21, 0x104),              # sw: upper half of 0x3100
+        i_type(3, 22, 3, 29, 0x100),          # ld: needs the lower half from memory
+        i_type(3, 23, 3, 0, 0x28),
+        add_(24, 22, 23), store(3, 29, 24, 0x110), 0x100073], 0, MASK
+    # A younger miss is in flight when an older store to its beat retires: the answer may hold
+    # the beat from before the store and must be dropped (stale), then read again.
+    yield 'miss_stale_after_store', prefix() + [lui29,
+        store(3, 29, 7, 0x200),               # make 0x3200 non-zero first (no allocation on stores)
+        i_type(3, 21, 3, 0, 0x30),            # cold load: the store below waits for it
+        add_(25, 21, 21),
+        store(2, 29, 25, 0x300),              # sw x25 -> 0x3300 (data late)
+        i_type(3, 22, 3, 29, 0x300),          # ld 0x3300: half from the store, half from memory
+        i_type(3, 26, 3, 29, 0x300),          # again, after the store retires, from the cache
+        i_type(3, 23, 3, 29, 0x200),
+        add_(24, 22, 26), add_(24, 24, 23), store(3, 29, 24, 0x118), 0x100073], 0, MASK
+    # Many independent cold misses (more than N_MISS), then a dependent chain through them.
+    p = prefix() + [lui29]
+    for n in range(12):
+        p.append(i_type(3, 5 + n, 3, 0, 8 * n))          # 12 cold beats of program words
+    for n in range(11):
+        p.append(add_(5, 5, 6 + n))
+    yield 'miss_many_in_flight', p + [store(3, 29, 5, 0x120), 0x100073], 0, MASK
+    # A read fault on a younger miss is dropped; the load faults precisely once it is the oldest.
+    yield 'miss_younger_fault', prefix() + [lui29,
+        i_type(3, 21, 3, 0, 0x38),            # cold, older
+        (4 << 12) | (28 << 7) | 0x37,         # lui x28, 4 -> 0x4000, outside memory
+        i_type(3, 22, 3, 28, 0),              # faults (younger miss while x21 misses)
+        store(3, 29, 21, 0x128), 0x100073], 0, MASK
+    # Codex review of hand-off 2, item 1: two loads to the same faulting beat. The younger one's
+    # address comes first, so it takes a younger entry; its error is dropped and it misses again;
+    # the oldest load must still read the beat itself (entry 0) and fault precisely.
+    # Variants j add j identity ORs to A's address chain, so A and B replay in either phase.
+    for j in range(8):
+        yield f'miss_two_loads_faulting_beat{j}', prefix() + [lui29, i_type(0x13, 27, 0, 0, 1),
+            (4 << 12) | (28 << 7) | 0x37,         # lui x28, 4 -> 0x4000, outside memory
+            i_type(3, 26, 3, 30, 0), add_(20, 28, 26)] + [r_type(0x33, 20, 4, 20, 27, 1)] * 2 + [  # x20 = 0x4000, late
+            r_type(0x33, 20, 6, 20, 20)] * j + [  # or x20, x20, x20
+            i_type(3, 21, 3, 20, 0),              # A: oldest, late address, faults
+            i_type(3, 22, 3, 28, 0),              # B: younger, same beat, address at once
+            store(3, 29, 22, 0x130), 0x100073], 0, MASK
+    # Item 4: a store write faults while younger split reads are outstanding; the core retries the
+    # write until they have returned, then traps (cause 7). tb_core checks none is outstanding.
+    yield 'miss_store_fault_drain', prefix() + [lui29, (4 << 12) | (28 << 7) | 0x37,
+        store(3, 28, 7, 0),                   # sd -> 0x4000: access fault at its write
+        i_type(3, 21, 3, 0, 0x40), i_type(3, 22, 3, 0, 0x48), i_type(3, 23, 3, 0, 0x50),
+        add_(24, 21, 22), store(3, 29, 24, 0x138), 0x100073], 0, MASK
+    # Codex follow-up review, item 1: the store's first write faults while split reads are
+    # outstanding, and a second write would succeed (fault_kind 4 faults once). The core must not
+    # retry the write: it traps with cause 7 at the store once the reads have returned.
+    yield 'miss_store_fault_transient', prefix() + [lui29,
+        store(3, 29, 7, 0x100),               # sd -> 0x3100: faults (once)
+        i_type(3, 21, 3, 0, 0x40), i_type(3, 22, 3, 0, 0x48), i_type(3, 23, 3, 0, 0x50),
+        add_(24, 21, 22), store(3, 29, 24, 0x140), 0x100073], 4, 0x3100
     p = prefix()
     for op in (0x33, 0x3b):
         for f3 in (range(8) if op == 0x33 else (0, 1, 5)):
@@ -950,6 +1034,8 @@ def main():
     parser.add_argument('--icache-beats', type=int, help='Override the core instruction-cache size (power of two >= 2)')
     parser.add_argument('--dcache-beats', type=int, help='Override the core data-cache size (power of two >= 2)')
     parser.add_argument('--core', choices=sorted(CORES), default='multicycle', help='Core implementation to test')
+    parser.add_argument('--n-miss', type=int, default=1,
+                        help='Out-of-order core: data misses in flight (N_MISS; above 1, split reads in tb_core)')
     parser.add_argument('--core-source', type=Path,
                         help="Test this file instead of the core's file in rtl/cpu (a candidate kept elsewhere)")
     parser.add_argument('--out-dir', type=Path,
@@ -963,6 +1049,9 @@ def main():
     if args.out_dir: OUT = args.out_dir.resolve()
     cache = {'ICACHE_BEATS': args.icache_beats} if args.icache_beats else {}
     cache |= {'DCACHE_BEATS': args.dcache_beats} if args.dcache_beats else {}
+    if args.n_miss > 1 and args.core != 'ooo':
+        parser.error('--n-miss above 1 needs --core ooo (split reads exist only in the out-of-order core)')
+    cache |= {'N_MISS': args.n_miss} if args.n_miss > 1 else {}  # memory hand-off 2: split data reads
     try:
         sim = simulator.get(args.sim)
         global HANG_SECONDS
@@ -1002,17 +1091,20 @@ def main():
         soc_results.append(command([*soc_sim,f'+image={bram}','+expected=24','+second']).strip())
     records,coverage = [],set()
     for name, image, kind, address in workloads:
-        expected, covered = execute(image,kind,address)
+        expected, covered = execute(image, 3 if kind == 4 else kind, address)  # kind 4: store faults once
         if name == 'compiled_firmware':
             if 'W 0000000000003000 0000000000000024 ff' not in expected:
                 raise AssertionError('Compiled firmware did not produce the known sum 36')
         coverage |= covered
         hexfile = OUT / (name+'.hex')
         hexfile.write_text(''.join(f'{b:02x}\n' for b in image),encoding='ascii')
-        for stalls,seed in ((0,1),(7,42),(19,103)):
-            trace = OUT / f'{name}-stall{stalls}.trace'
+        # N_MISS > 1: also fixed split-read latencies 2-4 (random answer timing can hide livelocks).
+        patterns = [(0,1,0),(7,42,0),(19,103,0)] + ([(0,1,2),(0,1,3),(0,1,4)] if args.n_miss > 1 else [])
+        for stalls,seed,slat in patterns:
+            trace = OUT / (f'{name}-stall{stalls}' + (f'-lat{slat}' if slat else '') + '.trace')
             output = command([*executable,f'+image={hexfile}',f'+trace={trace}',
-                              f'+stall={stalls}',f'+seed={seed}',f'+fault_kind={kind}',f'+fault_addr={address:x}'])
+                              f'+stall={stalls}',f'+seed={seed}',f'+fault_kind={kind}',f'+fault_addr={address:x}']
+                             + ([f'+split_lat={slat}'] if args.n_miss > 1 else []))
             actual=trace.read_text().splitlines()
             if actual!=expected:
                 for index in range(max(len(actual),len(expected))):
@@ -1021,7 +1113,7 @@ def main():
                     if a!=e: raise AssertionError(f'{name} stall={stalls} event {index}:\nactual {a}\nexpect {e}')
             # Structural coverage: these programs exist to exercise an issue slot, so
             # check that the slot was used (default caches, where the lines stay cached).
-            if args.icache_beats is None and stalls == 0 and name in SLOT_USE[args.core]:
+            if args.icache_beats is None and stalls == 0 and slat == 0 and name in SLOT_USE[args.core]:
                 field = SLOT_USE[args.core][name]
                 used = re.search(field + r'=(\d+)', output)
                 if not used or int(used[1]) == 0:

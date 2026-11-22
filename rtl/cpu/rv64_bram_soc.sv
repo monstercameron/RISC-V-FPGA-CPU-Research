@@ -21,7 +21,16 @@ module rv64_bram_soc #(
     parameter integer L2_WAYS = 8,
     parameter integer L2_LINE = 64,      // bytes, power of two, >= 8
     parameter integer L2_LAT = 12,       // read latency of an L2 hit, clocks (only with L2_KIB != 0)
-    parameter integer MEM_LAT = 1        // read latency of an L2 miss (or of every read without L2)
+    parameter integer MEM_LAT = 1,       // read latency of an L2 miss (or of every read without L2)
+    // Memory hand-off 2: DRAM reads overlap; MEM_GAP > 0 spaces their starts by that many clocks
+    // (a bandwidth limit); a read of an L2 line still arriving waits for it. N_MISS > 1 makes data
+    // reads of the out-of-order core split transactions (accepted at once, answered on rsp_*); an
+    // instruction read is split when its mem_tag is 8-15, otherwise it stays a blocking read.
+    parameter integer MEM_GAP = 0,
+    parameter integer N_MISS = 1,
+    // 1: a write that misses the L2 also starts a DRAM fill of its line (reads of that line wait
+    // for it); 0 (default, as 0.15.0): the posted write allocates the line with no fill.
+    parameter integer WRITE_FILL = 0
 ) (
     input wire clk,
     input wire reset, // already synchronized to clk; resets core AND adapter
@@ -52,22 +61,56 @@ module rv64_bram_soc #(
     reg [63:0] l2_use [0:L2_N-1];
     reg [L2_N-1:0] l2_valid;
     reg [63:0] l2_clock;
+    reg [63:0] l2_ready [0:L2_N-1];   // clock at which the line's DRAM fill has arrived
+    reg [63:0] now, mem_next;         // clocks since reset; earliest next DRAM start
+    integer l2_lat_v;
     integer l2_rd_hit = 0, l2_rd_miss = 0, l2_wr_hit = 0, l2_wr_miss = 0;   // statistics for probes
     reg rd_busy;                // a read is waiting for its latency
     reg [31:0] rd_cnt;
     integer l2_w, l2_v;
     reg l2_h;
+    task automatic mem_start(output integer lat);
+        reg [63:0] st;
+        begin
+            st = mem_next > now ? mem_next : now;
+            lat = st - now + MEM_LAT;
+            mem_next = st + MEM_GAP;
+        end
+    endtask
+    // Split data reads (N_MISS > 1): accepted when presented, answered lat clocks later.
+    // Tags 0-7: data reads; tags 8-15: instruction reads a core sends as split (mem_tag[3] set).
+    localparam integer SP_N = N_MISS > 1 ? 16 : 1;
+    reg [SP_N-1:0] sp_v;
+    reg [3:0] sp_tag [0:SP_N-1];
+    reg [63:0] sp_addr [0:SP_N-1];
+    reg [31:0] sp_cnt [0:SP_N-1];
+    reg rsp_valid, rsp_error;
+    reg [3:0] rsp_tag;
+    reg [63:0] rsp_data;
+    wire [3:0] tag;
+    integer sp_k, sp_free, sp_pick;
+    reg [63:0] sp_seq [0:SP_N-1];     // acceptance order: the oldest due read is answered first
+    reg [63:0] sp_next;
+`ifndef WIDE_TRACE
+    // Split reads exist only for the out-of-order core (its mem_tag and rsp_* ports).
+    generate if (N_MISS > 1) begin : split_needs_ooo
+        initial $fatal(1, "N_MISS > 1 needs the out-of-order core (WIDE_TRACE build)");
+    end endgenerate
+`endif
     // Look up (and on a miss allocate) the line of byte address a; returns 1 on a hit.
-    task automatic l2_touch(input [63:0] a, output reg hit);
+    task automatic l2_touch(input [63:0] a, input is_read, output reg hit, output integer lat);
         integer base, w, v;
         reg [63:0] line;
         begin
             line = a >> L2_OFF;
             base = (line % L2_SETS) * L2_WAYS;
-            hit = 0; v = -1;
+            hit = 0; v = -1; lat = 0;
             l2_clock = l2_clock + 1;
             for (w = 0; w < L2_WAYS; w = w + 1)
-                if (l2_valid[base + w] && l2_tag[base + w] == line) begin hit = 1; l2_use[base + w] = l2_clock; end
+                if (l2_valid[base + w] && l2_tag[base + w] == line) begin
+                    hit = 1; l2_use[base + w] = l2_clock;
+                    lat = l2_ready[base + w] > now + L2_LAT ? l2_ready[base + w] - now : L2_LAT;
+                end
             if (!hit) begin
                 for (w = 0; w < L2_WAYS; w = w + 1) if (v < 0 && !l2_valid[base + w]) v = w;
                 if (v < 0) begin
@@ -75,6 +118,9 @@ module rv64_bram_soc #(
                     for (w = 1; w < L2_WAYS; w = w + 1) if (l2_use[base + w] < l2_use[base + v]) v = w;
                 end
                 l2_valid[base + v] = 1; l2_tag[base + v] = line; l2_use[base + v] = l2_clock;
+                if (is_read) begin mem_start(lat); l2_ready[base + v] = now + lat; end
+                else if (WRITE_FILL != 0) begin mem_start(lat); l2_ready[base + v] = now + lat; lat = 0; end
+                else begin lat = 0; l2_ready[base + v] = now; end   // a posted write allocates without a fill
             end
         end
     endtask
@@ -93,7 +139,8 @@ module rv64_bram_soc #(
     // that clock's edge, and the range check that decides the error is
     // combinational. Reads answer one clock later from the synchronous RAM.
     wire write_request=valid && wstrb!=0;
-    wire ready=write_request || read_ready;
+    wire split_read=N_MISS > 1 && valid && wstrb==0 && (!instr || tag[3]);
+    wire ready=write_request || read_ready || (split_read && sp_v != {SP_N{1'b1}});
     wire error=write_request ? outside_ram : read_error;
 `ifdef WIDE_TRACE
     // Paired store write (out-of-order core, 0.11.0): the second write applies only
@@ -116,18 +163,21 @@ module rv64_bram_soc #(
     always @(posedge clk) begin
         if (reset) begin
             read_ready<=0; read_error<=0; rdata<=0; rd_busy=0; rd_cnt=0; l2_valid=0; l2_clock=0;
+            now=0; mem_next=0; sp_v=0; sp_next=0; rsp_valid<=0; rsp_error<=0; rsp_tag<=0; rsp_data<=0;
             l2_rd_hit=0; l2_rd_miss=0; l2_wr_hit=0; l2_wr_miss=0;
         end else begin
             read_ready<=0;
             // A read answers lat clocks after it is first presented; the request is held
             // stable meanwhile (section 3). An out-of-range read faults after MEM_LAT clocks.
-            if (valid && !write_request && !read_ready && !rd_busy) begin
+            now = now + 1;
+            rsp_valid<=0;
+            if (valid && !write_request && !split_read && !read_ready && !rd_busy) begin
                 l2_h = 0;
                 if (L2_KIB != 0 && !outside_ram) begin
-                    l2_touch(addr, l2_h);
+                    l2_touch(addr, 1'b1, l2_h, l2_lat_v);
                     if (l2_h) l2_rd_hit = l2_rd_hit + 1; else l2_rd_miss = l2_rd_miss + 1;
-                end
-                l2_v = l2_h ? L2_LAT : MEM_LAT;
+                end else if (!outside_ram) mem_start(l2_lat_v);
+                l2_v = outside_ram ? MEM_LAT : l2_lat_v;
                 if (l2_v <= 1) begin
                     read_ready<=1;
                     read_error<=outside_ram;
@@ -142,12 +192,36 @@ module rv64_bram_soc #(
                 end
                 rd_cnt = rd_cnt - 1;
             end
+            // Split reads: accept into a free entry; answer the entry that is due (lowest index
+            // first, one per clock), reading the RAM as it is at that edge.
+            if (split_read && sp_v != {SP_N{1'b1}}) begin
+                sp_free = 0;
+                for (sp_k = SP_N - 1; sp_k >= 0; sp_k = sp_k - 1) if (!sp_v[sp_k]) sp_free = sp_k;
+                l2_h = 0;
+                if (L2_KIB != 0 && !outside_ram) begin
+                    l2_touch(addr, 1'b1, l2_h, l2_lat_v);
+                    if (l2_h) l2_rd_hit = l2_rd_hit + 1; else l2_rd_miss = l2_rd_miss + 1;
+                end else if (!outside_ram) mem_start(l2_lat_v);
+                sp_v[sp_free] = 1; sp_tag[sp_free] = tag; sp_addr[sp_free] = addr; sp_seq[sp_free] = sp_next; sp_next = sp_next + 1;
+                sp_cnt[sp_free] = outside_ram ? MEM_LAT : l2_lat_v;
+            end
+            sp_pick = -1;
+            for (sp_k = 0; sp_k < SP_N; sp_k = sp_k + 1)
+                if (sp_v[sp_k] && sp_cnt[sp_k] <= 1 && (sp_pick < 0 || sp_seq[sp_k] < sp_seq[sp_pick])) sp_pick = sp_k;
+            for (sp_k = 0; sp_k < SP_N; sp_k = sp_k + 1) if (sp_v[sp_k]) begin
+                if (sp_k == sp_pick) begin
+                    sp_v[sp_k] = 0;
+                    rsp_valid<=1; rsp_tag<=sp_tag[sp_k];
+                    rsp_error<=sp_addr[sp_k]>=RAM_WORDS*64'd8;
+                    rsp_data<=sp_addr[sp_k]>=RAM_WORDS*64'd8 ? 64'b0 : ram[sp_addr[sp_k][INDEX_BITS+2:3]];
+                end else if (sp_cnt[sp_k] > 1) sp_cnt[sp_k] = sp_cnt[sp_k] - 1;
+            end
             if (L2_KIB != 0 && write_request && !outside_ram) begin
-                l2_touch(addr, l2_h); if (l2_h) l2_wr_hit = l2_wr_hit + 1; else l2_wr_miss = l2_wr_miss + 1;
+                l2_touch(addr, 1'b0, l2_h, l2_lat_v); if (l2_h) l2_wr_hit = l2_wr_hit + 1; else l2_wr_miss = l2_wr_miss + 1;
 `ifdef WIDE_TRACE
-                if (wstrb2!=0 && !outside2) begin l2_touch(addr2, l2_h); if (l2_h) l2_wr_hit = l2_wr_hit + 1; else l2_wr_miss = l2_wr_miss + 1; end
-                if (xok0) begin l2_touch(xaddr[63:0], l2_h); if (l2_h) l2_wr_hit = l2_wr_hit + 1; else l2_wr_miss = l2_wr_miss + 1; end
-                if (xok1) begin l2_touch(xaddr[127:64], l2_h); if (l2_h) l2_wr_hit = l2_wr_hit + 1; else l2_wr_miss = l2_wr_miss + 1; end
+                if (wstrb2!=0 && !outside2) begin l2_touch(addr2, 1'b0, l2_h, l2_lat_v); if (l2_h) l2_wr_hit = l2_wr_hit + 1; else l2_wr_miss = l2_wr_miss + 1; end
+                if (xok0) begin l2_touch(xaddr[63:0], 1'b0, l2_h, l2_lat_v); if (l2_h) l2_wr_hit = l2_wr_hit + 1; else l2_wr_miss = l2_wr_miss + 1; end
+                if (xok1) begin l2_touch(xaddr[127:64], 1'b0, l2_h, l2_lat_v); if (l2_h) l2_wr_hit = l2_wr_hit + 1; else l2_wr_miss = l2_wr_miss + 1; end
 `endif
             end
             if (write_request && !outside_ram)
@@ -164,7 +238,7 @@ module rv64_bram_soc #(
     end
     rv64_core #(.RESET_PC(RESET_PC),.ICACHE_BEATS(ICACHE_BEATS),.DCACHE_BEATS(DCACHE_BEATS)
 `ifdef WIDE_TRACE
-        ,.PAIR_WRITES(1),.EXTRA_WRITES(2)
+        ,.PAIR_WRITES(1),.EXTRA_WRITES(2),.N_MISS(N_MISS)
 `endif
         ) cpu (
         .clk(clk),.reset(reset),.mem_valid(valid),.mem_instr(instr),
@@ -180,7 +254,8 @@ module rv64_bram_soc #(
 `ifdef WIDE_TRACE
         ,.rt_valid(),.rt_pc(),.rt_insn(),.rt_rd(),.rt_data(),.rt_next(),
         .mem_addr2(addr2),.mem_wdata2(wdata2),.mem_wstrb2(wstrb2),.mem_error2(error2),
-        .mem_xaddr(xaddr),.mem_xwdata(xwdata),.mem_xwstrb(xwstrb),.mem_xerror(xerror)
+        .mem_xaddr(xaddr),.mem_xwdata(xwdata),.mem_xwstrb(xwstrb),.mem_xerror(xerror),
+        .mem_tag(tag),.rsp_valid(rsp_valid),.rsp_tag(rsp_tag),.rsp_data(rsp_data),.rsp_error(rsp_error)
 `endif
     );
 endmodule

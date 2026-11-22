@@ -192,7 +192,8 @@ def run(args, root, out, build, snap, rtl, core_file, command, sha, sim, caches)
     timing_sim = sim.build('tb_bench', [*rtl, snap / 'sim/cpu/bench/tb_bench.sv'], out / 'tb_bench.vvp',
                            params={'RAM_WORDS': ram_bytes // 8, **caches}, defines=wide)
     trace_sim = sim.build('tb_core', [rtl[0], snap / 'sim/cpu/tb_core.sv'], out / 'tb_core.vvp',
-                          params={'MEM_BYTES': ram_bytes}, defines=wide)
+                          params={'MEM_BYTES': ram_bytes, **({'N_MISS': caches['N_MISS']} if 'N_MISS' in caches else {})},
+                          defines=wide)
     jobs = max(1, args.jobs)
     simulations = []
 
@@ -345,7 +346,7 @@ def run(args, root, out, build, snap, rtl, core_file, command, sha, sim, caches)
             'core': args.core,
             'core_source': args.core_source or core_file,
             'cache_beats': {'icache': caches['ICACHE_BEATS'], 'dcache': caches['DCACHE_BEATS']},
-            'memory_model': {k.lower(): caches.get(k, d) for k, d in (('L2_KIB', 0), ('L2_WAYS', 8), ('L2_LINE', 64), ('L2_LAT', 12), ('MEM_LAT', 1))} |
+            'memory_model': {k.lower(): caches.get(k, d) for k, d in (('L2_KIB', 0), ('L2_WAYS', 8), ('L2_LINE', 64), ('L2_LAT', 12), ('MEM_LAT', 1), ('N_MISS', 1))} |
                             {'ld_lat': getattr(args, 'ld_lat', None), 'l0_n': getattr(args, 'l0', None),
                              'l0_lat': getattr(args, 'l0_lat', None)},
             'rtl_sha256': {p.relative_to(snap).as_posix(): sha(p) for p in rtl},
@@ -527,7 +528,8 @@ def run_iss(args, root, out, build, snap, rtl, core_file, command, sha, sim, cac
                            defines=wide + (['L2_PRELOAD'] if warm_l2 else []) +
                            (['L2_PRELOAD_READY'] if warm_l2 and 'l2_ready' in rtl[1].read_text(encoding='utf-8') else []))
     trace_sim = sim.build('tb_core', [rtl[0], snap / 'sim/cpu/tb_core.sv'], out / 'tb_core.vvp',
-                          params={'MEM_BYTES': ram_bytes}, defines=wide)
+                          params={'MEM_BYTES': ram_bytes, **({'N_MISS': caches['N_MISS']} if 'N_MISS' in caches else {})},
+                          defines=wide)
     jobs = max(1, args.jobs)
     simulations, differential, pieces_report, phase_clocks, sampling = [], [], [], {}, {}
 
@@ -797,7 +799,7 @@ def run_iss(args, root, out, build, snap, rtl, core_file, command, sha, sim, cac
             'class': {'multicycle': 'multicycle', 'pipe': 'pipelined', 'ooo': 'out-of-order'}[args.core],
             'core': args.core, 'core_source': args.core_source or core_file,
             'cache_beats': {'icache': caches['ICACHE_BEATS'], 'dcache': caches['DCACHE_BEATS']},
-            'memory_model': {k.lower(): caches.get(k, d) for k, d in (('L2_KIB', 0), ('L2_WAYS', 8), ('L2_LINE', 64), ('L2_LAT', 12), ('MEM_LAT', 1))} |
+            'memory_model': {k.lower(): caches.get(k, d) for k, d in (('L2_KIB', 0), ('L2_WAYS', 8), ('L2_LINE', 64), ('L2_LAT', 12), ('MEM_LAT', 1), ('N_MISS', 1))} |
                             {'ld_lat': getattr(args, 'ld_lat', None), 'l0_n': getattr(args, 'l0', None),
                              'l0_lat': getattr(args, 'l0_lat', None)},
             'rtl_sha256': {p.relative_to(snap).as_posix(): sha(p) for p in rtl},

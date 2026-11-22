@@ -14,13 +14,14 @@
 // ICACHE_BEATS/DCACHE_BEATS set the core's cache sizes (8-byte beats); the defaults keep the SoC's 4 KiB.
 module tb_bench #(parameter integer RAM_WORDS = 8192, parameter integer ICACHE_BEATS = 512,
                   parameter integer DCACHE_BEATS = 512, parameter integer L2_KIB = 0, parameter integer L2_WAYS = 8,
-                  parameter integer L2_LINE = 64, parameter integer L2_LAT = 12, parameter integer MEM_LAT = 1);
+                  parameter integer L2_LINE = 64, parameter integer L2_LAT = 12, parameter integer MEM_LAT = 1,
+                  parameter integer MEM_GAP = 0, parameter integer WRITE_FILL = 0, parameter integer N_MISS = 1);
     reg clk=0,reset=1;
     always #5 clk=~clk;
     wire trapped,retired,retired2,retired3;
     wire [63:0] pc,cause,tval,rpc;
     rv64_bram_soc #(.RAM_WORDS(RAM_WORDS),.ICACHE_BEATS(ICACHE_BEATS),.DCACHE_BEATS(DCACHE_BEATS),.L2_KIB(L2_KIB),
-        .L2_WAYS(L2_WAYS),.L2_LINE(L2_LINE),.L2_LAT(L2_LAT),.MEM_LAT(MEM_LAT)) dut(.clk(clk),.reset(reset),.trapped(trapped),
+        .L2_WAYS(L2_WAYS),.L2_LINE(L2_LINE),.L2_LAT(L2_LAT),.MEM_LAT(MEM_LAT),.MEM_GAP(MEM_GAP),.WRITE_FILL(WRITE_FILL),.N_MISS(N_MISS)) dut(.clk(clk),.reset(reset),.trapped(trapped),
         .trap_pc(pc),.trap_cause(cause),.trap_tval(tval),.retire_valid(retired),.retire_pc(rpc),.retire2_valid(retired2),
         .retire3_valid(retired3));
 

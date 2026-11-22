@@ -108,6 +108,8 @@ def main():
     knobs.add_argument('--ld-lat', type=int, help='Load-to-use latency in clocks: define RV64_OOO_LD_LAT (0.14.10)')
     knobs.add_argument('--l0', type=int, help='L0 recent-beat buffer entries: define RV64_OOO_L0_N (0.15.4)')
     knobs.add_argument('--l0-lat', type=int, help='L0 hit latency in clocks: define RV64_OOO_L0_LAT (0.15.4)')
+    knobs.add_argument('--n-miss', type=int, default=1,
+                       help='Data misses in flight: core and SoC parameter N_MISS (0.16.0; above 1, split data reads)')
     simulator.add_argument(parser)
     lzma_options = parser.add_argument_group('lzma only')
     lzma_options.add_argument('--lzma-mode', choices=('full', 'sampled'),
@@ -139,8 +141,10 @@ def main():
     args.ooo_defines = [f'{k}={v}' for k, v in args.ooo_knobs.items() if v is not None]
     if args.ooo_defines and args.core != 'ooo':
         parser.error('--ld-lat, --l0 and --l0-lat apply to --core ooo only')
+    if args.n_miss != 1 and (args.core != 'ooo' or not 1 <= args.n_miss <= 8):
+        parser.error('--n-miss above 1 needs --core ooo, and must be 1 to 8')
     if args.devlog and (args.core_source or args.icache_beats or args.dcache_beats or args.l2_kib or args.mem_lat != 1
-                        or args.ooo_defines):
+                        or args.ooo_defines or args.n_miss != 1):
         parser.error('--devlog records the released core in its standard configuration only')
     if args.benchmark == 'lzma' and args.devlog:
         parser.error('--devlog records Dhrystone runs only; log LZMA runs in DEVLOG.md by hand')
@@ -183,9 +187,9 @@ def main():
     caches = {'ICACHE_BEATS': args.icache_beats, 'DCACHE_BEATS': args.dcache_beats}
     # SoC memory-model parameters are passed only when they differ from the SoC defaults, so a
     # default run builds exactly the same simulator as before they existed.
-    memory_defaults = {'L2_KIB': 0, 'L2_WAYS': 8, 'L2_LINE': 64, 'L2_LAT': 12, 'MEM_LAT': 1}
+    memory_defaults = {'L2_KIB': 0, 'L2_WAYS': 8, 'L2_LINE': 64, 'L2_LAT': 12, 'MEM_LAT': 1, 'N_MISS': 1}
     memory_model = {'L2_KIB': args.l2_kib, 'L2_WAYS': args.l2_ways, 'L2_LINE': args.l2_line,
-                    'L2_LAT': args.l2_lat, 'MEM_LAT': args.mem_lat}
+                    'L2_LAT': args.l2_lat, 'MEM_LAT': args.mem_lat, 'N_MISS': args.n_miss}
     caches.update({k: v for k, v in memory_model.items() if v != memory_defaults[k]})
     rtl = [snap / core_file, snap / 'rtl/cpu/rv64_bram_soc.sv']
     if args.benchmark == 'lzma':
@@ -234,7 +238,8 @@ def main():
     expected_trace, coverage = execute(image, max_steps=20_000_000)
     reference_seconds = time.perf_counter() - started
     trace_sim = sim.build('tb_core', [rtl[0], snap / 'sim/cpu/tb_core.sv'], out / 'tb_core.vvp',
-                          params={'MEM_BYTES': ram_bytes}, defines=wide)
+                          params={'MEM_BYTES': ram_bytes, **({'N_MISS': args.n_miss} if args.n_miss != 1 else {})},
+                          defines=wide)
     start_write = f'W {mailbox:016x} {1:016x} ff'
     stop_write = f'W {mailbox:016x} {2:016x} ff'
     differential = []
