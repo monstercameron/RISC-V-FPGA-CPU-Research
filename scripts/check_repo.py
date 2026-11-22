@@ -63,6 +63,7 @@ REQUIRED = MAINTAINED_DOCS + (
     'sim/cpu/bench/js_run.py', 'sim/cpu/bench/js/kernels.js', 'sim/cpu/bench/js/js_bench.c',
     'sim/cpu/bench/js/libc.c', 'sim/cpu/bench/js/gen_src.py', 'sim/cpu/bench/js/js_native.sh',
     'sim/cpu/bench/js/js_laptop.py', 'sim/cpu/bench/js/fetch_quickjs.sh', 'licenses/QUICKJS-NG-LICENSE.txt',
+    'sim/cpu/fp_oracle.py', 'sim/cpu/fetch_softfloat.sh', 'sim/cpu/bench/fp_oracle_iss.c',
     'sim/cpu/bench/mm_run.py', 'sim/cpu/bench/mm_build.py', 'sim/cpu/bench/mm/mm_bench.h', 'sim/cpu/bench/mm/mm_bench.c',
     'sim/cpu/bench/mm/mm_kernels.c', 'sim/cpu/bench/mm/mm_runtime.c', 'sim/cpu/bench/mm/mm_native.c',
     'sim/cpu/bench/mm/mm_gen.c', 'sim/cpu/bench/mm/mm_export.sh', 'sim/cpu/bench/mm/mm_laptop.c',

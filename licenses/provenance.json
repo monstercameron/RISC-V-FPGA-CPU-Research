@@ -62,6 +62,18 @@
       "source": "https://github.com/quickjs-ng/quickjs/blob/d7215b0ad3fc2c562e8317fd9bca058fd4863804/LICENSE (tag v0.18.0; from the tag archive, SHA-256 28bcd89aa3683fd2a946537e5ce3f11cc46b5cbf3383c7561aaef3df5ff9f1dd)",
       "sha256": "96f73f9d2a16c21a36b418f06073be26e7d6d5e7c1bc99756b21a4f2c74ef171",
       "retrieved": "2026-11-22"
+    },
+    {
+      "path": "licenses/SOFTFLOAT-3E-LICENSE.txt",
+      "source": "https://www.jhauser.us/arithmetic/SoftFloat-3e.zip (SoftFloat-3e/COPYING.txt; archive SHA-256 21130ce885d35c1fe73fc1e1bf2244178167e05c6747cad5f450cc991714c746)",
+      "sha256": "1a9bde4daac8f2fd9593128ef605238471209e79c9fc2cabc22557d3da29fa65",
+      "retrieved": "2026-11-22"
+    },
+    {
+      "path": "licenses/TESTFLOAT-3E-LICENSE.txt",
+      "source": "https://www.jhauser.us/arithmetic/TestFloat-3e.zip (TestFloat-3e/COPYING.txt; archive SHA-256 6d4bdf0096b48a653aa59fc203a9e5fe18b5a58d7a1b715107c7146776a0aad6)",
+      "sha256": "de822828fa475ba5f10115954a7471fe84ec04884ac7a38de1c3adfc7ceed858",
+      "retrieved": "2026-11-22"
     }
   ]
 }
